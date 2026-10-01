@@ -1,7 +1,6 @@
 import os, json, hmac
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from core import Brain
-from core.brain import trim_history
 
 app = FastAPI()
 brain = Brain()
@@ -20,17 +19,15 @@ async def ws(websocket: WebSocket):
         await websocket.close(code=1008)
         return
     await websocket.accept()
-    history = []
+    session = brain.new_session()
     try:
         while True:
             msg = json.loads(await websocket.receive_text())
-            history.append({"role": "user", "content": msg["text"]})
             try:
-                reply = await brain.think(history)
+                reply = await session.say(msg["text"])
             except Exception as e:
                 print("Error del cerebro:", repr(e))
                 reply = "Mi señor, tuve un fallo interno. Intente de nuevo."
-            history[:] = trim_history(history)
             await websocket.send_text(json.dumps({"say": reply}))
     except WebSocketDisconnect:
         pass

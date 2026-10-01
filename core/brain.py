@@ -1,11 +1,13 @@
 """Cerebro de Igris: personalidad, herramientas y conversación.
+Funciona con OpenAI o con Anthropic (Claude) según la variable IGRIS_PROVIDER.
 Lo usan tanto el servidor (EC2) como, más adelante, la Raspberry Pi (modo respaldo)."""
-import os
+import os, json
 from datetime import datetime
 from zoneinfo import ZoneInfo
-from anthropic import AsyncAnthropic
 
-MODEL = os.environ.get("IGRIS_MODEL", "claude-sonnet-5-5")
+PROVIDER = os.environ.get("IGRIS_PROVIDER", "openai").lower()   # "openai" o "anthropic"
+OPENAI_MODEL = os.environ.get("IGRIS_OPENAI_MODEL", "gpt-4o-mini")
+ANTHROPIC_MODEL = os.environ.get("IGRIS_ANTHROPIC_MODEL", "claude-sonnet-5-5")
 TIMEZONE = os.environ.get("IGRIS_TZ", "America/Bogota")
 
 SYSTEM = """Eres Igris, el caballero de las sombras y comandante leal de tu señor.
@@ -18,10 +20,11 @@ DIAS = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "doming
 MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio",
          "agosto", "septiembre", "octubre", "noviembre", "diciembre"]
 
+# Herramientas en formato neutro; cada proveedor las convierte a su formato.
 TOOLS = [{
     "name": "obtener_hora",
     "description": "Devuelve la fecha y hora actual.",
-    "input_schema": {"type": "object", "properties": {}},
+    "parameters": {"type": "object", "properties": {}},
 }]
 
 
@@ -33,7 +36,7 @@ def run_tool(name: str, args: dict) -> str:
 
 
 def trim_history(history: list, keep: int = 20) -> list:
-    """Recorta sin separar un tool_use de su tool_result:
+    """Recorta sin separar una llamada a herramienta de su resultado:
     el historial siempre empieza en un mensaje de texto del usuario."""
     if len(history) <= keep:
         return history
@@ -43,22 +46,75 @@ def trim_history(history: list, keep: int = 20) -> list:
     return trimmed
 
 
-class Brain:
-    def __init__(self):
-        self.client = AsyncAnthropic()  # lee ANTHROPIC_API_KEY del entorno
+class OpenAISession:
+    def __init__(self, client):
+        self.client = client
+        self.history = []
+        self.tools = [{"type": "function", "function": t} for t in TOOLS]
 
-    async def think(self, history: list) -> str:
+    async def say(self, text: str) -> str:
+        self.history.append({"role": "user", "content": text})
+        while True:
+            resp = await self.client.chat.completions.create(
+                model=OPENAI_MODEL, max_completion_tokens=500,
+                messages=[{"role": "system", "content": SYSTEM}] + self.history,
+                tools=self.tools,
+            )
+            msg = resp.choices[0].message
+            if not msg.tool_calls:
+                self.history.append({"role": "assistant", "content": msg.content or ""})
+                break
+            self.history.append({
+                "role": "assistant", "content": msg.content,
+                "tool_calls": [{"id": c.id, "type": "function",
+                                "function": {"name": c.function.name,
+                                             "arguments": c.function.arguments}}
+                               for c in msg.tool_calls],
+            })
+            for c in msg.tool_calls:
+                args = json.loads(c.function.arguments or "{}")
+                self.history.append({"role": "tool", "tool_call_id": c.id,
+                                     "content": run_tool(c.function.name, args)})
+        self.history = trim_history(self.history)
+        return msg.content or ""
+
+
+class AnthropicSession:
+    def __init__(self, client):
+        self.client = client
+        self.history = []
+        self.tools = [{"name": t["name"], "description": t["description"],
+                       "input_schema": t["parameters"]} for t in TOOLS]
+
+    async def say(self, text: str) -> str:
+        self.history.append({"role": "user", "content": text})
         while True:
             resp = await self.client.messages.create(
-                model=MODEL, max_tokens=500, system=SYSTEM,
-                tools=TOOLS, messages=history,
+                model=ANTHROPIC_MODEL, max_tokens=500, system=SYSTEM,
+                tools=self.tools, messages=self.history,
             )
-            history.append({"role": "assistant", "content": resp.content})
+            self.history.append({"role": "assistant", "content": resp.content})
             if resp.stop_reason != "tool_use":
-                return "".join(b.text for b in resp.content if b.type == "text")
-            results = [
-                {"type": "tool_result", "tool_use_id": b.id,
-                 "content": run_tool(b.name, b.input)}
-                for b in resp.content if b.type == "tool_use"
-            ]
-            history.append({"role": "user", "content": results})
+                break
+            results = [{"type": "tool_result", "tool_use_id": b.id,
+                        "content": run_tool(b.name, b.input)}
+                       for b in resp.content if b.type == "tool_use"]
+            self.history.append({"role": "user", "content": results})
+        self.history = trim_history(self.history)
+        return "".join(b.text for b in resp.content if b.type == "text")
+
+
+class Brain:
+    def __init__(self):
+        if PROVIDER == "anthropic":
+            from anthropic import AsyncAnthropic
+            self.client, self.session_cls = AsyncAnthropic(), AnthropicSession
+        elif PROVIDER == "openai":
+            from openai import AsyncOpenAI
+            self.client, self.session_cls = AsyncOpenAI(), OpenAISession
+        else:
+            raise ValueError("IGRIS_PROVIDER debe ser 'openai' o 'anthropic'")
+
+    def new_session(self):
+        """Una conversación independiente (una por cada conexión)."""
+        return self.session_cls(self.client)
