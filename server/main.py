@@ -1,7 +1,7 @@
 import os, json, hmac, base64
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from core import Brain
-from core import stt
+from core import stt, tts
 
 app = FastAPI()
 brain = Brain()
@@ -23,7 +23,14 @@ async def ws(websocket: WebSocket):
     session = brain.new_session()
 
     async def send(heard: str, say: str):
-        await websocket.send_text(json.dumps({"heard": heard, "say": say}))
+        data = {"heard": heard, "say": say}
+        if tts.TTS_ENABLED and say:
+            try:
+                audio = await tts.synthesize(say)
+                data["voice"] = base64.b64encode(audio).decode()
+            except Exception as e:
+                print("Error de voz (TTS):", repr(e))
+        await websocket.send_text(json.dumps(data))
 
     try:
         while True:

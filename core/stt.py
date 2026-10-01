@@ -13,5 +13,6 @@ async def transcribe(wav_bytes: bytes) -> str:
         _client = AsyncOpenAI()  # usa OPENAI_API_KEY
     f = io.BytesIO(wav_bytes)
     f.name = "voz.wav"
-    r = await _client.audio.transcriptions.create(model=STT_MODEL, file=f, language="es")
+    r = await _client.audio.transcriptions.create(model=STT_MODEL, file=f, language="es",
+        prompt="Igris, asistente personal. Órdenes para la casa y el trabajo.")
     return (r.text or "").strip()

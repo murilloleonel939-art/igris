@@ -37,9 +37,14 @@ def play_mp3(path: str):
     mci("close igris", None, 0, None)
 
 
-async def speak(text: str):
+async def speak(text: str, voice_b64: str = ""):
+    """Reproduce la voz del servidor; si no llegó, usa la voz gratuita de respaldo."""
     path = os.path.join(tempfile.gettempdir(), "igris_voz.mp3")
-    await edge_tts.Communicate(text, VOICE, pitch=PITCH, rate=RATE).save(path)
+    if voice_b64:
+        with open(path, "wb") as f:
+            f.write(base64.b64decode(voice_b64))
+    else:
+        await edge_tts.Communicate(text, VOICE, pitch=PITCH, rate=RATE).save(path)
     await asyncio.to_thread(play_mp3, path)
 
 
@@ -69,7 +74,7 @@ async def main():
                 print("Te escuché:", reply["heard"])
             print("Igris:", reply["say"])
             try:
-                await speak(reply["say"])
+                await speak(reply["say"], reply.get("voice", ""))
             except Exception as e:
                 print("(No pude reproducir la voz:", repr(e), ")")
 
