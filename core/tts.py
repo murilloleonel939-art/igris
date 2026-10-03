@@ -1,6 +1,7 @@
 """Texto a voz (TTS) libre/local. Usa Piper (local, gratis) o edge-tts/API gratuita como respaldo."""
 import os
 TTS_PROVIDER = os.environ.get("IGRIS_TTS_PROVIDER", "local").lower()  # "local" / "edge" / "openai"
+TTS_ENABLED = TTS_PROVIDER in ["local", "edge", "openai"]  # Compatible con server/main.py
 TTS_INSTRUCTIONS = os.environ.get(
     "IGRIS_TTS_INSTRUCTIONS",
     "Habla como un caballero de las sombras: grave, solemne, pausado, con respeto. "
