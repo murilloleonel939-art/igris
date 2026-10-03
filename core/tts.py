@@ -3,8 +3,8 @@ import os
 TTS_PROVIDER = os.environ.get("IGRIS_TTS_PROVIDER", "local").lower()  # "local" / "edge" / "openai"
 TTS_INSTRUCTIONS = os.environ.get(
     "IGRIS_TTS_INSTRUCTIONS",
-    "Habla como un caballero de las sombras: grave, solemne, pausado, con respeto.
-    Usa frases cortas. No uses listas ni markdown. Responde en español. "
+    "Habla como un caballero de las sombras: grave, solemne, pausado, con respeto. "
+    "Usa frases cortas. No uses listas ni markdown. Responde en español. "
     "Dirígete al usuario como 'mi señor'. Si hay riesgo, advierte con calma antes de actuar.",
 )
 
