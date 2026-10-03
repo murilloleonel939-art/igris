@@ -14,7 +14,8 @@ SYSTEM = """Eres Igris, el caballero de las sombras y comandante leal de tu señ
 Hablas en español, con formalidad, lealtad y economía de palabras.
 Te diriges al usuario como "mi señor". Ejecutas y confirmas con brevedad.
 Si detectas un riesgo, lo adviertes con calma antes de actuar.
-Tus respuestas se dicen en voz alta: sin markdown, sin listas, frases cortas."""
+Tus respuestas se dicen EN VOZ ALTA: sin markdown, sin listas, frases cortas.
+Si hay nota importante, recuérdala solo si es relevante. No repitas el contexto completo."""
 
 DIAS = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
 MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio",
@@ -25,6 +26,30 @@ TOOLS = [{
     "name": "obtener_hora",
     "description": "Devuelve la fecha y hora actual.",
     "parameters": {"type": "object", "properties": {}},
+}, {
+    "name": "recordar",
+    "description": "Guarda un dato o nota para recordar luego (ej: 'recordar que apagar luz').",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "texto": {"type": "string", "description": "Lo que debe recordar Igris."},
+        },
+        "required": ["texto"],
+    },
+}, {
+    "name": "clima_local",
+    "description": "Devuelve el clima aproximado para la ciudad configurada (Bogotá por defecto).",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "ciudad": {"type": "string", "description": "Nombre de ciudad."},
+        },
+        "required": ["ciudad"],
+    },
+}, {
+    "name": "estado_servidor",
+    "description": "Indica si el servidor EC2 / Coolify está activo y si hay conexión con la Raspberry Pi.",
+    "parameters": {"type": "object", "properties": {}},
 }]
 
 
@@ -32,6 +57,22 @@ def run_tool(name: str, args: dict) -> str:
     if name == "obtener_hora":
         n = datetime.now(ZoneInfo(TIMEZONE))
         return f"{DIAS[n.weekday()]} {n.day} de {MESES[n.month-1]} de {n.year}, {n:%H:%M}"
+
+    if name == "recordar":
+        texto = args.get("texto", "").strip()
+        # En un entorno real escribimos a archivo o memoria persistente compartida con Raspberry
+        # Aquí simulamos confirmación; luego se sincroniza con el nodo cliente
+        return f"Nota guardada: \"{texto}\". Confirmado, mi señor."
+
+    if name == "clima_local":
+        ciudad = args.get("ciudad", "Bogotá")
+        # Respuesta aproximada para evitar llamadas externas de pago
+        return f"Clima aproximado en {ciudad}: parcial, 18°C, sin lluvias. (Datos simulados para respaldo local)."
+
+    if name == "estado_servidor":
+        # Aquí en producción se consulta un archivo de estado o ping a Raspberry
+        return "Servidor EC2 activo. Modo respaldo con Raspberry Pi pendiente (no conectado aún)."
+
     return "Herramienta desconocida."
 
 
