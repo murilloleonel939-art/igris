@@ -1,11 +1,12 @@
 """Cerebro de Igris: personalidad, herramientas y conversación.
-Funciona con OpenAI o con Anthropic (Claude) según la variable IGRIS_PROVIDER.
+Soporta Groq (gratuito local), OpenAI, Anthropic según IGRIS_PROVIDER.
 Lo usan tanto el servidor (EC2) como, más adelante, la Raspberry Pi (modo respaldo)."""
 import os, json
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-PROVIDER = os.environ.get("IGRIS_PROVIDER", "openai").lower()   # "openai" o "anthropic"
+PROVIDER = os.environ.get("IGRIS_PROVIDER", "groq").lower()   # "groq", "openai" o "anthropic"
+GROQ_MODEL = os.environ.get("IGRIS_GROQ_MODEL", "llama-3.1-70b-versatile")
 OPENAI_MODEL = os.environ.get("IGRIS_OPENAI_MODEL", "gpt-4o-mini")
 ANTHROPIC_MODEL = os.environ.get("IGRIS_ANTHROPIC_MODEL", "claude-sonnet-5-5")
 TIMEZONE = os.environ.get("IGRIS_TZ", "America/Bogota")
@@ -145,16 +146,52 @@ class AnthropicSession:
         return "".join(b.text for b in resp.content if b.type == "text")
 
 
+class GroqSession:
+    def __init__(self, client):
+        self.client = client
+        self.history = []
+        self.tools = [{"type": "function", "function": t} for t in TOOLS]
+
+    async def say(self, text: str) -> str:
+        self.history.append({"role": "user", "content": text})
+        while True:
+            resp = await self.client.chat.completions.create(
+                model=GROQ_MODEL, max_tokens=500,
+                messages=[{"role": "system", "content": SYSTEM}] + self.history,
+                tools=self.tools,
+            )
+            msg = resp.choices[0].message
+            if not msg.tool_calls:
+                self.history.append({"role": "assistant", "content": msg.content or ""})
+                break
+            self.history.append({
+                "role": "assistant", "content": msg.content,
+                "tool_calls": [{"id": c.id, "type": "function",
+                                "function": {"name": c.function.name,
+                                             "arguments": c.function.arguments}}
+                               for c in msg.tool_calls],
+            })
+            for c in msg.tool_calls:
+                args = json.loads(c.function.arguments or "{}")
+                self.history.append({"role": "tool", "tool_call_id": c.id,
+                                     "content": run_tool(c.function.name, args)})
+        self.history = trim_history(self.history)
+        return msg.content or ""
+
+
 class Brain:
     def __init__(self):
-        if PROVIDER == "anthropic":
+        if PROVIDER == "groq":
+            from groq import AsyncGroq
+            self.client, self.session_cls = AsyncGroq(), GroqSession
+        elif PROVIDER == "anthropic":
             from anthropic import AsyncAnthropic
             self.client, self.session_cls = AsyncAnthropic(), AnthropicSession
         elif PROVIDER == "openai":
             from openai import AsyncOpenAI
             self.client, self.session_cls = AsyncOpenAI(), OpenAISession
         else:
-            raise ValueError("IGRIS_PROVIDER debe ser 'openai' o 'anthropic'")
+            raise ValueError("IGRIS_PROVIDER debe ser 'groq', 'openai' o 'anthropic'")
 
     def new_session(self):
         """Una conversación independiente (una por cada conexión)."""
