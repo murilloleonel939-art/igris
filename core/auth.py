@@ -121,7 +121,7 @@ def create_user(db: Session, username: str, email: str, password: str) -> Option
         username=username,
         email=email,
         password_hash=hash_password(password),
-        is_active=True
+        is_active=False
     )
     db.add(user)
     db.commit()
@@ -140,10 +140,15 @@ def get_user_by_id(db: Session, user_id: int) -> Optional[User]:
 
 
 def authenticate_user(db: Session, username: str, password: str) -> Optional[User]:
-    """Autenticar usuario (contraseña correcta)"""
+    """Autenticar usuario - restaura usuarios existentes a activo"""
     user = get_user_by_username(db, username)
     if not user or not verify_password(password, user.password_hash):
         return None
+    # Restaurar usuarios existentes que quedaron inactivos
+    if user.is_active is False:
+        user.is_active = True
+        db.commit()
+        db.refresh(user)
     return user
 
 

@@ -83,6 +83,14 @@ async def login(
             detail="Usuario o contraseña incorrectos"
         )
 
+    # Si el usuario es nuevo (creado con is_active=False) y no tiene 2FA configurado, bloquear login
+    # Pero si es un usuario existente que ya tenía cuenta activa antes, permitir (restaurado por authenticate_user)
+    if not user.is_active and not db.query(TwoFactorAuth).filter(TwoFactorAuth.user_id == user.id).first():
+        raise HTTPException(
+            status_code=403,
+            detail="Cuenta pendiente de activación por un administrador"
+        )
+
     two_fa = db.query(TwoFactorAuth).filter(TwoFactorAuth.user_id == user.id).first()
     requires_2fa = bool(two_fa and two_fa.is_enabled)
 

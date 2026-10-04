@@ -9,34 +9,8 @@
 
       <!-- Formulario -->
       <div class="bg-slate-800 rounded-lg shadow-2xl p-8 border border-slate-700">
-        <!-- Tabs -->
-        <div class="flex gap-4 mb-8">
-          <button
-            @click="activeTab = 'login'"
-            :class="[
-              'flex-1 py-2 px-4 rounded font-semibold transition',
-              activeTab === 'login'
-                ? 'bg-blue-600 text-white'
-                : 'bg-slate-700 text-gray-400 hover:bg-slate-600'
-            ]"
-          >
-            Iniciar Sesión
-          </button>
-          <button
-            @click="activeTab = 'register'"
-            :class="[
-              'flex-1 py-2 px-4 rounded font-semibold transition',
-              activeTab === 'register'
-                ? 'bg-blue-600 text-white'
-                : 'bg-slate-700 text-gray-400 hover:bg-slate-600'
-            ]"
-          >
-            Registrarse
-          </button>
-        </div>
-
-        <!-- Login Form -->
-        <div v-if="activeTab === 'login'" class="space-y-4">
+        <!-- Solo Login -->
+        <div class="space-y-4">
           <div>
             <label class="block text-sm font-medium text-gray-300 mb-2">Usuario</label>
             <input
@@ -92,62 +66,7 @@
           </button>
         </div>
 
-        <!-- Register Form -->
-        <div v-else class="space-y-4">
-          <div>
-            <label class="block text-sm font-medium text-gray-300 mb-2">Usuario</label>
-            <input
-              v-model="register.username"
-              type="text"
-              class="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
-              placeholder="Elige un usuario"
-            />
-          </div>
 
-          <div>
-            <label class="block text-sm font-medium text-gray-300 mb-2">Email</label>
-            <input
-              v-model="register.email"
-              type="email"
-              class="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
-              placeholder="tu@email.com"
-            />
-          </div>
-
-          <div>
-            <label class="block text-sm font-medium text-gray-300 mb-2">Contraseña</label>
-            <input
-              v-model="register.password"
-              type="password"
-              class="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
-              placeholder="Mínimo 8 caracteres"
-            />
-          </div>
-
-          <div>
-            <label class="block text-sm font-medium text-gray-300 mb-2">Confirmar contraseña</label>
-            <input
-              v-model="register.confirmPassword"
-              type="password"
-              class="w-full px-4 py-2 bg-slate-700 border border-slate-600 rounded text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
-              placeholder="Confirma tu contraseña"
-            />
-          </div>
-
-          <!-- Errores -->
-          <div v-if="error" class="bg-red-900 border border-red-700 text-red-200 px-4 py-3 rounded">
-            {{ error }}
-          </div>
-
-          <!-- Botón Register -->
-          <button
-            @click="handleRegister"
-            :disabled="loading"
-            class="w-full bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white font-bold py-2 px-4 rounded transition"
-          >
-            {{ loading ? 'Registrando...' : 'Crear Cuenta' }}
-          </button>
-        </div>
       </div>
 
       <!-- Footer -->

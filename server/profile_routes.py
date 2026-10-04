@@ -213,3 +213,43 @@ async def get_dashboard(
         "profiles": profiles,
         "two_fa_enabled": two_fa_enabled
     }
+
+
+# ============= PANEL DE ADMIN - ACTIVAR USUARIOS =============
+
+@router.get("/users", response_model=list)
+async def list_all_users(
+    authorization: str = Header(None),
+    db: Session = Depends(get_db)
+):
+    """Listar todos los usuarios (para panel de configuración)"""
+    user = get_current_user(authorization, db)
+    if not user.is_admin and not any(
+        p.can_manage_users for p in db.query(Profile).filter(Profile.user_id == user.id).all()
+    ):
+        raise HTTPException(status_code=403, detail="No autorizado")
+
+    users = db.query(User).all()
+    return users
+
+
+@router.put("/users/{user_id}/activate", response_model=SuccessResponse)
+async def activate_user(
+    user_id: int,
+    authorization: str = Header(None),
+    db: Session = Depends(get_db)
+):
+    """Activar un usuario pendiente"""
+    user = get_current_user(authorization, db)
+    if not user.is_admin and not any(
+        p.can_manage_users for p in db.query(Profile).filter(Profile.user_id == user.id).all()
+    ):
+        raise HTTPException(status_code=403, detail="No autorizado")
+
+    target = db.query(User).filter(User.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+    target.is_active = True
+    db.commit()
+    return {"success": True, "message": f"Usuario '{target.username}' activado"}

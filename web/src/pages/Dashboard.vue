@@ -219,6 +219,27 @@
           </div>
         </div>
 
+        <!-- Usuarios (Panel de Configuración) -->
+        <div v-if="activeTab === 'users'" class="space-y-6">
+          <div class="bg-slate-800 rounded-lg p-6 border border-slate-700">
+            <h2 class="text-xl font-bold text-white mb-4">👤 Panel de Usuarios</h2>
+            <p class="text-sm text-gray-400 mb-4">Usuarios creados requieren activación manual.</p>
+            <div v-if="loadingUsers" class="text-gray-400">Cargando...</div>
+            <div v-else class="space-y-2">
+              <div v-for="u in users" :key="u.id" class="bg-slate-700 p-3 rounded flex justify-between items-center">
+                <div>
+                  <span class="text-white font-semibold">{{ u.username }}</span>
+                  <span class="text-xs text-gray-400 ml-2">({{ u.email }})</span>
+                  <span :class="['ml-2 text-xs px-2 py-0.5 rounded', u.is_active ? 'bg-green-900 text-green-200' : 'bg-red-900 text-red-200']">
+                    {{ u.is_active ? 'Activo' : 'Inactivo' }}
+                  </span>
+                </div>
+                <button v-if="!u.is_active" @click="activateUser(u.id)" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-sm transition">Activar</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- 2FA -->
         <div v-if="activeTab === '2fa'" class="space-y-6">
           <div class="bg-slate-800 rounded-lg p-6 border border-slate-700">
@@ -294,7 +315,8 @@ const activeTab = ref('providers')
 const tabs = [
   { id: 'providers', label: '⚙️ Proveedores IA' },
   { id: 'profiles', label: '👥 Perfiles' },
-  { id: '2fa', label: '🔐 2FA' }
+  { id: '2fa', label: '🔐 2FA' },
+  { id: 'users', label: '👤 Usuarios' }
 ]
 
 const aiConfig = ref({
@@ -315,6 +337,9 @@ const newProfile = ref({
   canManageUsers: false
 })
 
+const users = ref([])
+const loadingUsers = ref(false)
+
 const twoFAEnabled = ref(false)
 const twoFALoading = ref(false)
 const twoFAQR = ref(null)
@@ -322,6 +347,7 @@ const twoFACode = ref('')
 
 onMounted(async () => {
   await loadDashboard()
+  await loadUsers()
 })
 
 const logout = () => {
@@ -446,6 +472,30 @@ const confirmTwoFA = async () => {
   } catch (error) {
     console.error('Error confirming 2FA:', error)
     alert('Código incorrecto, intenta de nuevo')
+  }
+}
+
+const loadUsers = async () => {
+  try {
+    loadingUsers.value = true
+    const response = await api.get('/api/users')
+    users.value = response.data
+  } catch (error) {
+    console.error('Error cargando usuarios:', error)
+  } finally {
+    loadingUsers.value = false
+  }
+}
+
+const activateUser = async (userId) => {
+  try {
+    const response = await api.put(`/api/users/${userId}/activate`)
+    const u = users.value.find(x => x.id === userId)
+    if (u) u.is_active = true
+    alert(response.data.message || 'Usuario activado')
+  } catch (error) {
+    console.error('Error activando usuario:', error)
+    alert('No se pudo activar. ¿Tienes permisos de administrador?')
   }
 }
 
