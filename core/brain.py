@@ -1,22 +1,15 @@
 """Cerebro de Igris: personalidad, herramientas y conversación.
-Soporta Groq (gratuito local), OpenAI, Anthropic según IGRIS_PROVIDER.
+Soporta múltiples proveedores con fallback automático: Groq, OpenAI, Anthropic, Local.
 Lo usan tanto el servidor (EC2) como, más adelante, la Raspberry Pi (modo respaldo)."""
 import os, json
 from datetime import datetime
 from zoneinfo import ZoneInfo
+from core import config
 
-PROVIDER = os.environ.get("IGRIS_PROVIDER", "groq").lower()   # "groq", "openai" o "anthropic"
-GROQ_MODEL = os.environ.get("IGRIS_GROQ_MODEL", "llama-3.1-70b-versatile")
-OPENAI_MODEL = os.environ.get("IGRIS_OPENAI_MODEL", "gpt-4o-mini")
-ANTHROPIC_MODEL = os.environ.get("IGRIS_ANTHROPIC_MODEL", "claude-sonnet-5-5")
-TIMEZONE = os.environ.get("IGRIS_TZ", "America/Bogota")
+PROVIDER = config.get_active_provider()
+TIMEZONE = config.TIMEZONE
 
-SYSTEM = """Eres Igris, el caballero de las sombras y comandante leal de tu señor.
-Hablas en español, con formalidad, lealtad y economía de palabras.
-Te diriges al usuario como "mi señor". Ejecutas y confirmas con brevedad.
-Si detectas un riesgo, lo adviertes con calma antes de actuar.
-Tus respuestas se dicen EN VOZ ALTA: sin markdown, sin listas, frases cortas.
-Si hay nota importante, recuérdala solo si es relevante. No repitas el contexto completo."""
+SYSTEM = config.SYSTEM_PROMPT
 
 DIAS = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
 MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio",
@@ -146,17 +139,32 @@ class AnthropicSession:
         return "".join(b.text for b in resp.content if b.type == "text")
 
 
-class GroqSession:
-    def __init__(self, client):
+class LocalSession:
+    """Sesión para modelos locales (Ollama, etc)."""
+    def __init__(self):
+        self.history = []
+        self.tools = [{"type": "function", "function": t} for t in TOOLS]
+
+    async def say(self, text: str) -> str:
+        # Implementación futura para Ollama/modelos locales
+        return f"Modo local no implementado aún. Proveedor actual: {PROVIDER}"
+
+
+class OpenAICompatibleSession:
+    """Sesión compatible con Groq, OpenAI, y otros que usan OpenAI SDK."""
+    def __init__(self, client, model, provider_name="unknown"):
         self.client = client
+        self.model = model
+        self.provider_name = provider_name
         self.history = []
         self.tools = [{"type": "function", "function": t} for t in TOOLS]
 
     async def say(self, text: str) -> str:
         self.history.append({"role": "user", "content": text})
         while True:
+            # SIN fallback automático: si falla, lanza error
             resp = await self.client.chat.completions.create(
-                model=GROQ_MODEL, max_tokens=500,
+                model=self.model, max_tokens=500,
                 messages=[{"role": "system", "content": SYSTEM}] + self.history,
                 tools=self.tools,
             )
@@ -181,18 +189,45 @@ class GroqSession:
 
 class Brain:
     def __init__(self):
-        if PROVIDER == "groq":
+        self.primary_provider = PROVIDER
+        self.fallback_chain = config.get_fallback_chain()
+        self.clients = {}  # Cache de clientes por proveedor
+        self._init_provider(self.primary_provider)
+
+    def _init_provider(self, provider_name):
+        """Inicializa un cliente para un proveedor específico."""
+        if provider_name in self.clients:
+            return self.clients[provider_name]
+        
+        provider_config = config.get_provider_config(provider_name)
+        
+        if provider_name == "groq":
             from groq import AsyncGroq
-            self.client, self.session_cls = AsyncGroq(), GroqSession
-        elif PROVIDER == "anthropic":
-            from anthropic import AsyncAnthropic
-            self.client, self.session_cls = AsyncAnthropic(), AnthropicSession
-        elif PROVIDER == "openai":
+            self.clients[provider_name] = AsyncGroq(api_key=provider_config["api_key"])
+        elif provider_name == "openai":
             from openai import AsyncOpenAI
-            self.client, self.session_cls = AsyncOpenAI(), OpenAISession
-        else:
-            raise ValueError("IGRIS_PROVIDER debe ser 'groq', 'openai' o 'anthropic'")
+            self.clients[provider_name] = AsyncOpenAI(api_key=provider_config["api_key"])
+        elif provider_name == "anthropic":
+            from anthropic import AsyncAnthropic
+            self.clients[provider_name] = AsyncAnthropic(api_key=provider_config["api_key"])
+        elif provider_name == "local":
+            self.clients[provider_name] = None
+        
+        return self.clients.get(provider_name)
 
     def new_session(self):
-        """Una conversación independiente (una por cada conexión)."""
-        return self.session_cls(self.client)
+        """Una conversación independiente. SIN fallback automático."""
+        if self.primary_provider == "local":
+            return LocalSession()
+        elif self.primary_provider == "anthropic":
+            client = self._init_provider(self.primary_provider)
+            return AnthropicSession(client)
+        else:
+            # Groq, OpenAI (compatible con OpenAI SDK)
+            client = self._init_provider(self.primary_provider)
+            provider_config = config.get_provider_config(self.primary_provider)
+            return OpenAICompatibleSession(
+                client, 
+                provider_config["model"],
+                provider_name=self.primary_provider
+            )
