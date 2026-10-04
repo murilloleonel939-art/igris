@@ -37,19 +37,27 @@ ORDERED_PROVIDERS = sorted(
     key=lambda x: x[1].get("priority", 999)
 )
 
-# Proveedor activo y cadena de fallback: definido por el usuario
-ACTIVE_PROVIDER = os.environ.get("IGRIS_PROVIDER", "groq").lower()
-FALLBACK_CHAIN = os.environ.get("IGRIS_FALLBACK_CHAIN", "groq,openai,anthropic,local").lower().split(",")
+# Proveedor activo y cadena de fallback: definido por el usuario o auto-detectado
+ACTIVE_PROVIDER = os.environ.get("IGRIS_PROVIDER", "").lower().strip()
+FALLBACK_CHAIN_STR = os.environ.get("IGRIS_FALLBACK_CHAIN", "groq,openai,anthropic,local").lower().split(",")
+
+# Si IGRIS_PROVIDER está vacío, usar el primero disponible
+if not ACTIVE_PROVIDER:
+    available = [name for name, cfg in PROVIDERS_CONFIG.items() if cfg.get("enabled")]
+    if available:
+        ACTIVE_PROVIDER = available[0]
+        print(f"ℹ️ IGRIS_PROVIDER vacío. Auto-detectado: {ACTIVE_PROVIDER}")
+    else:
+        # Fallback a groq (puede fallar luego si no tiene API key, pero al menos inicia)
+        ACTIVE_PROVIDER = "groq"
+        print(f"⚠️ IGRIS_PROVIDER vacío y no hay proveedores disponibles. Usando: {ACTIVE_PROVIDER}")
 
 # Validar que el proveedor está disponible
 if ACTIVE_PROVIDER not in PROVIDERS_CONFIG:
     raise ValueError(f"❌ IGRIS_PROVIDER='{ACTIVE_PROVIDER}' no es válido. Opciones: {list(PROVIDERS_CONFIG.keys())}")
 
-if not PROVIDERS_CONFIG[ACTIVE_PROVIDER]["enabled"]:
-    raise ValueError(f"❌ IGRIS_PROVIDER='{ACTIVE_PROVIDER}' configurado pero sin API key. Configura la clave correspondiente.")
-
 # Validar cadena de fallback
-FALLBACK_CHAIN = [p.strip() for p in FALLBACK_CHAIN if p.strip() in PROVIDERS_CONFIG]
+FALLBACK_CHAIN = [p.strip() for p in FALLBACK_CHAIN_STR if p.strip() in PROVIDERS_CONFIG]
 if ACTIVE_PROVIDER not in FALLBACK_CHAIN:
     FALLBACK_CHAIN.insert(0, ACTIVE_PROVIDER)
 
