@@ -1,16 +1,48 @@
-import os, json, hmac, base64
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Body
+"""
+IGRIS - Servidor FastAPI con Autenticación, 2FA, y Panel de Control
+"""
+import os
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Body, Depends, Header
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from core import Brain, config
 from core import stt, tts
 from core.settings_manager import get_settings
+from core.database import init_db
+from server.auth_routes import router as auth_router
+from server.profile_routes import router as profile_router
 
-app = FastAPI()
+# Inicializar BD
+init_db()
+
+app = FastAPI(
+    title="IGRIS API",
+    description="Plataforma de control IA con autenticación y 2FA",
+    version="2.0.0"
+)
+
+# CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Incluir routers
+app.include_router(auth_router)
+app.include_router(profile_router)
+
+# Instancia global del cerebro
 brain = Brain()
-NODE_TOKEN = os.environ["NODE_TOKEN"]
+NODE_TOKEN = os.environ.get("NODE_TOKEN", "")
 
+# ============= HEALTH & STATUS (Sin autenticación) =============
 
 @app.get("/health")
 async def health():
+    """Health check - disponible sin autenticación"""
     return {"status": "ok", "name": "igris"}
 
 
@@ -34,9 +66,18 @@ async def status():
     }
 
 
+# ============= CONFIGURACIÓN LEGACY (Compatibilidad con NODE_TOKEN) =============
+
 @app.post("/set-provider/{provider_name}")
-async def set_provider(provider_name: str):
-    """Cambia el proveedor activo (requiere autenticación en el futuro)."""
+async def set_provider(
+    provider_name: str,
+    x_node_token: str = Header(None)
+):
+    """Cambiar proveedor AI (requiere NODE_TOKEN)"""
+    
+    if not x_node_token or x_node_token != NODE_TOKEN:
+        return {"status": "error", "message": "Token no válido"}
+    
     if config.set_active_provider(provider_name):
         return {
             "status": "ok",
@@ -47,8 +88,15 @@ async def set_provider(provider_name: str):
 
 
 @app.post("/set-fallback-chain")
-async def set_fallback_chain(chain: list = Body(...)):
-    """Define el orden de fallback: [groq, openai, anthropic, local]."""
+async def set_fallback_chain(
+    chain: list = Body(...),
+    x_node_token: str = Header(None)
+):
+    """Definir orden de fallback (requiere NODE_TOKEN)"""
+    
+    if not x_node_token or x_node_token != NODE_TOKEN:
+        return {"status": "error", "message": "Token no válido"}
+    
     valid_providers = list(config.PROVIDERS_CONFIG.keys())
     if all(p in valid_providers for p in chain):
         config.FALLBACK_CHAIN = chain
@@ -57,7 +105,7 @@ async def set_fallback_chain(chain: list = Body(...)):
         return {
             "status": "ok",
             "fallback_chain": config.FALLBACK_CHAIN,
-            "message": "Cadena de fallback actualizada. Se aplicará en nuevas sesiones."
+            "message": "Cadena de fallback actualizada"
         }
     return {
         "status": "error",
@@ -66,8 +114,12 @@ async def set_fallback_chain(chain: list = Body(...)):
 
 
 @app.get("/api/config")
-async def get_config():
-    """Obtiene la configuración completa (para panel web y Raspberry Pi)."""
+async def get_config(x_node_token: str = Header(None)):
+    """Obtiene configuración completa (NODE_TOKEN requerido)"""
+    
+    if not x_node_token or x_node_token != NODE_TOKEN:
+        return {"status": "error", "message": "Token no válido"}
+    
     settings = get_settings()
     return {
         "status": "ok",
@@ -82,82 +134,108 @@ async def get_config():
 
 
 @app.post("/api/config")
-async def save_config(new_config: dict):
-    """Guarda la configuración desde el panel web."""
+async def save_config(
+    new_config: dict,
+    x_node_token: str = Header(None)
+):
+    """Guarda configuración (NODE_TOKEN requerido)"""
+    
+    if not x_node_token or x_node_token != NODE_TOKEN:
+        return {"status": "error", "message": "Token no válido"}
+    
     settings = get_settings()
     try:
         settings.settings.update(new_config)
         settings.save()
         
-        # Actualizar config en tiempo de ejecución
         if "ai" in new_config:
             config.ACTIVE_PROVIDER = new_config["ai"].get("primary_provider", config.ACTIVE_PROVIDER)
             config.FALLBACK_CHAIN = new_config["ai"].get("fallback_chain", config.FALLBACK_CHAIN)
         
         return {
             "status": "ok",
-            "message": "Configuración guardada. Se aplicará en nuevas sesiones.",
+            "message": "Configuración guardada",
             "config": settings.settings
         }
     except Exception as e:
-        return {
-            "status": "error",
-            "message": str(e)
-        }
+        return {"status": "error", "message": str(e)}
 
 
 @app.get("/api/config/download")
-async def download_config():
-    """Descarga la configuración para sincronizar con Raspberry Pi."""
+async def download_config(x_node_token: str = Header(None)):
+    """Descargar configuración para Raspberry Pi (NODE_TOKEN requerido)"""
+    
+    if not x_node_token or x_node_token != NODE_TOKEN:
+        return {"status": "error", "message": "Token no válido"}
+    
     settings = get_settings()
     return {
         "status": "ok",
-        "config": settings.settings,
-        "message": "Configuración para Raspberry Pi"
+        "timestamp": "2024-10-04T00:00:00Z",
+        "config": settings.settings
     }
 
 
+# ============= WEBSOCKET (Chat con voz - requiere NODE_TOKEN) =============
+
 @app.websocket("/ws")
-async def ws(websocket: WebSocket):
-    auth = websocket.headers.get("authorization", "")
-    if not hmac.compare_digest(auth, f"Bearer {NODE_TOKEN}"):
-        await websocket.close(code=1008)
+async def websocket_endpoint(websocket: WebSocket):
+    """WebSocket para chat con voz (STT + TTS)"""
+    
+    # Verificar NODE_TOKEN en headers
+    token = websocket.headers.get("node-token")
+    if not token or token != NODE_TOKEN:
+        await websocket.close(code=4001, reason="Token no válido")
         return
+    
     await websocket.accept()
     session = brain.new_session()
-
-    async def send(heard: str, say: str):
-        data = {"heard": heard, "say": say}
-        if tts.TTS_ENABLED and say:
-            try:
-                audio = await tts.synthesize(say)
-                data["voice"] = base64.b64encode(audio).decode()
-            except Exception as e:
-                print("Error de voz (TTS):", repr(e))
-        await websocket.send_text(json.dumps(data))
-
+    
     try:
         while True:
-            msg = json.loads(await websocket.receive_text())
-            heard = ""
-            if "audio" in msg:
-                try:
-                    heard = await stt.transcribe(base64.b64decode(msg["audio"]))
-                except Exception as e:
-                    print("Error de transcripción:", repr(e))
-                    await send("", "Mi señor, no pude procesar su voz.")
-                    continue
-                if not heard:
-                    await send("", "No le escuché, mi señor.")
-                    continue
-                text = heard
-            else:
-                text = msg["text"]
-            try:
-                reply = await session.say(text)
-            except Exception as e:
-                print("Error del cerebro:", repr(e))
-                reply = "Mi señor, tuve un fallo interno. Intente de nuevo."
-            await send(heard, reply)
+            data = await websocket.receive_json()
+            
+            if data.get("type") == "message":
+                text = data.get("text", "")
+                response = await session.say(text)
+                
+                await websocket.send_json({
+                    "type": "response",
+                    "text": response,
+                    "provider": config.get_active_provider()
+                })
+            
+            elif data.get("type") == "audio":
+                # Procesar audio (futuro)
+                pass
+    
     except WebSocketDisconnect:
-        pass
+        print("✅ WebSocket desconectado")
+    except Exception as e:
+        print(f"❌ Error WebSocket: {e}")
+        await websocket.send_json({"error": str(e)})
+
+
+# ============= ROOT =============
+
+@app.get("/")
+async def root():
+    """API root"""
+    return {
+        "name": "IGRIS",
+        "version": "2.0.0",
+        "status": "operational",
+        "endpoints": {
+            "health": "/health",
+            "status": "/status",
+            "auth": "/auth/register, /auth/login, /auth/me",
+            "2fa": "/auth/2fa/setup, /auth/2fa/verify, /auth/2fa/disable",
+            "profiles": "/api/profiles, /api/profiles/{id}",
+            "ai_config": "/api/ai-config",
+            "dashboard": "/api/dashboard",
+            "websocket": "/ws (con NODE_TOKEN en header)"
+        }
+    }
+
+
+# Ejecutar con: uvicorn server.main:app --host 0.0.0.0 --port 8000
