@@ -151,38 +151,50 @@ class LocalSession:
 
 
 class OpenAICompatibleSession:
-    """Sesión compatible con Groq, OpenAI, y otros que usan OpenAI SDK."""
-    def __init__(self, client, model, provider_name="unknown"):
+    """Sesión compatible con Groq, OpenAI, y otros que usan OpenAI SDK, con fallback automático."""
+    def __init__(self, client, model, provider_name="unknown", brain_ref=None):
         self.client = client
         self.model = model
         self.provider_name = provider_name
+        self.brain_ref = brain_ref
         self.history = []
         self.tools = [{"type": "function", "function": t} for t in TOOLS]
+        self.current_provider_idx = 0  # Índice en fallback chain
 
     async def say(self, text: str) -> str:
         self.history.append({"role": "user", "content": text})
         while True:
-            # SIN fallback automático: si falla, lanza error
-            resp = await self.client.chat.completions.create(
-                model=self.model, max_tokens=500,
-                messages=[{"role": "system", "content": SYSTEM}] + self.history,
-                tools=self.tools,
-            )
-            msg = resp.choices[0].message
-            if not msg.tool_calls:
-                self.history.append({"role": "assistant", "content": msg.content or ""})
-                break
-            self.history.append({
-                "role": "assistant", "content": msg.content,
-                "tool_calls": [{"id": c.id, "type": "function",
-                                "function": {"name": c.function.name,
-                                             "arguments": c.function.arguments}}
-                               for c in msg.tool_calls],
-            })
-            for c in msg.tool_calls:
-                args = json.loads(c.function.arguments or "{}")
-                self.history.append({"role": "tool", "tool_call_id": c.id,
-                                     "content": run_tool(c.function.name, args)})
+            try:
+                resp = await self.client.chat.completions.create(
+                    model=self.model, max_tokens=500,
+                    messages=[{"role": "system", "content": SYSTEM}] + self.history,
+                    tools=self.tools,
+                )
+                msg = resp.choices[0].message
+                if not msg.tool_calls:
+                    self.history.append({"role": "assistant", "content": msg.content or ""})
+                    break
+                self.history.append({
+                    "role": "assistant", "content": msg.content,
+                    "tool_calls": [{"id": c.id, "type": "function",
+                                    "function": {"name": c.function.name,
+                                                 "arguments": c.function.arguments}}
+                                   for c in msg.tool_calls],
+                })
+                for c in msg.tool_calls:
+                    args = json.loads(c.function.arguments or "{}")
+                    self.history.append({"role": "tool", "tool_call_id": c.id,
+                                         "content": run_tool(c.function.name, args)})
+            except Exception as e:
+                # Intenta el siguiente en la cadena de fallback
+                print(f"⚠️ Error en {self.provider_name}: {e}")
+                if self.brain_ref:
+                    next_provider = self.brain_ref._get_next_fallback_provider(self.current_provider_idx)
+                    if next_provider:
+                        print(f"↻ Saltando a fallback: {next_provider}")
+                        self.brain_ref._switch_provider(next_provider, self)
+                        continue
+                raise
         self.history = trim_history(self.history)
         return msg.content or ""
 
@@ -190,7 +202,7 @@ class OpenAICompatibleSession:
 class Brain:
     def __init__(self):
         self.primary_provider = PROVIDER
-        self.fallback_chain = config.get_fallback_chain()
+        self.fallback_chain = config.FALLBACK_CHAIN
         self.clients = {}  # Cache de clientes por proveedor
         self._init_provider(self.primary_provider)
 
@@ -200,6 +212,8 @@ class Brain:
             return self.clients[provider_name]
         
         provider_config = config.get_provider_config(provider_name)
+        if not provider_config["enabled"]:
+            return None
         
         if provider_name == "groq":
             from groq import AsyncGroq
@@ -215,8 +229,22 @@ class Brain:
         
         return self.clients.get(provider_name)
 
+    def _get_next_fallback_provider(self, current_idx):
+        """Obtiene el siguiente proveedor en la cadena de fallback."""
+        for i in range(current_idx + 1, len(self.fallback_chain)):
+            provider = self.fallback_chain[i]
+            if config.PROVIDERS_CONFIG[provider]["enabled"]:
+                return provider, i
+        return None, None
+
+    def _switch_provider(self, provider_name, session):
+        """Cambia el proveedor en una sesión activa."""
+        session.provider_name = provider_name
+        session.client = self._init_provider(provider_name)
+        session.model = config.get_provider_config(provider_name)["model"]
+
     def new_session(self):
-        """Una conversación independiente. SIN fallback automático."""
+        """Una conversación independiente con fallback automático según cadena."""
         if self.primary_provider == "local":
             return LocalSession()
         elif self.primary_provider == "anthropic":
@@ -226,8 +254,10 @@ class Brain:
             # Groq, OpenAI (compatible con OpenAI SDK)
             client = self._init_provider(self.primary_provider)
             provider_config = config.get_provider_config(self.primary_provider)
+            current_idx = self.fallback_chain.index(self.primary_provider)
             return OpenAICompatibleSession(
                 client, 
                 provider_config["model"],
-                provider_name=self.primary_provider
+                provider_name=self.primary_provider,
+                brain_ref=self
             )
