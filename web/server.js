@@ -16,18 +16,31 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Backend URL (internal Coolify hostname o dominio)
-const BACKEND_URL = process.env.VITE_API_URL || 'http://igris.zottagroup.com:8000';
+const BACKEND_URL = process.env.VITE_API_URL || 'http://igris.zottagroup.com:443';
+
+// Parse backend URL
+let backendHost = 'igris.zottagroup.com';
+let backendPort = 443;
+let backendPath = '/';
+
+try {
+  const url = new URL(BACKEND_URL);
+  backendHost = url.hostname;
+  backendPort = url.port || (url.protocol === 'https:' ? 443 : 80);
+} catch (e) {
+  console.error('Error parsing BACKEND_URL:', e);
+}
 
 // Proxy function: redirige /api y /auth al backend
 function proxyToBackend(req, res) {
   const options = {
-    hostname: BACKEND_URL.includes('://') ? new URL(BACKEND_URL).hostname : BACKEND_URL,
-    port: BACKEND_URL.includes('://') ? (new URL(BACKEND_URL)).port || 80 : 8000,
+    hostname: backendHost,
+    port: backendPort,
     path: req.url,
     method: req.method,
     headers: {
       ...req.headers,
-      host: BACKEND_URL.includes('://') ? new URL(BACKEND_URL).hostname : BACKEND_URL
+      host: backendHost
     }
   };
 
@@ -59,5 +72,5 @@ app.get('*', (req, res) => {
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 IGRIS Frontend corriendo en puerto ${PORT}`);
   console.log(`📍 URL: http://0.0.0.0:${PORT}`);
-  console.log(`🔗 Backend proxy: ${BACKEND_URL}`);
+  console.log(`🔗 Backend proxy: ${backendHost}:${backendPort}`);
 });
