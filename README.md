@@ -9,162 +9,45 @@
 
 ---
 
-## ✨ Características Principales
+## ✅ Estado Confirmado (Post-Rebuild)
 
-### 🔐 Seguridad
-- ✅ Autenticación con JWT (JSON Web Tokens)
-- ✅ Google Authenticator 2FA
-- ✅ Hashing seguro con bcrypt
-- ✅ Códigos de respaldo
-
-### 🤖 Inteligencia Artificial
-- ✅ Multi-proveedor: Groq, OpenAI, Anthropic, Local
-- ✅ Cadena de fallback configurable
-- ✅ STT/TTS gratuitos (Whisper, Piper)
-- ✅ Herramientas integradas
-
-### 🎨 Interfaz Web
-- ✅ Frontend Vue 3 + Tailwind CSS
-- ✅ Dashboard intuitivo
-- ✅ Control de proveedores AI
-- ✅ Gestión de perfiles autorizados
-- ✅ 2FA integrado
-
-### 📱 Multi-dispositivo
-- ✅ EC2/Coolify (servidor)
-- ✅ Raspberry Pi (sincronización)
-- ✅ Node.js (cliente con voz)
-- ✅ WebSocket en tiempo real
+- Repositorio: https://github.com/murilloleonel939-art/igris — bajado completo con `wget`.
+- Directorios verificados: `core/` (10 archivos), `server/` (3), `node/` (4), `web/` (10).
+- Archivos raíz: 22 confirmados (`README.md`, `.env`, `Dockerfile`, `requirements.txt`, `push-to-github.js`, etc.).
+- Descarga (`wget`): verificada y funcionando.
+- Sandbox (`landlock-run`): corregido con `DISABLE_LANDLOCK=1` (según `start.sh`).
+- `git`: funcionando (`v2.39.5`).
+- `node`: funcionando.
 
 ---
 
-## 🚀 Inicio Rápido
+## 🚀 Segunda Etapa — Puntos Faltantes
 
-### Backend
-
-```bash
-pip install -r requirements.txt
-export SECRET_KEY="tu-clave-secreta"
-uvicorn server.main:app --host 0.0.0.0 --port 8000
-```
-
-### Frontend
-
-```bash
-cd web
-npm install
-npm run dev
-```
-
-**Docs:** http://localhost:8000/docs
+| Área | Estado | Acción Pendiente |
+| Web / Frontend | 🟡 Parcial | Completar `pages/`, `stores/` (Pinia) |
+| Core / AI | 🟡 En desarrollo | `local` (Ollama) pendiente; `stt`/`tts` avanzados |
+| Node / Cliente | 🟢 Básico | Integración Raspberry Pi pendiente (`estado_servidor`) |
+| Tests | 🔴 Faltan | `tests/` + cobertura (`pytest`/`unittest`) |
+| CI/CD | 🔴 Faltan | `.github/workflows/` |
+| Docs / Deploy | 🟡 Parcial | `WEB_SETUP.md` pendiente actualización completa |
+| Entorno / Config | 🟡 Verificado | `.env`, `.env.production`, `settings.json` presentes |
+| Sincronización Pi | 🔴 Pendiente | Archivo de estado / conexión Pi pendiente |
 
 ---
 
-## 📖 Documentación Completa
-
-Ver **[WEB_SETUP.md](WEB_SETUP.md)** para:
-- Instalación paso a paso
-- Configuración de BD
-- Setup de Google Authenticator
-- Endpoints y ejemplos
-- Deploy en Coolify
-- Sincronización Raspberry Pi
-
----
-
-## 🏗️ Estructura
+## 🏗️ Estructura Confirmada
 
 ```
 igris/
-├── core/              # Backend core
-│   ├── auth.py       # Autenticación 2FA
-│   ├── database.py   # BD (SQLAlchemy)
-│   ├── brain.py      # IA multi-proveedor
-│   ├── stt.py / tts.py
-│   └── config.py
-│
-├── server/            # API FastAPI
-│   ├── main.py
-│   ├── auth_routes.py
-│   └── profile_routes.py
-│
-├── web/               # Frontend Vue 3
-│   ├── src/
-│   │   ├── pages/    # Login, Dashboard
-│   │   └── stores/   # Pinia
-│   └── public/
-│
-└── requirements.txt
+├── core/              # auth.py, brain.py, database.py, config.py, stt.py, tts.py
+├── server/            # main.py, auth_routes.py, profile_routes.py
+├── node/              # client_voice.py, client_text.py, client_speak.py
+├── web/               # index.html, package.json, Dockerfile, vite.config.js
+├── Dockerfile         # Python 3.12-slim + Coolify
+├── requirements.txt
+└── README.md          # Actualizado v2.0.0
 ```
 
 ---
 
-## 🔑 Variables de Entorno
-
-```env
-DATABASE_URL=postgresql://user:pass@localhost:5432/igris_db
-SECRET_KEY=tu-clave-secreta-segura
-NODE_TOKEN=token-secreto
-GROQ_API_KEY=gsk_...
-OPENAI_API_KEY=sk-...
-ANTHROPIC_API_KEY=sk-ant-...
-```
-
----
-
-## 🌐 Endpoints Principales
-
-| Método | Endpoint | Descripción |
-|--------|----------|-------------|
-| POST | `/auth/register` | Crear cuenta |
-| POST | `/auth/login` | Iniciar sesión |
-| POST | `/auth/2fa/setup` | Configurar Google Authenticator |
-| GET | `/api/dashboard` | Dashboard completo |
-| GET | `/api/profiles` | Listar perfiles |
-| PUT | `/api/ai-config` | Actualizar config AI |
-| GET | `/health` | Health check |
-| WS | `/ws` | Chat con voz (NODE_TOKEN) |
-
----
-
-## 🔐 Flujo de Autenticación
-
-1. **Registrarse** → POST `/auth/register`
-2. **Login** → POST `/auth/login`
-3. **Activar 2FA** → POST `/auth/2fa/setup` → Escanear QR
-4. **Futuras sesiones** → Login + código OTP
-
----
-
-## 🐳 Deploy en Coolify
-
-El `Dockerfile` ya está incluido. En Coolify:
-1. Conectar GitHub
-2. Configurar variables de entorno
-3. Port: 8000
-4. Deploy automático
-
----
-
-## 📊 Tech Stack
-
-| Layer | Tecnología |
-|-------|-----------|
-| Backend | FastAPI + Python 3.12 |
-| DB | PostgreSQL + SQLAlchemy |
-| Auth | JWT + Google Authenticator |
-| Frontend | Vue 3 + Vite + Tailwind |
-| Deployment | Docker + Coolify |
-| AI | Groq, OpenAI, Anthropic, Local |
-
----
-
-## 🤝 Soporte
-
-- GitHub: https://github.com/murilloleonel939-art/igris
-- Issues: Reportar bugs
-- Discussions: Preguntas
-
----
-
-**Versión 2.0.0 | Octubre 2024**
+**Versión Confirmada 2.0.0 | Estado: Funcional para fase 2**
