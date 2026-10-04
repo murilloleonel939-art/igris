@@ -37,8 +37,9 @@ ORDERED_PROVIDERS = sorted(
     key=lambda x: x[1].get("priority", 999)
 )
 
-# Proveedor activo: definido por el usuario (SIN auto-detect)
+# Proveedor activo y cadena de fallback: definido por el usuario
 ACTIVE_PROVIDER = os.environ.get("IGRIS_PROVIDER", "groq").lower()
+FALLBACK_CHAIN = os.environ.get("IGRIS_FALLBACK_CHAIN", "groq,openai,anthropic,local").lower().split(",")
 
 # Validar que el proveedor está disponible
 if ACTIVE_PROVIDER not in PROVIDERS_CONFIG:
@@ -46,6 +47,13 @@ if ACTIVE_PROVIDER not in PROVIDERS_CONFIG:
 
 if not PROVIDERS_CONFIG[ACTIVE_PROVIDER]["enabled"]:
     raise ValueError(f"❌ IGRIS_PROVIDER='{ACTIVE_PROVIDER}' configurado pero sin API key. Configura la clave correspondiente.")
+
+# Validar cadena de fallback
+FALLBACK_CHAIN = [p.strip() for p in FALLBACK_CHAIN if p.strip() in PROVIDERS_CONFIG]
+if ACTIVE_PROVIDER not in FALLBACK_CHAIN:
+    FALLBACK_CHAIN.insert(0, ACTIVE_PROVIDER)
+
+print(f"ℹ️ IGRIS: Proveedor primario={ACTIVE_PROVIDER}, Fallback chain={FALLBACK_CHAIN}")
 
 TIMEZONE = os.environ.get("IGRIS_TZ", "America/Bogota")
 
