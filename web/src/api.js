@@ -1,6 +1,7 @@
 import axios from 'axios'
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+// API URL - hardcoded para producción
+const API_URL = 'https://igris.zottagroup.com'
 
 const api = axios.create({
   baseURL: API_URL,
