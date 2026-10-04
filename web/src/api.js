@@ -1,7 +1,7 @@
 import axios from 'axios'
 
 // API URL - hardcoded para producción
-const API_URL = 'https://igris.zottagroup.com'
+const API_URL = 'https://igris.zottagroup.com:8000'
 
 const api = axios.create({
   baseURL: API_URL,
