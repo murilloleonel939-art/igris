@@ -116,7 +116,7 @@ const handleLogin = async () => {
     
     router.push('/dashboard')
   } catch (err) {
-    if (err.error?.includes('2FA')) {
+    if (err.error?.includes('2FA') || authStore.requires2FA) {
       requiresOTP.value = true
       error.value = 'Por favor ingresa tu código 2FA'
     } else {
