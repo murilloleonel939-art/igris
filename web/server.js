@@ -16,7 +16,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Backend URL (internal Coolify hostname o dominio)
-const BACKEND_URL = process.env.VITE_API_URL || 'http://igris.zottagroup.com:443';
+const BACKEND_URL = process.env.VITE_API_URL || 'http://localhost:8000';
 
 // Parse backend URL
 let backendHost = 'igris.zottagroup.com';
