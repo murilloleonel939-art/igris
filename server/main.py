@@ -29,6 +29,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "https://webigris.zottagroup.com",
+        "https://igris.zottagroup.com",
+        "wss://igris.zottagroup.com",
         "http://localhost:3000",
         "http://127.0.0.1:3000",
     ],
@@ -232,6 +234,14 @@ async def websocket_endpoint(websocket: WebSocket):
     except Exception as e:
         print(f"❌ Error WebSocket: {e}")
         await websocket.send_json({"error": str(e)})
+
+
+# CSP Header para WebSocket
+@app.middleware("http")
+async def add_csp_header(request, call_next):
+    response = await call_next(request)
+    response.headers["Content-Security-Policy"] = "default-src 'self'; connect-src 'self' https://igris.zottagroup.com wss://igris.zottagroup.com; script-src 'self';"
+    return response
 
 
 # ============= ROOT =============
