@@ -15,18 +15,18 @@ const __dirname = dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Backend URL (internal Coolify hostname o dominio)
-const BACKEND_URL = process.env.VITE_API_URL || 'http://localhost:8000';
+// Backend URL para proxy interno (siempre localhost:8000, no usar VITE_API_URL)
+const BACKEND_URL = 'http://localhost:8000';
 
-// Parse backend URL
-let backendHost = 'igris.zottagroup.com';
-let backendPort = 443;
+// Parse backend URL (siempre localhost)
+let backendHost = 'localhost';
+let backendPort = 8000;
 let backendPath = '/';
 
 try {
   const url = new URL(BACKEND_URL);
-  backendHost = url.hostname;
-  backendPort = url.port || (url.protocol === 'https:' ? 443 : 80);
+  backendHost = url.hostname || 'localhost';
+  backendPort = url.port ? parseInt(url.port, 10) : 8000;
 } catch (e) {
   console.error('Error parsing BACKEND_URL:', e);
 }
