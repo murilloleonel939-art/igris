@@ -21,13 +21,19 @@ app = FastAPI(
     version="2.0.0"
 )
 
-# CORS
+# CORS - Permitir frontend desde webigris.zottagroup.com
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "https://webigris.zottagroup.com",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "*"
+    ],
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["*"],
+    max_age=3600,
 )
 
 # Incluir routers
