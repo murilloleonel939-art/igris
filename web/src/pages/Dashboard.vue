@@ -219,6 +219,23 @@
           </div>
         </div>
 
+        <!-- Chat IGRIS -->
+        <div v-if="activeTab === 'chat'" class="space-y-6">
+          <div class="bg-slate-800 rounded-lg p-6 border border-slate-700">
+            <h2 class="text-xl font-bold text-white mb-4">💬 Chat con IGRIS</h2>
+            <div class="bg-slate-700 rounded p-4 h-64 overflow-y-auto mb-4">
+              <div v-for="(msg, i) in chatMessages" :key="i" class="mb-2 text-sm">
+                <span :class="msg.from === 'user' ? 'text-blue-300' : 'text-green-300'">{{ msg.from }}:</span>
+                <span class="text-white">{{ msg.text }}</span>
+              </div>
+            </div>
+            <div class="flex gap-2">
+              <input v-model="chatInput" @keyup.enter="sendChat" type="text" class="flex-1 px-3 py-2 bg-slate-600 border border-slate-500 rounded text-white focus:outline-none focus:border-blue-500" placeholder="Escribe un mensaje..." />
+              <button @click="sendChat" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded transition">Enviar</button>
+            </div>
+          </div>
+        </div>
+
         <!-- Usuarios (Panel de Configuración) -->
         <div v-if="activeTab === 'users'" class="space-y-6">
           <div class="bg-slate-800 rounded-lg p-6 border border-slate-700">
@@ -316,7 +333,8 @@ const tabs = [
   { id: 'providers', label: '⚙️ Proveedores IA' },
   { id: 'profiles', label: '👥 Perfiles' },
   { id: '2fa', label: '🔐 2FA' },
-  { id: 'users', label: '👤 Usuarios' }
+  { id: 'users', label: '👤 Usuarios' },
+  { id: 'chat', label: '💬 Chat IGRIS' }
 ]
 
 const aiConfig = ref({
@@ -496,6 +514,37 @@ const activateUser = async (userId) => {
   } catch (error) {
     console.error('Error activando usuario:', error)
     alert('No se pudo activar. ¿Tienes permisos de administrador?')
+  }
+}
+
+const chatInput = ref('')
+const chatMessages = ref([])
+
+const chatWs = ref(null)
+
+const sendChat = async () => {
+  if (!chatInput.value.trim()) return
+  chatMessages.value.push({ from: 'user', text: chatInput.value })
+  const msg = chatInput.value
+  chatInput.value = ''
+  if (!chatWs.value || chatWs.value.readyState !== WebSocket.OPEN) {
+    try {
+      chatWs.value = new WebSocket('wss://igris.zottagroup.com/ws', ['node-token', '89d8b3046310416c9662f7f048a0084804592b122d3747139942167eb8242468'])
+      chatWs.value.onopen = () => {
+        chatWs.value.send(JSON.stringify({ type: 'message', text: msg }))
+      }
+      chatWs.value.onmessage = (e) => {
+        const data = JSON.parse(e.data)
+        chatMessages.value.push({ from: 'igris', text: data.text || data.error || 'Respuesta recibida' })
+      }
+      chatWs.value.onerror = (e) => {
+        chatMessages.value.push({ from: 'igris', text: 'Error en la conexión: ' + (e.message || 'desconocido') })
+      }
+    } catch (e) {
+      chatMessages.value.push({ from: 'igris', text: 'No se pudo conectar al WebSocket' })
+    }
+  } else {
+    chatWs.value.send(JSON.stringify({ type: 'message', text: msg }))
   }
 }
 
