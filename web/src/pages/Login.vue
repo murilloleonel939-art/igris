@@ -22,8 +22,7 @@
           >
             Iniciar Sesión
           </button>
-          <!-- Botón de Registrarse OCULTO -->
-          <!-- <button
+          <button
             @click="activeTab = 'register'"
             :class="[
               'flex-1 py-2 px-4 rounded font-semibold transition',
@@ -33,7 +32,7 @@
             ]"
           >
             Registrarse
-          </button> -->
+          </button>
         </div>
 
         <!-- Login Form -->
@@ -93,8 +92,8 @@
           </button>
         </div>
 
-        <!-- Register Form - OCULTO -->
-        <div v-else-if="false" class="space-y-4">
+        <!-- Register Form -->
+        <div v-else class="space-y-4">
           <div>
             <label class="block text-sm font-medium text-gray-300 mb-2">Usuario</label>
             <input
