@@ -1,7 +1,7 @@
 import axios from 'axios'
 
-// API URL - HTTP para evitar problemas SSL en puertos no-estándar
-const API_URL = 'http://igris.zottagroup.com:8000'
+// API URL - HTTPS puerto 443 (estándar)
+const API_URL = 'https://igris.zottagroup.com'
 
 const api = axios.create({
   baseURL: API_URL,
