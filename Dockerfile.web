@@ -1,0 +1,29 @@
+# IGRIS Frontend - Simple Dockerfile (Alternative)
+# Más simple y compatible con Coolify
+
+FROM node:18-alpine
+
+WORKDIR /app
+
+# Copiar package.json
+COPY web/package.json ./
+
+# Instalar todas las dependencias (incluyendo devDeps para build)
+RUN npm install --legacy-peer-deps
+
+# Copiar código fuente
+COPY web/ .
+
+# Build Vue 3
+RUN npm run build
+
+# Puerto
+EXPOSE 3000
+
+# Variables de entorno
+ENV NODE_ENV=production
+ENV PORT=3000
+ENV VITE_API_URL=https://igris.zottaggroup.com
+
+# Start
+CMD ["npm", "start"]

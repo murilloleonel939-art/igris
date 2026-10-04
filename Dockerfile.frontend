@@ -3,10 +3,17 @@
 FROM node:18-alpine AS builder
 
 WORKDIR /app
-COPY web/package*.json ./
-RUN npm ci --cache /tmp/npm-cache --no-audit
 
+# Copiar package.json
+COPY web/package.json ./
+
+# Instalar dependencias
+RUN npm install --legacy-peer-deps
+
+# Copiar código fuente
 COPY web/ .
+
+# Build
 RUN npm run build
 
 # Stage 2: Runtime
@@ -14,12 +21,13 @@ FROM node:18-alpine
 
 WORKDIR /app
 
-# Instalar solo dependencias de producción
-RUN npm install --global express
+# Copiar archivos del builder
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/server.js .
+COPY --from=builder /app/package.json .
 
-# Copiar archivos buildeados
-COPY web/dist ./dist
-COPY web/server.js .
+# Instalar solo dependencias de producción
+RUN npm install --only=production --legacy-peer-deps
 
 # Puerto
 EXPOSE 3000
@@ -31,7 +39,7 @@ ENV VITE_API_URL=https://igris.zottaggroup.com
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD node -e "require('http').get('http://localhost:3000/', (r) => {if (r.statusCode !== 200) throw new Error(r.statusCode)})"
+    CMD node -e "require('http').get('http://localhost:3000/', (r) => {if (r.statusCode !== 200) throw new Error(r.statusCode)})" || exit 1
 
 # Start
 CMD ["node", "server.js"]
