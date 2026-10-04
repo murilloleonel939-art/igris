@@ -36,9 +36,9 @@ app.add_middleware(
     max_age=3600,
 )
 
-# Incluir routers
-app.include_router(auth_router)
-app.include_router(profile_router)
+# Incluir routers con prefijo /auth
+app.include_router(auth_router, prefix="/auth")
+app.include_router(profile_router, prefix="/api")
 
 # Instancia global del cerebro
 brain = Brain()
