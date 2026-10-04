@@ -37,13 +37,17 @@ ORDERED_PROVIDERS = sorted(
     key=lambda x: x[1].get("priority", 999)
 )
 
-# Proveedor activo (el primero en la lista ordenada)
+# Proveedor activo: detecta automáticamente según disponibilidad
 ACTIVE_PROVIDER = os.environ.get("IGRIS_PROVIDER", None)
-if ACTIVE_PROVIDER is None and ORDERED_PROVIDERS:
-    ACTIVE_PROVIDER = ORDERED_PROVIDERS[0][0]
-elif ACTIVE_PROVIDER and ACTIVE_PROVIDER not in dict(ORDERED_PROVIDERS):
-    print(f"⚠️ Proveedor {ACTIVE_PROVIDER} no disponible. Usando {ORDERED_PROVIDERS[0][0]}")
-    ACTIVE_PROVIDER = ORDERED_PROVIDERS[0][0]
+
+# Si IGRIS_PROVIDER está vacío o no es válido, usa el de mayor prioridad disponible
+if ACTIVE_PROVIDER is None or ACTIVE_PROVIDER not in dict(ORDERED_PROVIDERS):
+    if ORDERED_PROVIDERS:
+        ACTIVE_PROVIDER = ORDERED_PROVIDERS[0][0]
+        print(f"ℹ️ IGRIS_PROVIDER no configurado. Usando: {ACTIVE_PROVIDER} (auto-detectado)")
+    else:
+        print("⚠️ No hay proveedores disponibles. Configura una API key.")
+        ACTIVE_PROVIDER = "local"  # Último recurso
 
 TIMEZONE = os.environ.get("IGRIS_TZ", "America/Bogota")
 
