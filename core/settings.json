@@ -1,0 +1,33 @@
+{
+  "version": "1.0",
+  "ai": {
+    "primary_provider": "groq",
+    "fallback_chain": ["groq", "openai", "anthropic", "local"],
+    "models": {
+      "groq": "llama-3.1-70b-versatile",
+      "openai": "gpt-4o-mini",
+      "anthropic": "claude-sonnet-3-5",
+      "local": "ollama"
+    }
+  },
+  "stt": {
+    "provider": "local",
+    "model": "tiny",
+    "language": "es"
+  },
+  "tts": {
+    "provider": "local",
+    "voice": "es_ES-carlos-medium",
+    "instructions": "Habla como un caballero de las sombras: grave, solemne, pausado, con respeto."
+  },
+  "system": {
+    "personality": "caballero_sombras",
+    "timezone": "America/Bogota",
+    "language": "es"
+  },
+  "raspberry_pi": {
+    "enabled": false,
+    "url": "",
+    "auto_sync": true
+  }
+}
