@@ -1,7 +1,8 @@
 import axios from 'axios'
 
-// API URL - HTTPS puerto 443 (estándar)
-const API_URL = 'https://igris.zottagroup.com'
+// API URL - Ruta relativa para evitar problemas CORS
+// El frontend en webigris.zottagroup.com redirige /api hacia igris.zottagroup.com:443
+const API_URL = '/auth'
 
 const api = axios.create({
   baseURL: API_URL,
