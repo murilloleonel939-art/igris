@@ -1,5 +1,5 @@
 import os, json, hmac, base64
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Body
 from core import Brain, config
 from core import stt, tts
 from core.settings_manager import get_settings
@@ -47,7 +47,7 @@ async def set_provider(provider_name: str):
 
 
 @app.post("/set-fallback-chain")
-async def set_fallback_chain(chain: list):
+async def set_fallback_chain(chain: list = Body(...)):
     """Define el orden de fallback: [groq, openai, anthropic, local]."""
     valid_providers = list(config.PROVIDERS_CONFIG.keys())
     if all(p in valid_providers for p in chain):
