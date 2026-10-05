@@ -1,18 +1,9 @@
 <template>
-  <div class="min-h-screen bg-gradient-to-br from-slate-900 to-slate-800">
-    <!-- Header -->
-    <header class="bg-slate-800 border-b border-slate-700 sticky top-0 z-10">
-      <div class="max-w-2xl mx-auto px-6 py-4 flex justify-between items-center">
-        <div class="flex items-center gap-3">
-          <h1 class="text-2xl font-bold text-white">💬 Chat con Iris</h1>
-        </div>
-      </div>
-    </header>
-
+  <div class="min-h-screen bg-gradient-to-br from-slate-900 to-slate-800 flex flex-col">
     <!-- Content -->
-    <div class="max-w-2xl mx-auto px-6 py-8 flex flex-col h-[calc(100%-160px)]">
+    <div class="flex-1 px-6">
       <!-- Chat Messages -->
-      <div class="bg-slate-800 rounded-lg p-4 flex-1 overflow-y-auto mb-4">
+      <div class="bg-slate-800 rounded-lg p-4 mb-4 flex-1 overflow-y-auto">
         <div v-for="(msg, i) in chatMessages" :key="i" class="mb-2 text-sm">
           <span :class="msg.from === 'user' ? 'text-blue-300' : 'text-green-300'">{{ msg.from }}:</span>
           <span class="text-white">{{ msg.text }}</span>
