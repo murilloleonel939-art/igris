@@ -15,7 +15,7 @@ PROVIDERS_CONFIG = {
         "enabled": os.environ.get("NEMOTRON_API_KEY") is not None,
         "api_key": os.environ.get("NEMOTRON_API_KEY", ""),
         "api_base": os.environ.get("NEMOTRON_API_BASE", "https://integrate.api.nvidia.com/v1"),
-        "model": "nvidia/nemotron-3-super-120b-a12b",
+        "model": (lambda m: m if m.startswith("nvidia/") else f"nvidia/{m}")(os.environ.get("IGRIS_NEMOTRON_MODEL", "nemotron-3-super-120b-a12b")),
         "priority": 1,  # Alta prioridad (misma que groq para tentar primero)
     },
     "openai": {
