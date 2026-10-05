@@ -1,1 +1,16 @@
+# Environment
 .env
+
+# Dependencies
+node_modules/
+web/node_modules/
+
+# Build output
+dist/
+web/dist/
+
+# Backup files
+*.bak
+*.bak2
+*.bak3
+*.before_cors_fix
