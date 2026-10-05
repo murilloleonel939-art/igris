@@ -201,8 +201,19 @@ async def download_config(x_node_token: str = Header(None)):
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     """WebSocket para chat con voz (STT + TTS)"""
-    # Obtener token del parámetro de consulta ?token=...
+    # Intentar obtener token del parámetro de consulta ?token=...
     token = websocket.query_params.get("token")
+    
+    # Si no está en query params, intentar obtenerlo del encabezado Sec-WebSocket-Protocol
+    if not token:
+        protocol_header = websocket.headers.get("sec-websocket-protocol", "")
+        if protocol_header.startswith("node-token, "):
+            # Formato esperado: "node-token, <actual_token>"
+            token = protocol_header[12:]  # Eliminar el prefijo "node-token, "
+        elif protocol_header == "node-token":
+            # Caso alternativo: solo el protocolo sin token (no debería ocurrir)
+            token = ""
+        # Si no se encontró el protocolo esperado, token permanece vacío
     
     # Debug: print token and NODE_TOKEN (first and last 4 chars) if validation fails
     if not valid_node_token(token):
@@ -213,7 +224,7 @@ async def websocket_endpoint(websocket: WebSocket):
             return s[:4] + "..." + s[-4:]
         token_masked = _mask(token)
         node_token_masked = _mask(NODE_TOKEN)
-        print(f"WEBSOCKET DEBUG: token='{token_masked}', NODE_TOKEN='{node_token_masked}', query_params={dict(websocket.query_params)}")
+        print(f"WEBSOCKET DEBUG: token='{token_masked}', NODE_TOKEN='{node_token_masked}', query_params={dict(websocket.query_params)}, headers_sec_websocket_protocol='{websocket.headers.get('sec-websocket-protocol', '')}'")
         await websocket.close(code=4001, reason="Token no válido o formato incorrecto")
         return
 
