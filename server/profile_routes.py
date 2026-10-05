@@ -5,6 +5,10 @@ from fastapi import APIRouter, Depends, HTTPException, Header
 from sqlalchemy.orm import Session
 from typing import List
 from core.database import get_db, Profile, AIConfig, TwoFactorAuth, User
+from core.database import get_db, Profile, AIConfig, TwoFactorAuth, User
+=======
+from core.database import get_db, User, Profile, AIConfig, TwoFactorAuth
+>>>>>>> origin/main
 from core.schemas import (
     ProfileCreate, ProfileUpdate, ProfileResponse,
     AIConfigUpdate, AIConfigResponse, DashboardResponse,

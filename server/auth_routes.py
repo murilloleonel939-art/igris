@@ -19,7 +19,10 @@ from core.schemas import (
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-def get_current_user(authorization: str, db: Session) -> User:
+def get_current_user(
+    authorization: str = Header(None),
+    db: Session = Depends(get_db)
+) -> User:
     """Obtiene el usuario actual a partir del header 'Authorization: Bearer <token>'"""
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Token no válido")
