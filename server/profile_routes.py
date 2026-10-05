@@ -5,10 +5,6 @@ from fastapi import APIRouter, Depends, HTTPException, Header
 from sqlalchemy.orm import Session
 from typing import List
 from core.database import get_db, Profile, AIConfig, TwoFactorAuth, User
-from core.database import get_db, Profile, AIConfig, TwoFactorAuth, User
-=======
-from core.database import get_db, User, Profile, AIConfig, TwoFactorAuth
->>>>>>> origin/main
 from core.schemas import (
     ProfileCreate, ProfileUpdate, ProfileResponse,
     AIConfigUpdate, AIConfigResponse, DashboardResponse,
@@ -228,7 +224,11 @@ async def list_all_users(
 ):
     """Listar todos los usuarios (para panel de configuración)"""
     user = get_current_user(authorization, db)
-    # Any authenticated user can list users
+    if not user.is_admin and not any(
+        p.can_manage_users for p in db.query(Profile).filter(Profile.user_id == user.id).all()
+    ):
+        raise HTTPException(status_code=403, detail="No autorizado")
+
     users = db.query(User).all()
     return users
 
