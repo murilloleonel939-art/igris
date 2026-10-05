@@ -216,7 +216,16 @@ async def websocket_endpoint(websocket: WebSocket):
         # No se encontró el protocolo esperado
         token = ""
 
+    # Debug: print token and NODE_TOKEN (first and last 4 chars) if validation fails
     if not valid_node_token(token):
+        # Only show partial tokens for security in logs
+        def _mask(s):
+            if not s or len(s) < 8:
+                return s
+            return s[:4] + "..." + s[-4:]
+        token_masked = _mask(token)
+        node_token_masked = _mask(NODE_TOKEN)
+        print(f"WEBSOCKET DEBUG: token='{token_masked}', NODE_TOKEN='{node_token_masked}', protocol_header='{protocol_header}'")
         await websocket.close(code=4001, reason="Token no válido o formato incorrecto")
         return
 
