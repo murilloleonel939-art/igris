@@ -11,6 +11,13 @@ PROVIDERS_CONFIG = {
         "model": os.environ.get("IGRIS_GROQ_MODEL", "openai/gpt-oss-120b"),
         "priority": 1,  # Prioridad más alta = se intenta primero
     },
+    "nemotron": {
+        "enabled": os.environ.get("NEMOTRON_API_KEY") is not None,
+        "api_key": os.environ.get("NEMOTRON_API_KEY", ""),
+        "api_base": os.environ.get("NEMOTRON_API_BASE", "https://integrate.api.nvidia.com/v1"),
+        "model": os.environ.get("IGRIS_NEMOTRON_MODEL", "nemotron-3-super-120b"),
+        "priority": 1,  # Alta prioridad (misma que groq para tentar primero)
+    },
     "openai": {
         "enabled": os.environ.get("OPENAI_API_KEY") is not None,
         "api_key": os.environ.get("OPENAI_API_KEY", ""),

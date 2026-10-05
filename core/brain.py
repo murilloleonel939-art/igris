@@ -284,7 +284,20 @@ class Brain:
         if not provider_config["enabled"]:
             return None
         
-        if provider_name == "groq":
+        # Manejo especial para proveedores que necesitan base_url personalizada (como NVIDIA)
+        if provider_name == "nemotron":
+            from openai import AsyncOpenAI
+            api_key = provider_config["api_key"]
+            api_base = provider_config.get("api_base")
+            # Si se proporciona una base_url personalizada, la usamos
+            if api_base:
+                self.clients[provider_name] = AsyncOpenAI(api_key=api_key, base_url=api_base)
+            else:
+                self.clients[provider_name] = AsyncOpenAI(api_key=api_key)
+            return self.clients.get(provider_name)
+        
+        # Los proveedores existentes (Groq, OpenAI, Anthropic) permanecen igual
+        elif provider_name == "groq":
             from groq import AsyncGroq
             self.clients[provider_name] = AsyncGroq(api_key=provider_config["api_key"])
         elif provider_name == "openai":
@@ -294,7 +307,7 @@ class Brain:
             from anthropic import AsyncAnthropic
             self.clients[provider_name] = AsyncAnthropic(api_key=provider_config["api_key"])
         elif provider_name == "local":
-            self.clients[provider_name] = None
+            self.clients[provider_name] = None  # Local no necesita cliente de API
         
         return self.clients.get(provider_name)
 
