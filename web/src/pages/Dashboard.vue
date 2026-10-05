@@ -56,12 +56,12 @@ const sendChat = async () => {
   
   try {
     const response = await api.post('/api/chat', { text: msg })
-    if (response.status === 'ok') {
-      chatMessages.value.push({ from: 'iris', text: response.reply })
+    if (response.data.status === 'ok') {
+      chatMessages.value.push({ from: 'iris', text: response.data.reply })
     } else {
       chatMessages.value.push({
         from: 'iris',
-        text: `Error del servidor: ${response.message || 'desconocido'}`
+        text: `Error del servidor: ${response.data.message || 'desconocido'}`
       })
     }
   } catch (err) {
