@@ -529,7 +529,7 @@ const sendChat = async () => {
   chatInput.value = ''
   if (!chatWs.value || chatWs.value.readyState !== WebSocket.OPEN) {
     try {
-      chatWs.value = new WebSocket('wss://igris.zottagroup.com/ws', ['node-token', '89d8b3046310416c9662f7f048a0084804592b122d3747139942167eb8242468'])
+      chatWs.value = new WebSocket(`wss://igris.zottagroup.com/ws?token=89d8b3046310416c9662f7f048a0084804592b122d3747139942167eb8242468`)
       chatWs.value.onopen = () => {
         chatWs.value.send(JSON.stringify({ type: 'message', text: msg }))
       }
