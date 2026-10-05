@@ -165,31 +165,97 @@ class OpenAICompatibleSession:
         self.history.append({"role": "user", "content": text})
         while True:
             try:
+                print(f"🔄 Llamando a {self.provider_name} con mensaje: {text[:50]}...")
                 resp = await self.client.chat.completions.create(
                     model=self.model, max_tokens=500,
                     messages=[{"role": "system", "content": SYSTEM}] + self.history,
                     tools=self.tools,
                 )
+                print(f"📨 Respuesta recibida de {self.provider_name}: {type(resp)}")
+                
                 if resp is None:
+                    print(f"⚠️ Respuesta None de {self.provider_name}")
                     raise RuntimeError("Received None response from client")
+                    
+                if not hasattr(resp, 'choices'):
+                    print(f"⚠️ Respuesta sin atributo 'choices' de {self.provider_name}: {resp}")
+                    raise RuntimeError("Response missing 'choices' attribute")
+                    
+                if resp.choices is None:
+                    print(f"⚠️ Respuesta con choices None de {self.provider_name}")
+                    raise RuntimeError("Response choices is None")
+                    
+                if len(resp.choices) == 0:
+                    print(f"⚠️ Respuesta con choices vacío de {self.provider_name}")
+                    raise RuntimeError("Response choices is empty")
+                    
                 msg = resp.choices[0].message
-                if not msg.tool_calls:
+                print(f"📝 Mensaje de {self.provider_name}: {type(msg)}")
+                
+                if msg is None:
+                    print(f"⚠️ Mensaje None de {self.provider_name}")
+                    raise RuntimeError("Message is None")
+                    
+                if not hasattr(msg, 'tool_calls'):
+                    print(f"⚠️ Mensaje sin atributo 'tool_calls' de {self.provider_name}: {msg}")
+                    # Treat as no tool calls
                     self.history.append({"role": "assistant", "content": msg.content or ""})
                     break
+                    
+                tool_calls = msg.tool_calls
+                if tool_calls is None:
+                    print(f"ℹ️ Tool calls es None de {self.provider_name}, tratándolo como vacío")
+                    tool_calls = []
+                    
+                if not tool_calls:  # Empty list or None (now handled as empty list)
+                    self.history.append({"role": "assistant", "content": msg.content or ""})
+                    break
+                    
                 self.history.append({
                     "role": "assistant", "content": msg.content,
                     "tool_calls": [{"id": c.id, "type": "function",
                                     "function": {"name": c.function.name,
                                                  "arguments": c.function.arguments}}
-                                   for c in msg.tool_calls],
+                                   for c in tool_calls],
                 })
-                for c in msg.tool_calls:
-                    args = json.loads(c.function.arguments or "{}")
-                    self.history.append({"role": "tool", "tool_call_id": c.id,
-                                         "content": run_tool(c.function.name, args)})
+                
+                for c in tool_calls:
+                    if c is None:
+                        print(f"⚠️ Tool call None en {self.provider_name}")
+                        continue
+                        
+                    if not hasattr(c, 'function') or c.function is None:
+                        print(f"⚠️ Tool call sin función en {self.provider_name}: {c}")
+                        continue
+                        
+                    function_name = getattr(c.function, 'name', None)
+                    if function_name is None:
+                        print(f"⚠️ Tool call sin nombre de función en {self.provider_name}: {c.function}")
+                        continue
+                        
+                    arguments = getattr(c.function, 'arguments', None)
+                    if arguments is None:
+                        arguments = "{}"
+                        
+                    try:
+                        args = json.loads(arguments)
+                    except json.JSONDecodeError:
+                        print(f"⚠️ Error decodificando argumentos JSON: {arguments}")
+                        args = {}
+                        
+                    print(f"🔧 Ejecutando herramienta: {function_name} con args: {args}")
+                    tool_result = run_tool(function_name, args)
+                    print(f"✅ Resultado de herramienta {function_name}: {tool_result}")
+                    
+                    self.history.append({"role": "tool", "tool_call_id": getattr(c, 'id', None),
+                                         "content": tool_result})
+                                     
             except Exception as e:
+                print(f"❌ Error en {self.provider_name}: {e}")
+                import traceback
+                print(f"📋 Traceback: {traceback.format_exc()}")
+                
                 # Intenta el siguiente en la cadena de fallback
-                print(f"⚠️ Error en {self.provider_name}: {e}")
                 if self.brain_ref:
                     next_provider = self.brain_ref._get_next_fallback_provider(self.current_provider_idx)
                     if next_provider:
@@ -251,10 +317,14 @@ class Brain:
             return LocalSession()
         elif self.primary_provider == "anthropic":
             client = self._init_provider(self.primary_provider)
+            if client is None:
+                raise RuntimeError(f"No se pudo inicializar el proveedor {self.primary_provider}")
             return AnthropicSession(client)
         else:
             # Groq, OpenAI (compatible con OpenAI SDK)
             client = self._init_provider(self.primary_provider)
+            if client is None:
+                raise RuntimeError(f"No se pudo inicializar el proveedor {self.primary_provider}")
             provider_config = config.get_provider_config(self.primary_provider)
             current_idx = self.fallback_chain.index(self.primary_provider)
             return OpenAICompatibleSession(
