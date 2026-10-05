@@ -216,6 +216,7 @@ async def get_dashboard(
 
 
 # ============= PANEL DE ADMIN - ACTIVAR USUARIOS =============
+@router.get("/users", response_model=list)
 
 async def list_all_users(
     authorization: str = Header(None),
