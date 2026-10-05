@@ -202,10 +202,22 @@ async def download_config(x_node_token: str = Header(None)):
 async def websocket_endpoint(websocket: WebSocket):
     """WebSocket para chat con voz (STT + TTS)"""
 
-    # Verificar NODE_TOKEN en headers
-    token = websocket.headers.get("node-token")
+    # Extraer token de Sec-WebSocket-Protocol header
+    protocol_header = websocket.headers.get("sec-websocket-protocol", "")
+    token = ""
+
+    if protocol_header.startswith("node-token, "):
+        # Formato esperado: "node-token, <actual_token>"
+        token = protocol_header[12:]  # Eliminar el prefijo "node-token, "
+    elif protocol_header == "node-token":
+        # Caso alternativo: solo el protocolo sin token (no debería ocurrir)
+        token = ""
+    else:
+        # No se encontró el protocolo esperado
+        token = ""
+
     if not valid_node_token(token):
-        await websocket.close(code=4001, reason="Token no válido")
+        await websocket.close(code=4001, reason="Token no válido o formato incorrecto")
         return
 
     await websocket.accept()
