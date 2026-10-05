@@ -201,6 +201,9 @@ async def download_config(x_node_token: str = Header(None)):
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     """WebSocket para chat con voz (STT + TTS)"""
+    # Log that we've entered the WebSocket endpoint
+    print(f"WEBSOCKET ENDPOINT ENTERED: client={websocket.client}")
+    
     # Intentar obtener token del parámetro de consulta ?token=...
     token = websocket.query_params.get("token")
     
