@@ -223,9 +223,12 @@ async def list_all_users(
     db: Session = Depends(get_db)
 ):
     """Listar todos los usuarios (para panel de configuración)"""
-    user = get_current_user(authorization, db)
-    users = db.query(User).all()
-    return users
+    try:
+        user = get_current_user(authorization, db)
+        users = db.query(User).all()
+        return users
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 @router.put("/users/{user_id}/activate", response_model=SuccessResponse)
 async def activate_user(
     user_id: int,
