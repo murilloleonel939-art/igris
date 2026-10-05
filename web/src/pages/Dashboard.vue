@@ -529,7 +529,7 @@ const sendChat = async () => {
   chatInput.value = ''
   if (!chatWs.value || chatWs.value.readyState !== WebSocket.OPEN) {
     try {
-      const nodeToken = import.meta.env.VITE_NODE_TOKEN
+      const nodeToken = '89d8b804631d416c9662f41048a0084604592b122d3747139942167eb8242468'
       if (!nodeToken) {
         chatMessages.value.push({ from: 'igris', text: 'Error: NODE_TOKEN no está configurado en variables de entorno' })
         return
