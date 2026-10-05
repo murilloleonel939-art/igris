@@ -269,7 +269,10 @@ const saveConfig = async () => {
     saveError.value = 'La cadena de fallback debe tener al menos un proveedor'
     return
   }
-  
+  // Ensure primary provider is in fallback chain
+  if (!editConfig.value.fallback_chain.includes(editConfig.value.primary_provider)) {
+    editConfig.value.fallback_chain.unshift(editConfig.value.primary_provider);
+  }
   try {
     saving.value = true
     saveSuccess.value = null
