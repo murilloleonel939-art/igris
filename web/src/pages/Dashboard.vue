@@ -58,7 +58,7 @@ const sendChat = async () => {
   } catch (err) {
     console.error('Error en chat HTTP:', err)
     chatMessages.value.push({
-      from: 'iris',
+      from: 'igris',
       text: 'No se pudo conectar al servidor'
     })
   }
