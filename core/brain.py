@@ -170,6 +170,8 @@ class OpenAICompatibleSession:
                     messages=[{"role": "system", "content": SYSTEM}] + self.history,
                     tools=self.tools,
                 )
+                if resp is None:
+                    raise RuntimeError("Received None response from client")
                 msg = resp.choices[0].message
                 if not msg.tool_calls:
                     self.history.append({"role": "assistant", "content": msg.content or ""})
