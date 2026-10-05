@@ -23,6 +23,13 @@ app = FastAPI(
     version="2.0.0"
 )
 
+@app.middleware("http")
+async def log_requests(request, call_next):
+    origin = request.headers.get("origin")
+    print(f"Incoming request origin: {origin}")
+    return await call_next(request)
+
+
 # CORS - Permitir frontend desde webigris.zottagroup.com
 # (sin "*": no es compatible con allow_credentials=True)
 app.add_middleware(
