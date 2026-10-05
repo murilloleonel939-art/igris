@@ -265,6 +265,22 @@ async def add_csp_header(request, call_next):
     response = await call_next(request)
     response.headers["Content-Security-Policy"] = "default-src 'self'; connect-src 'self' https://igris.zottagroup.com wss://igris.zottagroup.com; script-src 'self';"
     return response
+# ============= CHAT VÍA HTTP (alternativa a WebSocket) =============
+from pydantic import BaseModel
+
+class ChatRequest(BaseModel):
+    text: str
+
+@app.post("/api/chat")
+async def http_chat(req: ChatRequest):
+    try:
+        session = brain.new_session()
+        reply = await session.say(req.text)
+        return {"status": "ok", "reply": reply}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
 
 
 # ============= ROOT =============
