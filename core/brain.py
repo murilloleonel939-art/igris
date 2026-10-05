@@ -116,8 +116,9 @@ class OpenAISession:
 
 
 class AnthropicSession:
-    def __init__(self, client):
+    def __init__(self, client, model):
         self.client = client
+        self.model = model
         self.history = []
         self.tools = [{"name": t["name"], "description": t["description"],
                        "input_schema": t["parameters"]} for t in TOOLS]
@@ -126,7 +127,7 @@ class AnthropicSession:
         self.history.append({"role": "user", "content": text})
         while True:
             resp = await self.client.messages.create(
-                model=ANTHROPIC_MODEL, max_tokens=500, system=SYSTEM,
+                model=self.model, max_tokens=500, system=SYSTEM,
                 tools=self.tools, messages=self.history,
             )
             self.history.append({"role": "assistant", "content": resp.content})
@@ -342,7 +343,8 @@ class Brain:
             client = self._init_provider(self.primary_provider)
             if client is None:
                 raise RuntimeError(f"No se pudo inicializar el proveedor {self.primary_provider}")
-            return AnthropicSession(client)
+            provider_config = config.get_provider_config(self.primary_provider)
+            return AnthropicSession(client, provider_config["model"])
         else:
             # Groq, OpenAI (compatible con OpenAI SDK)
             client = self._init_provider(self.primary_provider)
