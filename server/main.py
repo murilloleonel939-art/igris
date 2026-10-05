@@ -182,11 +182,13 @@ async def update_ai_config(config_update: AIConfigUpdate):
         
         # Save the updated configuration
         if settings.set_ai_config(current_ai_config):
+            # Reload brain configuration to take effect immediately
+            brain.reload_settings()
             return AIConfigResponse(
                 status="ok",
                 primary_provider=current_ai_config.get("primary_provider", "groq"),
                 fallback_chain=current_ai_config.get("fallback_chain", ["groq", "openai", "anthropic", "local"]),
-                message="Configuración actualizada correctamente. Los cambios requieren un redeploy del backend para tomar efecto completo."
+                message="Configuración actualizada correctamente. Los cambios toman efecto inmediatamente para nuevos chats."
             )
         else:
             return AIConfigResponse(

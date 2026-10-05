@@ -5,6 +5,7 @@ import os, json
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from core import config
+from core.settings_manager import get_settings
 
 PROVIDER = config.get_active_provider()
 TIMEZONE = config.TIMEZONE
@@ -270,10 +271,18 @@ class OpenAICompatibleSession:
 
 class Brain:
     def __init__(self):
-        self.primary_provider = PROVIDER
-        self.fallback_chain = config.FALLBACK_CHAIN
+        self.reload_settings()
         self.clients = {}  # Cache de clientes por proveedor
         self._init_provider(self.primary_provider)
+    def reload_settings(self):
+        """Recarga la configuración de IA desde settings.json."""
+        settings = get_settings()
+        ai_config = settings.get_ai_config()
+        self.primary_provider = ai_config.get("primary_provider", config.get_active_provider())
+        self.fallback_chain = ai_config.get("fallback_chain", config.FALLBACK_CHAIN)
+        # Ensure fallback_chain is a list
+        if not isinstance(self.fallback_chain, list):
+            self.fallback_chain = config.FALLBACK_CHAIN
 
     def _init_provider(self, provider_name):
         """Inicializa un cliente para un proveedor específico."""
