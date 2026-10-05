@@ -6,6 +6,7 @@ import secrets
 from datetime import datetime, timezone
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Body, Header
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from core import Brain, config
 from core import stt, tts
@@ -32,24 +33,7 @@ origins = [
     "http://127.0.0.1:3000",
 ]
 
-@app.middleware("http")
-async def cors_middleware(request, call_next):
-    if request.method == "OPTIONS":
-        origin = request.headers.get("origin")
-        if origin in origins:
-            headers = {
-                "Access-Control-Allow-Origin": origin,
-                "Access-Control-Allow-Credentials": "true",
-                "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
-                "Access-Control-Allow-Headers": "*",
-            }
-            return Response(status_code=200, headers=headers)
-    response = await call_next(request)
-    origin = request.headers.get("origin")
-    if origin in origins:
-        response.headers["Access-Control-Allow-Origin"] = origin
-        response.headers["Access-Control-Allow-Credentials"] = "true"
-    return response
+app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
 # IMPORTANTE: los routers YA traen su prefijo (/auth y /api) definido en
 # auth_routes.py y profile_routes.py con APIRouter(prefix=...).
