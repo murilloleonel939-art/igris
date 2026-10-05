@@ -8,7 +8,7 @@ PROVIDERS_CONFIG = {
     "groq": {
         "enabled": os.environ.get("GROQ_API_KEY") is not None,
         "api_key": os.environ.get("GROQ_API_KEY", ""),
-        "model": os.environ.get("IGRIS_GROQ_MODEL", "llama-3.1-8b-instant"),
+        "model": os.environ.get("IGRIS_GROQ_MODEL", "openai/gpt-oss-120b"),
         "priority": 1,  # Prioridad más alta = se intenta primero
     },
     "openai": {
