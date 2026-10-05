@@ -6,7 +6,7 @@ import secrets
 from datetime import datetime, timezone
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Body, Header
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from core import Brain, config
 from core import stt, tts
 from core.settings_manager import get_settings
@@ -23,29 +23,33 @@ app = FastAPI(
     version="2.0.0"
 )
 
+# CORS custom middleware
+origins = [
+    "https://webigris.zottagroup.com",
+    "https://igris.zottagroup.com",
+    "wss://igris.zottagroup.com",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+]
+
 @app.middleware("http")
-async def log_requests(request, call_next):
+async def cors_middleware(request, call_next):
+    if request.method == "OPTIONS":
+        origin = request.headers.get("origin")
+        if origin in origins:
+            headers = {
+                "Access-Control-Allow-Origin": origin,
+                "Access-Control-Allow-Credentials": "true",
+                "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
+                "Access-Control-Allow-Headers": "*",
+            }
+            return Response(status_code=200, headers=headers)
+    response = await call_next(request)
     origin = request.headers.get("origin")
-    print(f"Incoming request origin: {origin}")
-    return await call_next(request)
-
-
-# CORS - Permitir frontend desde webigris.zottagroup.com
-# (sin "*": no es compatible con allow_credentials=True)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "https://webigris.zottagroup.com",
-        "https://igris.zottagroup.com",
-        "wss://igris.zottagroup.com",
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-    ],
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-    allow_headers=["*"],
-    max_age=3600,
-)
+    if origin in origins:
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+    return response
 
 # IMPORTANTE: los routers YA traen su prefijo (/auth y /api) definido en
 # auth_routes.py y profile_routes.py con APIRouter(prefix=...).
@@ -56,7 +60,6 @@ app.include_router(profile_router)
 # Instancia global del cerebro
 brain = Brain()
 NODE_TOKEN = os.environ.get("NODE_TOKEN", "")
-
 
 def valid_node_token(token) -> bool:
     """Compara el NODE_TOKEN en tiempo constante."""
@@ -272,6 +275,8 @@ async def add_csp_header(request, call_next):
     response = await call_next(request)
     response.headers["Content-Security-Policy"] = "default-src 'self'; connect-src 'self' https://igris.zottagroup.com wss://igris.zottagroup.com; script-src 'self';"
     return response
+
+
 # ============= CHAT VÍA HTTP (alternativa a WebSocket) =============
 from pydantic import BaseModel
 
@@ -286,8 +291,6 @@ async def http_chat(req: ChatRequest):
         return {"status": "ok", "reply": reply}
     except Exception as e:
         return {"status": "error", "message": str(e)}
-
-
 
 
 # ============= ROOT =============
@@ -313,5 +316,4 @@ async def root():
 
 
 # Ejecutar con: uvicorn server.main:app --host 0.0.0.0 --port 8000
-
 
