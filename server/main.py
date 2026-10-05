@@ -96,7 +96,7 @@ async def root():
         "name": "IGRIS Chat",
         "version": "1.0.0",
         "status": "operational",
-        "debug": "test",
+        "debug": "test2",
         "endpoints": {
             "health": "/health",
             "status": "/status",

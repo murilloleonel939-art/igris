@@ -162,49 +162,50 @@ class OpenAICompatibleSession:
         self.current_provider_idx = 0  # Índice en fallback chain
 
     async def say(self, text: str) -> str:
+        print(f"🧠 [Brain] Iniciando say() para proveedor {self.provider_name} con texto: '{text[:100]}'")
         self.history.append({"role": "user", "content": text})
         while True:
             try:
-                print(f"🔄 Llamando a {self.provider_name} con mensaje: {text[:50]}...")
+                print(f"🔄 [Brain] Llamando a {self.provider_name}...")
                 resp = await self.client.chat.completions.create(
                     model=self.model, max_tokens=500,
                     messages=[{"role": "system", "content": SYSTEM}] + self.history,
                     tools=self.tools,
                 )
-                print(f"📨 Respuesta recibida de {self.provider_name}: {type(resp)}")
+                print(f"📨 [Brain] Respuesta recibida de {self.provider_name}: {type(resp)}")
                 
                 if resp is None:
-                    print(f"⚠️ Respuesta None de {self.provider_name}")
+                    print(f"⚠️ [Brain] Respuesta None de {self.provider_name}")
                     raise RuntimeError("Received None response from client")
                     
                 if not hasattr(resp, 'choices'):
-                    print(f"⚠️ Respuesta sin atributo 'choices' de {self.provider_name}: {resp}")
+                    print(f"⚠️ [Brain] Respuesta sin atributo 'choices' de {self.provider_name}: {resp}")
                     raise RuntimeError("Response missing 'choices' attribute")
                     
                 if resp.choices is None:
-                    print(f"⚠️ Respuesta con choices None de {self.provider_name}")
+                    print(f"⚠️ [Brain] Respuesta con choices None de {self.provider_name}")
                     raise RuntimeError("Response choices is None")
                     
                 if len(resp.choices) == 0:
-                    print(f"⚠️ Respuesta con choices vacío de {self.provider_name}")
+                    print(f"⚠️ [Brain] Respuesta con choices vacío de {self.provider_name}")
                     raise RuntimeError("Response choices is empty")
                     
                 msg = resp.choices[0].message
-                print(f"📝 Mensaje de {self.provider_name}: {type(msg)}")
+                print(f"📝 [Brain] Mensaje de {self.provider_name}: {type(msg)}")
                 
                 if msg is None:
-                    print(f"⚠️ Mensaje None de {self.provider_name}")
+                    print(f"⚠️ [Brain] Mensaje None de {self.provider_name}")
                     raise RuntimeError("Message is None")
                     
                 if not hasattr(msg, 'tool_calls'):
-                    print(f"⚠️ Mensaje sin atributo 'tool_calls' de {self.provider_name}: {msg}")
+                    print(f"⚠️ [Brain] Mensaje sin atributo 'tool_calls' de {self.provider_name}: {msg}")
                     # Treat as no tool calls
                     self.history.append({"role": "assistant", "content": msg.content or ""})
                     break
                     
                 tool_calls = msg.tool_calls
                 if tool_calls is None:
-                    print(f"ℹ️ Tool calls es None de {self.provider_name}, tratándolo como vacío")
+                    print(f"ℹ️ [Brain] Tool calls es None de {self.provider_name}, tratándolo como vacío")
                     tool_calls = []
                     
                 if not tool_calls:  # Empty list or None (now handled as empty list)
@@ -221,16 +222,16 @@ class OpenAICompatibleSession:
                 
                 for c in tool_calls:
                     if c is None:
-                        print(f"⚠️ Tool call None en {self.provider_name}")
+                        print(f"⚠️ [Brain] Tool call None en {self.provider_name}")
                         continue
                         
                     if not hasattr(c, 'function') or c.function is None:
-                        print(f"⚠️ Tool call sin función en {self.provider_name}: {c}")
+                        print(f"⚠️ [Brain] Tool call sin función en {self.provider_name}: {c}")
                         continue
                         
                     function_name = getattr(c.function, 'name', None)
                     if function_name is None:
-                        print(f"⚠️ Tool call sin nombre de función en {self.provider_name}: {c.function}")
+                        print(f"⚠️ [Brain] Tool call sin nombre de función en {self.provider_name}: {c.function}")
                         continue
                         
                     arguments = getattr(c.function, 'arguments', None)
@@ -240,26 +241,26 @@ class OpenAICompatibleSession:
                     try:
                         args = json.loads(arguments)
                     except json.JSONDecodeError:
-                        print(f"⚠️ Error decodificando argumentos JSON: {arguments}")
+                        print(f"⚠️ [Brain] Error decodificando argumentos JSON: {arguments}")
                         args = {}
                         
-                    print(f"🔧 Ejecutando herramienta: {function_name} con args: {args}")
+                    print(f"🔧 [Brain] Ejecutando herramienta: {function_name} con args: {args}")
                     tool_result = run_tool(function_name, args)
-                    print(f"✅ Resultado de herramienta {function_name}: {tool_result}")
+                    print(f"✅ [Brain] Resultado de herramienta {function_name}: {tool_result}")
                     
                     self.history.append({"role": "tool", "tool_call_id": getattr(c, 'id', None),
                                          "content": tool_result})
                                      
             except Exception as e:
-                print(f"❌ Error en {self.provider_name}: {e}")
+                print(f"❌ [Brain] Error en {self.provider_name}: {e}")
                 import traceback
-                print(f"📋 Traceback: {traceback.format_exc()}")
+                print(f"📋 [Brain] Traceback: {traceback.format_exc()}")
                 
                 # Intenta el siguiente en la cadena de fallback
                 if self.brain_ref:
                     next_provider = self.brain_ref._get_next_fallback_provider(self.current_provider_idx)
                     if next_provider:
-                        print(f"↻ Saltando a fallback: {next_provider}")
+                        print(f"↻ [Brain] Saltando a fallback: {next_provider}")
                         self.brain_ref._switch_provider(next_provider, self)
                         continue
                 raise
