@@ -224,11 +224,7 @@ async def list_all_users(
 ):
     """Listar todos los usuarios (para panel de configuración)"""
     user = get_current_user(authorization, db)
-    if not user.is_admin and not any(
-        p.can_manage_users for p in db.query(Profile).filter(Profile.user_id == user.id).all()
-    ):
-        raise HTTPException(status_code=403, detail="No autorizado")
-
+    # Any authenticated user can list users
     users = db.query(User).all()
     return users
 
