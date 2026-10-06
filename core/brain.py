@@ -1,47 +1,148 @@
-"""Brain module for IGRIS - Core AI orchestration"""
+"""Brain module for IGRIS - orquestación de IA con cadena de fallback"""
 
 import logging
-from core import config
+import os
+from typing import Dict, List, Optional
+
+from openai import AsyncOpenAI
+
+from core.config import SYSTEM_PROMPT
+from core.settings_manager import get_settings
 
 logger = logging.getLogger(__name__)
 
-# Obtener el proveedor activo usando el método correcto
-PROVIDER_CONFIG = config.get_active_provider_config()
-if PROVIDER_CONFIG:
-    PROVIDER = PROVIDER_CONFIG.get("active_provider", "nemotron")
-else:
-    PROVIDER = "nemotron"
+DEFAULT_CHAIN = ["nemotron", "groq", "openai", "anthropic", "local"]
+
+# Todos los proveedores se consumen con el SDK de OpenAI (APIs compatibles).
+PROVIDERS = {
+    "nemotron": {
+        "key_env": "NEMOTRON_API_KEY",
+        "base_env": "NEMOTRON_API_BASE",
+        "base_default": "https://integrate.api.nvidia.com/v1",
+        "model_env": "IGRIS_NEMOTRON_MODEL",
+        "model_default": "nvidia/nemotron-3-super-120b-a12b",
+    },
+    "groq": {
+        "key_env": "GROQ_API_KEY",
+        "base_default": "https://api.groq.com/openai/v1",
+        "model_env": "IGRIS_GROQ_MODEL",
+        "model_default": "llama-3.1-70b-versatile",
+    },
+    "openai": {
+        "key_env": "OPENAI_API_KEY",
+        "base_default": "https://api.openai.com/v1",
+        "model_env": "IGRIS_OPENAI_MODEL",
+        "model_default": "gpt-4o-mini",
+    },
+    "anthropic": {
+        "key_env": "ANTHROPIC_API_KEY",
+        "base_default": "https://api.anthropic.com/v1/",
+        "model_env": "IGRIS_ANTHROPIC_MODEL",
+        "model_default": "claude-sonnet-5-5",
+    },
+    "local": {
+        "key_env": None,
+        "model_env": "IGRIS_LOCAL_MODEL",
+        "model_default": "llama3.1",
+    },
+}
+
+
+def _build_client(name: str):
+    """Devuelve (cliente, modelo) para el proveedor, o None si no está configurado."""
+    spec = PROVIDERS.get(name)
+    if not spec:
+        logger.warning(f"Proveedor desconocido en la cadena: {name}")
+        return None
+
+    model = os.environ.get(spec["model_env"]) or spec["model_default"]
+
+    if name == "local":
+        base = os.environ.get("IGRIS_LOCAL_URL", "http://localhost:11434").rstrip("/")
+        if not base.endswith("/v1"):
+            base += "/v1"
+        return AsyncOpenAI(api_key="ollama", base_url=base, timeout=60), model
+
+    api_key = os.environ.get(spec["key_env"], "")
+    if not api_key:
+        logger.warning(f"Proveedor '{name}' omitido: falta {spec['key_env']}")
+        return None
+
+    base = os.environ.get(spec.get("base_env", ""), "") or spec["base_default"]
+    return AsyncOpenAI(api_key=api_key, base_url=base, timeout=30), model
+
+
+class BrainSession:
+    """Una conversación con historial."""
+
+    def __init__(self, brain: "Brain"):
+        self.brain = brain
+        self.history: List[Dict[str, str]] = []
+
+    async def say(self, text: str, context: Optional[dict] = None) -> str:
+        messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+        messages += self.history[-20:]
+        messages.append({"role": "user", "content": text})
+
+        errors = []
+        for name in self.brain.fallback_chain:
+            built = _build_client(name)
+            if not built:
+                errors.append(f"{name}: no configurado")
+                continue
+            client, model = built
+            logger.info(f"Intentando proveedor: {name} ({model})")
+            try:
+                resp = await client.chat.completions.create(
+                    model=model,
+                    messages=messages,
+                    temperature=0.7,
+                    max_tokens=512,
+                )
+                reply = (resp.choices[0].message.content or "").strip()
+                if not reply:
+                    raise ValueError("respuesta vacía")
+                self.history.append({"role": "user", "content": text})
+                self.history.append({"role": "assistant", "content": reply})
+                return reply
+            except Exception as e:
+                logger.error(f"Proveedor '{name}' falló: {e}")
+                errors.append(f"{name}: {e}")
+            finally:
+                await client.close()
+
+        raise RuntimeError("Todos los proveedores fallaron -> " + " | ".join(errors))
 
 
 class Brain:
-    """Brain class for managing AI responses"""
+    """Orquesta los proveedores de IA según la configuración activa."""
 
     def __init__(self):
-        self.provider = PROVIDER
-        self.config = PROVIDER_CONFIG
-        self.logger = logger
+        self.provider = "nemotron"
+        self.fallback_chain: List[str] = list(DEFAULT_CHAIN)
+        self.reload_settings()
 
-    def process(self, message: str, context: dict = None) -> str:
-        """Process a message and generate a response"""
+    def reload_settings(self):
+        """Relee proveedor activo y cadena de fallback."""
+        primary, chain = None, None
         try:
-            # Obtener el proveedor activo en cada request (por si cambió)
-            provider_config = config.get_active_provider_config()
-            if provider_config:
-                self.provider = provider_config.get("active_provider", "nemotron")
-                self.config = provider_config
-
-            # Aquí va la lógica de procesamiento
-            response = self._generate_response(message, context)
-            return response
-
+            ai = get_settings().get_ai_config() or {}
+            primary = ai.get("primary_provider")
+            chain = ai.get("fallback_chain")
         except Exception as e:
-            self.logger.error(f"Error in Brain.process: {e}")
-            raise
+            logger.error(f"No se pudo leer settings: {e}")
 
-    def _generate_response(self, message: str, context: dict = None) -> str:
-        """Generate response using configured provider"""
-        # Implementation goes here
-        return f"Response from {self.provider}"
+        primary = primary or os.environ.get("IGRIS_PROVIDER") or "nemotron"
+        if not isinstance(chain, list) or not chain:
+            env_chain = os.environ.get("IGRIS_FALLBACK_CHAIN", "")
+            chain = [p.strip() for p in env_chain.split(",") if p.strip()] or list(DEFAULT_CHAIN)
+
+        self.provider = primary
+        self.fallback_chain = [primary] + [p for p in chain if p != primary]
+        logger.info(f"Config recargada. Orden de proveedores: {self.fallback_chain}")
+
+    def new_session(self) -> BrainSession:
+        return BrainSession(self)
 
 
 def init_brain():
