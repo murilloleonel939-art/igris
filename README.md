@@ -35,7 +35,7 @@
   - Proveedores disponibles: groq, nemotron, openai, anthropic, local
   - Cadena de fallback personalizable (orden de prioridad)
   - **El sistema respeta exactamente el orden especificado por el usuario** (sin duplicaciones ni saltos inesperados)
-  - **Advertencia**: Tras cambiar el proveedor actual, el chat deja de funcionar correctamente hasta que se ajuste la cadena de fallback.
+  - **Nota**: El sistema asegura automáticamente que el proveedor actual esté incluido en la cadena de fallback para evitar errores de configuración.
   - Guardado en `core/settings.json` vía API interna
 - **Integración NVIDIA Nemotron 3 Super 120B**: 
   - URL base: `https://integrate.api.nvidia.com/v1`
