@@ -20,12 +20,16 @@
       </div>
     </nav>
 
+    <!-- Avatar de Igris: solo se muestra en la pantalla del chat -->
+    <IgrisHero v-if="$route.name === 'Chat'" class="pt-4" />
+
     <!-- Page Content -->
     <router-view />
   </div>
 </template>
 
 <script setup>
+import IgrisHero from './components/IgrisHero.vue'
 </script>
 
 <style>
