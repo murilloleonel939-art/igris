@@ -10,7 +10,7 @@ from fastapi import FastAPI, Request, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 
-from core import Brain, config
+from core import Brain, config, stt          # ← añadido stt
 from core.settings_manager import get_settings
 from core import tts
 from core.database import init_db
@@ -260,6 +260,7 @@ async def process_telegram_update(update_dict: dict):
     """
     Recibe el dict que Telegram envía en el webhook, lo valida,
     verifica la autorización y responde según corresponda.
+    Ahora también maneja notas de voz y archivos de audio.
     """
     if not telegram_bot or not telegram_app:
         # Si no se configuró el token, simplemente salimos (no debería pasar en prod)
@@ -289,17 +290,47 @@ async def process_telegram_update(update_dict: dict):
             pass  # No podemos hacer mucho si falla el envío
         return
 
-    # ------------------- Mensaje de texto -------------------
+    # ------------------- Mensaje de texto o voz -------------------
     message = update.effective_message
-    if not message or not message.text:
-        # Ignoramos otros tipos de updates (stickers, fotos, etc.) por ahora.
+    if not message:
+        # No hay mensaje (puede ser un update de otro tipo)
         return
 
-    text = message.text.strip()
+    # Determinar si es texto o voz/audio
+    user_text = None
+
+    if message.text:
+        user_text = message.text.strip()
+    elif message.voice:
+        # ----- Nota de voz -----
+        try:
+            voice_file = await telegram_bot.get_file(message.voice.file_id)
+            voice_bytes = await voice_file.download_as_bytearray()
+            # Llamamos al STT de Igris
+            user_text = await stt.transcribe(voice_bytes)
+        except Exception as e:
+            await message.reply_text(
+                f"Lo siento, mi señor, no pude transcribir su nota de voz: {e}"
+            )
+            return
+    elif message.audio:
+        # ----- Archivo de audio -----
+        try:
+            audio_file = await telegram_bot.get_file(message.audio.file_id)
+            audio_bytes = await audio_file.download_as_bytearray()
+            user_text = await stt.transcribe(audio_bytes)
+        except Exception as e:
+            await message.reply_text(
+                f"Lo siento, mi señor, no pude transcribir su archivo de audio: {e}"
+            )
+            return
+    else:
+        # Otros tipos de mensaje (sticker, foto, video, etc.) los ignoramos por ahora.
+        return
 
     # ----- Comandos -----
-    if text.startswith("/"):
-        parts = text.split()
+    if user_text.startswith("/"):
+        parts = user_text.split()
         cmd = parts[0].lower()
 
         if cmd in ("/start", "/help"):
@@ -350,7 +381,7 @@ async def process_telegram_update(update_dict: dict):
 
     # ----- Mensaje libre (se envía a Igris) -----
     await message.chat.send_action(action="typing")  # opcional: muestra "escribiendo..."
-    reply = await _get_igris_reply(text)
+    reply = await _get_igris_reply(user_text)
     await message.reply_text(reply)
 
 
