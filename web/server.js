@@ -13,6 +13,13 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 const app = express();
+app.use((req, res, next) => {
+  res.setHeader(
+    "Content-Security-Policy",
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self' blob:; connect-src 'self' https://igris.zottagroup.com http://localhost:8000;"
+  );
+  next();
+});
 const PORT = process.env.PORT || 3000;
 
 // Backend URL para proxy interno (siempre localhost:8000, no usar VITE_API_URL)
