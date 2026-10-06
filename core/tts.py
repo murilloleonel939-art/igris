@@ -21,6 +21,8 @@ TTS_INSTRUCTIONS = os.environ.get(
         "Dirígete al usuario como 'mi señor'. Si hay riesgo, advierte con calma antes de actuar.",
     ),
 )
+TTS_RATE = os.environ.get("IGRIS_TTS_RATE", _TTS_CFG.get("rate", "+0%"))
+TTS_PITCH = os.environ.get("IGRIS_TTS_PITCH", _TTS_CFG.get("pitch", "+0%"))
 
 # Configuración local gratuita (Piper / Coqui)
 PIPER_VOICE = os.environ.get("IGRIS_PIPER_VOICE", "es_ES-carlos-medium")
@@ -91,7 +93,13 @@ async def synthesize(text: str) -> bytes:
             _TTS_CFG.get("voice", "es-ES-AlvaroNeural"),
         )
         async def _edge():
-            communicate = edge_tts.Communicate(text[:4000], tts_voice, rate="+0%", volume="+0%")
+            communicate = edge_tts.Communicate(
+                text[:4000],
+                tts_voice,
+                rate=TTS_RATE,
+                pitch=TTS_PITCH,
+                volume="+0%",
+            )
             await communicate.save(temp_path)
         await _edge()
         with open(temp_path, "rb") as f:
