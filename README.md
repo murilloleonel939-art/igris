@@ -52,7 +52,7 @@
 - Interfaz limpia y responsiva
 - Historial de chat con visualización de mensajes del usuario y de Iris
 - El nombre del remitente muestra "**igris:**" (coherente con el system prompt)
-- Envío de mensajes mediante Enter o botón
+- Envío de mensajes mediante Enter, botón o entrada de voz (micrófono)
 - Desplazamiento automático al último mensaje
 
 ### **Configuración de IA (⚙️ Configuración)**

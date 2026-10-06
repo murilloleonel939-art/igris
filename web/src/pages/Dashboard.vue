@@ -20,6 +20,15 @@
           class="flex-1 px-4 py-2 bg-slate-600 border border-slate-500 rounded text-white focus:outline-none focus:border-blue-500"
         />
         <button 
+          @click="startVoiceInput"
+          :disabled="isListening"
+          class="flex-0 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded transition disabled:opacity-50 disabled:cursor-not-allowed"
+          title="Hablar con Iris"
+        >
+          <svg v-if="!isListening" class="w-5 h-5" viewBox="0 0 24 24"><path fill="currentColor" d="M12 15c3.31 0 6-2.69 6-6h-4c0 2.21-1.79 4-4 4s-4-1.79-4-4h-4c0 3.31 2.69 6 6 6zm7.18-9.81l-1.42-1.42C15.56 3.9 13.63 3 12 3c-3.31 0-6 2.69-6 6H1c0-3.87 3.13-7 7-7s7 3.13 7 7c0 2.76-1.74 5.12-4.24 6.18l1.42 1.42c1.9-1.24 3.04-3.03 3.04-5.08z"/></svg>
+          <svg v-else class="w-5 h-5 animate-spin" viewBox="0 0 24 24"><path fill="currentColor" d="M12 2a10 10 0 100 20 20 20 10 10 0 00-20-20zm0 2a8 8 0 110 0 16 8 8 0 010-16z"/></svg>
+        </button>
+        <button 
           @click="sendChat"
           class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded transition"
         >
@@ -36,6 +45,7 @@ import api from '../api'
 
 const chatInput = ref('')
 const chatMessages = ref([])
+const isListening = ref(false)
 
 const sendChat = async () => {
   if (!chatInput.value.trim()) return
@@ -70,5 +80,55 @@ const sendChat = async () => {
       chatContainer.scrollTop = chatContainer.scrollHeight
     }
   })
+}
+
+const startVoiceInput = async () => {
+  // Check if browser supports Speech Recognition
+  if (!('SpeechRecognition' in window) && !('webkitSpeechRecognition' in window)) {
+    alert('Lo siento, tu navegador no soporta la entrada de voz. Por favor usa Chrome o Edge para esta característica.')
+    return
+  }
+
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
+  const recognition = new SpeechRecognition()
+  
+  // Configure for Spanish
+  recognition.lang = 'es-ES'
+  recognition.interimResults = false
+  recognition.maxAlternatives = 1
+
+  isListening.value = true
+
+  recognition.onresult = (event) => {
+    const transcript = event.results[0][0].transcript
+    chatInput.value = transcript
+    isListening.value = false
+    // Auto-send after voice input
+    sendChat()
+  }
+
+  recognition.onend = () => {
+    isListening.value = false
+  }
+
+  recognition.onerror = (event) => {
+    console.error('Error de reconocimiento de voz:', event.error)
+    isListening.value = false
+    if (event.error === 'not-allowed') {
+      alert('Permiso de micrófono denegado. Por favor permite el acceso al micrófono en la configuración de tu navegador.')
+    } else if (event.error === 'audio-capture') {
+      alert('No se pudo acceder al micrófono. Por favor verifica que esté conectado y funcionando.')
+    } else {
+      alert(`Error de reconocimiento de voz: ${event.error}`)
+    }
+  }
+
+  try {
+    recognition.start()
+  } catch (err) {
+    console.error('Error al iniciar reconocimiento de voz:', err)
+    isListening.value = false
+    alert('No se pudo iniciar el reconocimiento de voz. Por favor verifica tu micrófono y permisos.')
+  }
 }
 </script>
