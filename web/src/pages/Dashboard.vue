@@ -104,34 +104,46 @@ const sendChat = async () => {
     }
   })
 }
-const playIrisResponse = async (text: string) => {
+const playIrisResponse = async (text, index) => {
   if (!text || text.trim().length === 0) return
-  
+
+  // If index is provided, mark as playing
+  if (index !== undefined && index !== null) {
+    isPlayingTTS.value[index] = true
+  }
+
   try {
     const response = await api.post('/api/tts', { text: text })
     if (response.data) {
       // Crear objeto URL desde el blob de audio
       const audioBlob = new Blob([response.data], { type: 'audio/mpeg' })
       const audioUrl = URL.createObjectURL(audioBlob)
-      
+
       // Reproducir el audio
       const audio = new Audio(audioUrl)
       audio.play().catch(err => {
         console.error('Error playing audio:', err)
         // Intentar de vuelta con user gesture si falló por autoplay policy
       })
-      
-      // Limpiar object URL después de reproducir (opcional, pero buena práctica)
+
+      // Limpiar object URL después de reproducir
       audio.onended = () => {
         URL.revokeObjectURL(audioUrl)
+        // Unmark as playing if index was provided
+        if (index !== undefined && index !== null) {
+          isPlayingTTS.value[index] = false
+        }
       }
     }
   } catch (err) {
     console.error('Error fetching TTS:', err)
     // No mostrar alerta al usuario para no interrumpir la experiencia
+    // Unmark as playing if index was provided
+    if (index !== undefined && index !== null) {
+      isPlayingTTS.value[index] = false
+    }
   }
 }
-
 const startVoiceInput = async () => {
   // Check if browser supports Speech Recognition
   if (!('SpeechRecognition' in window) && !('webkitSpeechRecognition' in window)) {
