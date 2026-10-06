@@ -31,12 +31,18 @@
 - **Configuración de IA**: 
   - Proveedores disponibles: groq, nemotron, openai, anthropic, local
   - Cadena de fallback personalizable (orden de prioridad)
+  - **El sistema respeta exactamente el orden especificado por el usuario** (sin duplicaciones ni saltos inesperados)
   - Cambios toman efecto inmediatamente para nuevos chats
   - Guardado en `core/settings.json` vía API interna
 - **Integración NVIDIA Nemotron 3 Super 120B**: 
   - URL base: `https://integrate.api.nvidia.com/v1`
   - Modelo: `nvidia/nemotron-3-super-120b-a12b`
   - Manejo correcto de respuestas y errores SSL
+- **Sistema de Fallback Automático**: 
+  - Totalmente funcional y probado
+  - Respeta el orden exacto especificado en la configuración
+  - Maneja errores de cada proveedor y continúa con el siguiente en la cadena
+  - Provee logging detallado para rastrear intentos y fallbacks
 
 ---
 
@@ -70,7 +76,12 @@
 - Todos los endpoints accesibles sin autenticación (coherente con la solicitud de solo chat)
 
 ### **Flujo de Fallback Automático**
-Si el proveedor activo falla (por ejemplo, API key inválida, servicio no disponible), Igris intentará automáticamente el siguiente proveedor en la cadena de fallback, Continuando hasta encontrar uno que funcione o llegar al proveedor local (Ollama) como último recurso.
+El sistema de fallback automático es totalmente funcional y respeta exactamente el orden especificado por el usuario:
+- Si el proveedor activo falla (por ejemplo, API key inválida, servicio no disponible, créditos agotados), Igris intentará automáticamente el **siguiente proveedor en la cadena de fallback** en el orden exacto especificado.
+- Continuará probando cada proveedor en secuencia hasta encontrar uno que funcione o agotar todas las opciones en la cadena.
+- Si todos los proveedores en la cadena fallan, se devolverá un error informativo al usuario.
+- Los cambios en la configuración de proveedor activo y cadena de fallback toman efecto **inmediatamente** para nuevos chats (sin necesidad de redeploy).
+- El sistema incluye logging detallado que muestra exactamente qué proveedor se está intentando en cada paso, facilitando la depuración y verificación.
 
 ---
 

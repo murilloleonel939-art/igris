@@ -116,34 +116,59 @@ class OpenAISession:
 
 
 class AnthropicSession:
-    def __init__(self, client, model):
+    def __init__(self, client, model, provider_name="unknown", brain_ref=None, current_idx=0):
         self.client = client
         self.model = model
+        self.provider_name = provider_name
+        self.brain_ref = brain_ref
         self.history = []
         self.tools = [{"name": t["name"], "description": t["description"],
                        "input_schema": t["parameters"]} for t in TOOLS]
+        self.current_provider_idx = current_idx  # Índice en cadena completa de proveedores
 
     async def say(self, text: str) -> str:
+        print(f"🧠 [Brain] Iniciando say() para proveedor {self.provider_name} con texto: '{text[:100]}'")
         self.history.append({"role": "user", "content": text})
         while True:
-            resp = await self.client.messages.create(
-                model=self.model, max_tokens=500, system=SYSTEM,
-                tools=self.tools, messages=self.history,
-            )
-            self.history.append({"role": "assistant", "content": resp.content})
-            if resp.stop_reason != "tool_use":
-                break
-            results = [{"type": "tool_result", "tool_use_id": b.id,
-                        "content": run_tool(b.name, b.input)}
-                       for b in resp.content if b.type == "tool_use"]
-            self.history.append({"role": "user", "content": results})
+            try:
+                print(f"🔄 [Brain] Llamando a {self.provider_name}...")
+                resp = await self.client.messages.create(
+                    model=self.model, max_tokens=500, system=SYSTEM,
+                    tools=self.tools, messages=self.history,
+                )
+                print(f"📨 [Brain] Respuesta recibida de {self.provider_name}: {type(resp)}")
+                
+                self.history.append({"role": "assistant", "content": resp.content})
+                if resp.stop_reason != "tool_use":
+                    break
+                results = [{"type": "tool_result", "tool_use_id": b.id,
+                            "content": run_tool(b.name, b.input)}
+                           for b in resp.content if b.type == "tool_use"]
+                self.history.append({"role": "user", "content": results})
+            except Exception as e:
+                print(f"❌ [Brain] Error en {self.provider_name}: {e}")
+                import traceback
+                print(f"📋 [Brain] Traceback: {traceback.format_exc()}")
+                
+                # Intenta el siguiente en la cadena de fallback
+                if self.brain_ref:
+                    result = self.brain_ref._get_next_fallback_provider(self.current_provider_idx)
+                    if result[0] is not None:
+                        provider_name, session_idx = result
+                        print(f"↻ [Brain] Saltando a fallback: {provider_name}")
+                        self.brain_ref._switch_provider(provider_name, session_idx, self)
+                        continue
+                raise
         self.history = trim_history(self.history)
         return "".join(b.text for b in resp.content if b.type == "text")
 
 
 class LocalSession:
     """Sesión para modelos locales (Ollama, etc)."""
-    def __init__(self):
+    def __init__(self, provider_name="unknown", brain_ref=None, current_idx=0):
+        self.provider_name = provider_name
+        self.brain_ref = brain_ref
+        self.current_provider_idx = current_idx
         self.history = []
         self.tools = [{"type": "function", "function": t} for t in TOOLS]
 
@@ -154,14 +179,14 @@ class LocalSession:
 
 class OpenAICompatibleSession:
     """Sesión compatible con Groq, OpenAI, y otros que usan OpenAI SDK, con fallback automático."""
-    def __init__(self, client, model, provider_name="unknown", brain_ref=None):
+    def __init__(self, client, model, provider_name="unknown", brain_ref=None, current_idx=0):
         self.client = client
         self.model = model
         self.provider_name = provider_name
         self.brain_ref = brain_ref
         self.history = []
         self.tools = [{"type": "function", "function": t} for t in TOOLS]
-        self.current_provider_idx = 0  # Índice en fallback chain
+        self.current_provider_idx = current_idx  # Índice en cadena completa de proveedores
 
     async def say(self, text: str) -> str:
         print(f"🧠 [Brain] Iniciando say() para proveedor {self.provider_name} con texto: '{text[:100]}'")
@@ -260,10 +285,11 @@ class OpenAICompatibleSession:
                 
                 # Intenta el siguiente en la cadena de fallback
                 if self.brain_ref:
-                    next_provider = self.brain_ref._get_next_fallback_provider(self.current_provider_idx)
-                    if next_provider:
-                        print(f"↻ [Brain] Saltando a fallback: {next_provider}")
-                        self.brain_ref._switch_provider(next_provider, self)
+                    result = self.brain_ref._get_next_fallback_provider(self.current_provider_idx)
+                    if result[0] is not None:
+                        provider_name, session_idx = result
+                        print(f"↻ [Brain] Saltando a fallback: {provider_name}")
+                        self.brain_ref._switch_provider(provider_name, session_idx, self)
                         continue
                 raise
         self.history = trim_history(self.history)
@@ -322,29 +348,44 @@ class Brain:
         return self.clients.get(provider_name)
 
     def _get_next_fallback_provider(self, current_idx):
-        """Obtiene el siguiente proveedor en la cadena de fallback."""
-        for i in range(current_idx + 1, len(self.fallback_chain)):
-            provider = self.fallback_chain[i]
+        """Obtiene el siguiente proveedor en la cadena de fallback.
+        Retorna (nombre_del_proveedor, indice_para_la_nueva_sesion) o (None, None)."""
+        # current_idx es el índice en la cadena completa de proveedores intentados
+        # cadena completa = [primary_provider] + fallback_chain
+        # Si current_idx apunta a primary_provider (índice 0), el siguiente es fallback_chain[0]
+        # Si current_idx apunta a fallback_chain[i], el siguiente es fallback_chain[i+1]
+        # En general, el siguiente proveedor está en fallback_chain[current_idx] si existe
+        if current_idx < len(self.fallback_chain):
+            provider = self.fallback_chain[current_idx]
             if config.PROVIDERS_CONFIG[provider]["enabled"]:
-                return provider, i
+                # El índice para la nueva sesión será current_idx + 1 en la cadena completa
+                return provider, current_idx + 1
         return None, None
 
-    def _switch_provider(self, provider_name, session):
+    def _switch_provider(self, provider_name, session_idx, session):
         """Cambia el proveedor en una sesión activa."""
         session.provider_name = provider_name
         session.client = self._init_provider(provider_name)
         session.model = config.get_provider_config(provider_name)["model"]
+        session.current_provider_idx = session_idx
 
     def new_session(self):
         """Una conversación independiente con fallback automático según cadena."""
         if self.primary_provider == "local":
-            return LocalSession()
+            current_idx = self.fallback_chain.index(self.primary_provider)
+            return LocalSession(provider_name=self.primary_provider,
+                              brain_ref=self,
+                              current_idx=current_idx)
         elif self.primary_provider == "anthropic":
             client = self._init_provider(self.primary_provider)
             if client is None:
                 raise RuntimeError(f"No se pudo inicializar el proveedor {self.primary_provider}")
             provider_config = config.get_provider_config(self.primary_provider)
-            return AnthropicSession(client, provider_config["model"])
+            current_idx = self.fallback_chain.index(self.primary_provider)
+            return AnthropicSession(client, provider_config["model"],
+                                  provider_name=self.primary_provider,
+                                  brain_ref=self,
+                                  current_idx=current_idx)
         else:
             # Groq, OpenAI (compatible con OpenAI SDK)
             client = self._init_provider(self.primary_provider)
@@ -356,5 +397,6 @@ class Brain:
                 client, 
                 provider_config["model"],
                 provider_name=self.primary_provider,
-                brain_ref=self
+                brain_ref=self,
+                current_idx=current_idx
             )
