@@ -1,7 +1,6 @@
 <!--
-  IgrisHero.vue — cabeza de Igris centrada sobre el chat (opción A).
-  Ubicación sugerida: web/src/components/IgrisHero.vue
-  Colócalo justo encima del chat:  <IgrisHero />
+  IgrisHero.vue — Igris a pantalla completa de fondo + estado en la parte superior.
+  Ubicación: web/src/components/IgrisHero.vue
 -->
 <script setup>
 import { computed } from 'vue'
@@ -18,28 +17,24 @@ const caption = computed(() => CAPTIONS[igris.state] || CAPTIONS.idle)
 </script>
 
 <template>
-  <section class="hero">
-    <IgrisAvatar :state="igris.state" :level="igris.level" :size="180" />
+  <div>
+    <IgrisAvatar fullscreen :state="igris.state" :level="igris.level" />
     <p class="caption" aria-live="polite">{{ caption }}</p>
-  </section>
+  </div>
 </template>
 
 <style scoped>
-.hero {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 8px 0 4px;
-}
 .caption {
-  margin: 4px 0 0;
-  font-size: 0.9rem;
-  color: #8b9bb8;
-}
-@media (max-width: 640px) {
-  .hero :deep(svg) {
-    width: 140px;
-    height: auto;
-  }
+  position: fixed;
+  top: 76px;
+  left: 0;
+  right: 0;
+  z-index: 5;
+  text-align: center;
+  pointer-events: none;
+  font-size: 0.95rem;
+  letter-spacing: 0.04em;
+  color: #cbd5e1;
+  text-shadow: 0 1px 8px rgba(2, 6, 23, 0.9);
 }
 </style>
