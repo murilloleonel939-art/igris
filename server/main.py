@@ -113,88 +113,6 @@ async def http_chat(req: ChatRequest):
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
-# ----------------------------------------------------------------------
-# Funciones reutilizables de Igris (evitan hacer llamadas HTTP a sí mismas)
-# ----------------------------------------------------------------------
-async def _get_igris_reply(text: str) -> str:
-    """Envía el texto al cerebro de Igris y devuelve la respuesta de Igris."""
-    try:
-        session = brain.new_session()
-        reply = await session.say(text)
-        return reply
-    except Exception as e:
-        return f"Lo siento, mi señor, ocurrió un error al consultar a Igris: {e}"
-
-
-async def _get_igris_ai_config() -> dict:
-    """Devuelve la configuración actual de IA (igual que el endpoint /api/ai-config)."""
-    from core import config
-    try:
-        settings = get_settings()
-        ai_config = settings.get_ai_config() or {}
-        defaults = config.get_active_provider_config()
-        primary = ai_config.get("primary_provider") or defaults.get("active_provider")
-        fallback = ai_config.get("fallback_chain")
-        if fallback is None:
-            fallback = defaults.get("fallback_chain", [])
-        if not isinstance(fallback, list):
-            fallback = []
-        # Garantizar que el primary esté en la fallback chain
-        if primary and primary not in fallback:
-            fallback.insert(0, primary)
-        if not fallback:
-            fallback = defaults.get("fallback_chain", [])
-        return {
-            "primary_provider": primary,
-            "fallback_chain": fallback,
-        }
-    except Exception:
-        # En caso de error, devolvemos los valores por defecto
-        defaults = config.get_active_provider_config()
-        return {
-            "primary_provider": defaults.get("active_provider", "nemotron"),
-            "fallback_chain": defaults.get("fallback_chain", []),
-        }
-
-
-async def _set_igris_ai_config(primary: Optional[str] = None,
-                               fallback: Optional[list[str]] = None) -> dict:
-    """Actualiza la configuración de IA (igual que el endpoint PUT /api/ai-config)."""
-    from core import config
-    try:
-        settings = get_settings()
-        current = settings.get_ai_config() or {}
-        defaults = config.get_active_provider_config()
-
-        if primary is not None:
-            current["primary_provider"] = primary
-        if fallback is not None:
-            # limpiar posibles cadenas vacías
-            current["fallback_chain"] = [p.strip() for p in fallback if p.strip()]
-
-        # Asegurar que el primary esté en la fallback chain
-        prim = current.get("primary_provider") or defaults.get("active_provider")
-        if prim is not None:
-            fb = current.get("fallback_chain", [])
-            if not isinstance(fb, list):
-                fb = []
-            if prim not in fb:
-                fb.insert(0, prim)
-            current["fallback_chain"] = fb
-
-        if not settings.set_ai_config(current):
-            return {"status": "error", "message": "No se pudo guardar la configuración"}
-
-        # Hacer que los cambios tengan efecto inmediato
-        brain.reload_settings()
-        return {
-            "status": "ok",
-            "primary_provider": prim,
-            "fallback_chain": current.get("fallback_chain", []),
-            "message": "Configuración actualizada correctamente."
-        }
-    except Exception as e:
-        return {"status": "error", "message": f"Error al actualizar configuración: {e}"}
 
 # ============= CONFIGURACIÓN DE IA (Sin autenticación) =============
 from pydantic import BaseModel
@@ -435,6 +353,91 @@ async def process_telegram_update(update_dict: dict):
     reply = await _get_igris_reply(text)
     await message.reply_text(reply)
 
+
+# ----------------------------------------------------------------------
+# Funciones reutilizables de Igris (evitan hacer llamadas HTTP a sí mismas)
+# ----------------------------------------------------------------------
+async def _get_igris_reply(text: str) -> str:
+    """Envía el texto al cerebro de Igris y devuelve la respuesta de Igris."""
+    try:
+        session = brain.new_session()
+        reply = await session.say(text)
+        return reply
+    except Exception as e:
+        return f"Lo siento, mi señor, ocurrió un error al consultar a Igris: {e}"
+
+
+async def _get_igris_ai_config() -> dict:
+    """Devuelve la configuración actual de IA (igual que el endpoint /api/ai-config)."""
+    from core import config
+    try:
+        settings = get_settings()
+        ai_config = settings.get_ai_config() or {}
+        defaults = config.get_active_provider_config()
+        primary = ai_config.get("primary_provider") or defaults.get("active_provider")
+        fallback = ai_config.get("fallback_chain")
+        if fallback is None:
+            fallback = defaults.get("fallback_chain", [])
+        if not isinstance(fallback, list):
+            fallback = []
+        # Garantizar que el primary esté en la fallback chain
+        if primary and primary not in fallback:
+            fallback.insert(0, primary)
+        if not fallback:
+            fallback = defaults.get("fallback_chain", [])
+        return {
+            "primary_provider": primary,
+            "fallback_chain": fallback,
+        }
+    except Exception:
+        # En caso de error, devolvemos los valores por defecto
+        defaults = config.get_active_provider_config()
+        return {
+            "primary_provider": defaults.get("active_provider", "nemotron"),
+            "fallback_chain": defaults.get("fallback_chain", []),
+        }
+
+
+async def _set_igris_ai_config(primary: Optional[str] = None,
+                               fallback: Optional[list[str]] = None) -> dict:
+    """Actualiza la configuración de IA (igual que el endpoint PUT /api/ai-config)."""
+    from core import config
+    try:
+        settings = get_settings()
+        current = settings.get_ai_config() or {}
+        defaults = config.get_active_provider_config()
+
+        if primary is not None:
+            current["primary_provider"] = primary
+        if fallback is not None:
+            # limpiar posibles cadenas vacías
+            current["fallback_chain"] = [p.strip() for p in fallback if p.strip()]
+
+        # Asegurar que el primary esté en la fallback chain
+        prim = current.get("primary_provider") or defaults.get("active_provider")
+        if prim is not None:
+            fb = current.get("fallback_chain", [])
+            if not isinstance(fb, list):
+                fb = []
+            if prim not in fb:
+                fb.insert(0, prim)
+            current["fallback_chain"] = fb
+
+        if not settings.set_ai_config(current):
+            return {"status": "error", "message": "No se pudo guardar la configuración"}
+
+        # Hacer que los cambios tengan efecto inmediato
+        brain.reload_settings()
+        return {
+            "status": "ok",
+            "primary_provider": prim,
+            "fallback_chain": current.get("fallback_chain", []),
+            "message": "Configuración actualizada correctamente."
+        }
+    except Exception as e:
+        return {"status": "error", "message": f"Error al actualizar configuración: {e}"}
+
+
 # ============= WEBHOOK DE TELEGRAM =============
 @app.post("/telegram/webhook")
 async def telegram_webhook(
@@ -461,6 +464,7 @@ async def telegram_webhook(
     # Telegram espera una respuesta 200 OK para considerar que el update fue procesado.
     return {"status": "ok"}
 
+
 # ============= CONFIGURAR WEBHOOK AUTOMÁTICAMENTE AL INICIAR (OPCIONAL) =============
 @app.on_event("startup")
 async def on_startup():
@@ -481,6 +485,7 @@ async def on_startup():
         print(f"[Telegram] Webhook establecido en {TELEGRAM_WEBHOOK_URL}")
     except Exception as e:
         print(f"[Telegram] Error al establecer webhook: {e}")
+
 
 # ============= ROOT =============
 
