@@ -5,10 +5,12 @@ import asyncio
 import logging
 import os
 import secrets
+import time
+from collections import deque
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import FastAPI, Request, Header, HTTPException, BackgroundTasks
+from fastapi import FastAPI, Request, Header, HTTPException, BackgroundTasks, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 
@@ -32,17 +34,104 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# CORS - permitir frontend
+# CORS - solo el frontend (y el servidor de desarrollo local).
+# Sin allow_credentials: la clave viaja en el header X-Igris-Key, no en cookies.
+# El preflight (OPTIONS) lo responde este middleware antes de llegar a las rutas,
+# así que nunca pasa por require_key.
 origins = [
     "https://webigris.zottagroup.com",
-    "https://igris.zottagroup.com",
     "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
 ]
 
-app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_methods=["GET", "POST", "PUT", "OPTIONS"],
+    allow_headers=["Content-Type", "X-Igris-Key"],
+)
+
+# ============= ACCESO CON CLAVE ÚNICA =============
+# La clave vive solo en la variable de entorno IGRIS_ACCESS_KEY (Coolify).
+# Falla cerrado: si la variable no existe o está vacía, TODAS las rutas
+# protegidas responden 401.
+ACCESS_KEY = os.getenv("IGRIS_ACCESS_KEY", "").strip()
+if not ACCESS_KEY:
+    logger.error(
+        "IGRIS_ACCESS_KEY no está definida o está vacía: "
+        "todas las rutas protegidas rechazarán las peticiones."
+    )
+
+# Límite de intentos fallidos por IP (en memoria, se reinicia con el servicio)
+FAIL_LIMIT = 10        # fallos permitidos...
+FAIL_WINDOW = 300      # ...dentro de esta ventana (segundos)
+_MAX_TRACKED_IPS = 10000
+_failures: dict[str, deque] = {}
+
+
+def _client_ip(request: Request) -> str:
+    """IP del cliente detrás del proxy (Coolify/Traefik).
+
+    Se usa el ÚLTIMO valor de X-Forwarded-For: lo añade el proxy más cercano y
+    el cliente no puede falsificarlo (el primero sí podría venir inventado).
+    """
+    forwarded = request.headers.get("x-forwarded-for", "")
+    if forwarded:
+        last = forwarded.split(",")[-1].strip()
+        if last:
+            return last
+    return request.client.host if request.client else "desconocida"
+
+
+def _recent_failures(ip: str, now: float) -> Optional[deque]:
+    """Devuelve los fallos vigentes de la IP (descarta los vencidos)."""
+    attempts = _failures.get(ip)
+    if attempts is None:
+        return None
+    while attempts and now - attempts[0] > FAIL_WINDOW:
+        attempts.popleft()
+    if not attempts:
+        del _failures[ip]
+        return None
+    return attempts
+
+
+def _register_failure(ip: str, now: float) -> None:
+    # Evita que el diccionario crezca sin límite
+    if len(_failures) >= _MAX_TRACKED_IPS:
+        for known_ip in list(_failures):
+            _recent_failures(known_ip, now)
+    _failures.setdefault(ip, deque()).append(now)
+
+
+async def require_key(request: Request, x_igris_key: Optional[str] = Header(default=None)):
+    """Dependencia: exige el header X-Igris-Key válido.
+
+    Es async a propósito: así corre en el event loop (un solo hilo) y el
+    diccionario de intentos no necesita locks.
+    """
+    now = time.monotonic()
+    ip = _client_ip(request)
+
+    # 1) ¿IP bloqueada por demasiados fallos?
+    attempts = _recent_failures(ip, now)
+    if attempts is not None and len(attempts) >= FAIL_LIMIT:
+        retry_after = max(1, int(FAIL_WINDOW - (now - attempts[0])) + 1)
+        raise HTTPException(
+            status_code=429,
+            detail="Demasiados intentos fallidos. Espera unos minutos.",
+            headers={"Retry-After": str(retry_after)},
+        )
+
+    # 2) Comparación en tiempo constante y en bytes.
+    #    `not expected` => fail closed (sin clave configurada nunca se entra).
+    expected = ACCESS_KEY.encode("utf-8")
+    provided = (x_igris_key or "").encode("utf-8")
+    if not expected or not secrets.compare_digest(provided, expected):
+        _register_failure(ip, now)
+        raise HTTPException(status_code=401, detail="Clave de acceso inválida")
+
+    # 3) Clave correcta: se limpian los fallos de esa IP
+    _failures.pop(ip, None)
 
 # Instancia global del cerebro
 brain = Brain()
@@ -101,15 +190,23 @@ async def status():
     }
 
 
-# ============= CHAT VÍA HTTP (Sin autenticación) =============
+# ============= VALIDACIÓN DE LA CLAVE (pantalla de acceso) =============
+
+@app.get("/api/auth/check", dependencies=[Depends(require_key)])
+async def auth_check():
+    """La pantalla de acceso usa este endpoint para validar la clave."""
+    return {"ok": True}
+
+
+# ============= CHAT VÍA HTTP (requiere clave) =============
 from pydantic import BaseModel
 
 class ChatRequest(BaseModel):
     text: str
 
-@app.post("/api/chat")
+@app.post("/api/chat", dependencies=[Depends(require_key)])
 async def http_chat(req: ChatRequest):
-    """Endpoint de chat simple - sin autenticación requerido"""
+    """Endpoint de chat simple - requiere X-Igris-Key"""
     try:
         session = brain.new_session()
         reply = await session.say(req.text)
@@ -118,7 +215,7 @@ async def http_chat(req: ChatRequest):
         return {"status": "error", "message": str(e)}
 
 
-# ============= CONFIGURACIÓN DE IA (Sin autenticación) =============
+# ============= CONFIGURACIÓN DE IA (requiere clave) =============
 from pydantic import BaseModel
 from typing import List, Optional
 
@@ -133,7 +230,7 @@ class AIConfigResponse(BaseModel):
     message: Optional[str] = None
 
 
-@app.get("/api/ai-config")
+@app.get("/api/ai-config", dependencies=[Depends(require_key)])
 async def get_ai_config():
     """Obtener configuración actual de IA"""
     try:
@@ -175,7 +272,7 @@ async def get_ai_config():
         )
 
 
-@app.put("/api/ai-config")
+@app.put("/api/ai-config", dependencies=[Depends(require_key)])
 async def update_ai_config(config_update: AIConfigUpdate):
     """Actualizar configuración de IA"""
     try:
@@ -230,13 +327,13 @@ async def update_ai_config(config_update: AIConfigUpdate):
             message=f"Error al actualizar configuración: {str(e)}"
         )
 
-# ============= TTS ENDPOINT =============
+# ============= TTS ENDPOINT (requiere clave) =============
 from pydantic import BaseModel
 
 class TTSRequest(BaseModel):
     text: str
 
-@app.post("/api/tts")
+@app.post("/api/tts", dependencies=[Depends(require_key)])
 async def tts_endpoint(req: TTSRequest):
     """Convertir texto a voz usando la configuración de TTS"""
     try:
@@ -545,9 +642,10 @@ async def root():
         "endpoints": {
             "health": "/health",
             "status": "/status",
-            "chat": "/api/chat (POST)",
-            "ai-config": "/api/ai-config (GET/PUT)",
-            "tts": "/api/tts (POST)",
+            "auth-check": "/api/auth/check (GET, requiere X-Igris-Key)",
+            "chat": "/api/chat (POST, requiere X-Igris-Key)",
+            "ai-config": "/api/ai-config (GET/PUT, requiere X-Igris-Key)",
+            "tts": "/api/tts (POST, requiere X-Igris-Key)",
             "telegram-webhook": "/telegram/webhook (POST)"
         }
     }
