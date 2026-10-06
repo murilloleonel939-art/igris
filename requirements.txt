@@ -19,3 +19,4 @@ pyjwt
 email-validator
 piper-tts
 edge-tts
+python-telegram-bot==20.6
