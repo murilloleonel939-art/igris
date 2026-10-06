@@ -2,7 +2,12 @@
   "version": "1.0",
   "ai": {
     "primary_provider": "groq",
-    "fallback_chain": ["groq", "openai", "anthropic", "local"],
+    "fallback_chain": [
+      "groq",
+      "openai",
+      "anthropic",
+      "local"
+    ],
     "models": {
       "groq": "llama-3.1-70b-versatile",
       "openai": "gpt-4o-mini",
@@ -16,9 +21,9 @@
     "language": "es"
   },
   "tts": {
-    "provider": "local",
-    "voice": "es_ES-carlos-medium",
-    "instructions": "Habla como un caballero de las sombras: grave, solemne, pausado, con respeto."
+    "provider": "edge",
+    "voice": "es-CO-GonzaloNeural",
+    "instructions": "Habla con un tono calmado, neutral y claro, dirigiéndote al usuario como 'mi señor'."
   },
   "system": {
     "personality": "caballero_sombras",
