@@ -1,14 +1,14 @@
 # core/stt.py
-import os
 import io
+import os
 import tempfile
 from typing import Union
 
 # ---- OPTIONAL: openai (for the cloud API) ----
 try:
-    import openai  # type: ignore
+    from openai import OpenAI  # type: ignore
 except Exception:  # pragma: no cover
-    openai = None  # type: ignore
+    OpenAI = None  # type: ignore
 
 # ---- OPTIONAL: whisper (for local STT) ----
 try:
@@ -16,32 +16,52 @@ try:
 except Exception:  # pragma: no cover
     whisper = None  # type: ignore
 
-def _load_whisper_model(model_name: str = "tiny"):
+AudioInput = Union[bytes, bytearray, memoryview, io.BytesIO]
+
+_whisper_model = None
+
+
+def _to_bytes(audio: AudioInput) -> bytes:
+    """Normaliza cualquier entrada de audio a bytes.
+
+    Acepta bytes, bytearray (lo que devuelve download_as_bytearray de Telegram),
+    memoryview y objetos tipo archivo (BytesIO, UploadFile.file, etc.).
     """
-    Carga (y cachea) un modelo de Whisper local.
-    Se llama solo la primera vez que se necesita STT local.
-    """
+    if isinstance(audio, (bytes, bytearray, memoryview)):
+        return bytes(audio)
+    if hasattr(audio, "read"):
+        data = audio.read()
+        return bytes(data)
+    raise TypeError(f"Tipo de audio no soportado: {type(audio).__name__}")
+
+
+def _load_whisper_model():
+    """Carga (y cachea) un modelo de Whisper local la primera vez que se necesita."""
     global _whisper_model
-    if "_whisper_model" not in globals() or _whisper_model is None:
+    if _whisper_model is None:
         if whisper is None:
             raise RuntimeError(
                 "El paquete 'openai-whisper' no está instalado. "
                 "Instálalo con: pip install openai-whisper"
             )
-        # El modelo se descarga automáticamente la primera vez.
+        model_name = os.getenv("IGRIS_WHISPER_MODEL", "base")
         _whisper_model = whisper.load_model(model_name)
-    return _whisper_model  # type: ignore
+    return _whisper_model
 
 
-def transcribe(audio_bytes: Union[bytes, io.BytesIO]) -> str:
+def transcribe(audio: AudioInput) -> str:
     """
-    Recibe un arreglo de bytes con el audio (formato que Telegram envía:
+    Recibe el audio (bytes, bytearray o archivo en memoria; Telegram envía
     normalmente OGG Opus) y devuelve el texto reconocido.
+
+    Es una función bloqueante: desde código async llámala con
+    `await asyncio.to_thread(transcribe, audio)`.
     """
     provider = os.getenv("IGRIS_STT_PROVIDER", "local").lower().strip()
+    data = _to_bytes(audio)
 
     if provider == "openai":
-        if openai is None:
+        if OpenAI is None:
             raise RuntimeError(
                 "El paquete 'openai' no está instalado. "
                 "Instálalo con: pip install openai"
@@ -51,31 +71,27 @@ def transcribe(audio_bytes: Union[bytes, io.BytesIO]) -> str:
             raise RuntimeError(
                 "Falta la variable de entorno OPENAI_API_KEY necesaria para usar Whisper en la nube."
             )
-        openai.api_key = api_key  # type: ignore
-
-        # Telegram envía OGG Opus; OpenAI acepta muchos formatos.
-        audio_file = ("audio.ogg", audio_bytes, "audio/ogg")
+        client = OpenAI(api_key=api_key)
         try:
-            resp = openai.Audio.transcribe(  # type: ignore
+            resp = client.audio.transcriptions.create(
                 model=os.getenv("IGRIS_STT_MODEL", "whisper-1"),
-                file=audio_file,
+                file=("audio.ogg", data, "audio/ogg"),
+                language="es",
             )
-            return resp.get("text", "").strip()
+            return (resp.text or "").strip()
         except Exception as e:  # pragma: no cover
             raise RuntimeError(f"Error al llamar a la API de Whisper de OpenAI: {e}")
 
     elif provider == "local":
-        # Guardamos los bytes en un archivo temporal porque whisper.load_audio
-        # espera una ruta o un file‑like object.
+        # openai-whisper trabaja con rutas (usa ffmpeg por debajo): archivo temporal.
         with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as tmp:
-            tmp.write(audio_bytes if isinstance(audio_bytes, bytes) else audio_bytes.read())
+            tmp.write(data)
             tmp_path = tmp.name
 
         try:
             model = _load_whisper_model()
-            result = model.transcribe(tmp_path, fp16=False)  # type: ignore
-            text = result.get("text", "").strip()
-            return text
+            result = model.transcribe(tmp_path, fp16=False, language="es")
+            return (result.get("text") or "").strip()
         finally:
             try:
                 os.remove(tmp_path)
