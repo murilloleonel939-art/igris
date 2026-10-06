@@ -188,7 +188,7 @@ async def update_ai_config(config_update: AIConfigUpdate):
             fallback_list = [p.strip() for p in config_update.fallback_chain if p.strip()]
             if fallback_list:
                 current_ai_config["fallback_chain"] = fallback_list
-         
+          
         # Ensure primary provider is in fallback chain (fixes 'not in list' error)
         primary = current_ai_config.get("primary_provider")
         if primary is not None:
@@ -238,7 +238,7 @@ async def tts_endpoint(req: TTSRequest):
     try:
         # Usar la función existente de core/tts.py
         audio_bytes = await tts.synthesize(req.text)
-         
+          
         # Devolver como respuesta binaria con tipo de contenido correcto
         from fastapi.responses import Response
         return Response(
@@ -437,7 +437,7 @@ async def _get_igris_ai_config() -> dict:
 
 
 async def _set_igris_ai_config(primary: Optional[str] = None,
-                               fallback: Optional[list[str]] = None) -> dict:
+                                fallback: Optional[list[str]] = None) -> dict:
     """Actualiza la configuración de IA (igual que el endpoint PUT /api/ai-config)."""
     from core import config
     try:
@@ -473,7 +473,7 @@ async def _set_igris_ai_config(primary: Optional[str] = None,
             "message": "Configuración actualizada correctamente."
         }
     except Exception as e:
-        return {"status": "error", "message": f"Error al actualizar configuración: {e}"
+        return {"status": "error", "message": f"Error al actualizar configuración: {e}"}
 
 
 # ============= WEBHOOK DE TELEGRAM =============
@@ -526,7 +526,6 @@ async def on_startup():
 
 
 # ============= ROOT =============
-
 @app.get("/")
 async def root():
     """API root"""
