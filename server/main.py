@@ -147,8 +147,14 @@ async def get_ai_config():
         # Ensure we have the expected fields
         primary_provider = ai_config.get("primary_provider", "groq")
         fallback_chain = ai_config.get("fallback_chain", ["groq", "openai", "anthropic", "local"])
-        # Ensure fallback_chain is a list
+        # Ensure fallback_chain is a valid list
         if not isinstance(fallback_chain, list):
+            fallback_chain = []
+        # Ensure primary provider is in fallback chain (fixes 'not in list' error)
+        if primary_provider is not None and primary_provider not in fallback_chain:
+            fallback_chain.insert(0, primary_provider)
+        # If fallback_chain is empty, use default
+        if not fallback_chain:
             fallback_chain = ["groq", "openai", "anthropic", "local"]
         return AIConfigResponse(
             status="ok",
@@ -181,6 +187,15 @@ async def update_ai_config(config_update: AIConfigUpdate):
             if fallback_list:
                 current_ai_config["fallback_chain"] = fallback_list
         
+        # Ensure primary provider is in fallback chain (fixes 'not in list' error)
+        primary = current_ai_config.get("primary_provider")
+        if primary is not None:
+            fallback_chain = current_ai_config.get("fallback_chain", [])
+            if not isinstance(fallback_chain, list):
+                fallback_chain = []
+            if primary not in fallback_chain:
+                fallback_chain.insert(0, primary)
+            current_ai_config["fallback_chain"] = fallback_chain
         # Save the updated configuration
         if settings.set_ai_config(current_ai_config):
             # Reload brain configuration to take effect immediately
