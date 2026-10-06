@@ -3,10 +3,11 @@
   Ubicación: web/src/components/IgrisAvatar.vue
   Video:     web/public/igris.mp4   (se sirve como /igris.mp4)
 
-  Props (iguales que antes: no hay que tocar IgrisHero ni useIgris)
-    state : 'idle' | 'listening' | 'thinking' | 'speaking'
-    level : volumen 0..1. Si es -1, se simula.
-    size  : ancho en px (el alto se calcula con la proporción 480x800 del video)
+  Props
+    state      : 'idle' | 'listening' | 'thinking' | 'speaking'
+    level      : volumen 0..1. Si es -1, se simula.
+    size       : ancho en px (solo si no es fullscreen)
+    fullscreen : true = ocupa toda la pantalla como fondo
 -->
 <script setup>
 import { ref, onMounted, onBeforeUnmount } from 'vue'
@@ -15,6 +16,7 @@ const props = defineProps({
   state: { type: String, default: 'idle' },
   level: { type: Number, default: -1 },
   size: { type: Number, default: 240 },
+  fullscreen: { type: Boolean, default: false },
 })
 
 const VIDEO_SRC = '/igris.mp4'
@@ -79,20 +81,25 @@ function frame(now) {
   raf = requestAnimationFrame(frame)
 }
 
+const resume = () => video.value?.play().catch(() => {})
+
 onMounted(() => {
   frame(performance.now())
   // Si el navegador bloquea el autoplay, arranca al primer toque/clic
-  const resume = () => video.value?.play().catch(() => {})
   window.addEventListener('pointerdown', resume, { once: true })
 })
-onBeforeUnmount(() => cancelAnimationFrame(raf))
+onBeforeUnmount(() => {
+  cancelAnimationFrame(raf)
+  window.removeEventListener('pointerdown', resume)
+})
 </script>
 
 <template>
   <div
     class="igris"
+    :class="{ 'igris--full': fullscreen }"
     :data-state="state"
-    :style="{ width: size + 'px', height: Math.round(size * RATIO) + 'px' }"
+    :style="fullscreen ? null : { width: size + 'px', height: Math.round(size * RATIO) + 'px' }"
     role="img"
     :aria-label="LABELS[state] || LABELS.idle"
   >
@@ -119,7 +126,6 @@ onBeforeUnmount(() => cancelAnimationFrame(raf))
   display: block;
   overflow: hidden;
   border-radius: 16px;
-  /* Difumina los cuatro bordes para que se funda con el fondo oscuro de la página */
   -webkit-mask-image:
     linear-gradient(to right, transparent, #000 14%, #000 86%, transparent),
     linear-gradient(to bottom, transparent, #000 10%, #000 78%, transparent);
@@ -146,5 +152,42 @@ video {
   font-size: 0.8rem;
   text-align: center;
   padding-top: 45%;
+}
+
+/* ───── Pantalla completa ───── */
+.igris--full {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  border-radius: 0;
+  pointer-events: none;
+  -webkit-mask-image: none;
+  mask-image: none;
+  background: radial-gradient(ellipse at 50% 40%, rgba(30, 64, 175, 0.35), rgba(2, 6, 23, 0) 70%);
+}
+/* El video es vertical: ocupa todo el alto y los costados se funden con el fondo.
+   En pantallas verticales (celular) llena toda la pantalla. */
+.igris--full .box {
+  flex: none;
+  height: 100%;
+  width: auto;
+  aspect-ratio: 480 / 800;
+  -webkit-mask-image:
+    linear-gradient(to right, transparent, #000 22%, #000 78%, transparent),
+    linear-gradient(to bottom, #000 82%, transparent);
+  -webkit-mask-composite: source-in;
+  mask-image:
+    linear-gradient(to right, transparent, #000 22%, #000 78%, transparent),
+    linear-gradient(to bottom, #000 82%, transparent);
+  mask-composite: intersect;
+}
+@media (max-aspect-ratio: 3/5) {
+  .igris--full .box {
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
 }
 </style>
