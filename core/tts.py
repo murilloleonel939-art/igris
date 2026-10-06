@@ -37,7 +37,9 @@ def _load_piper():
 
 async def synthesize(text: str) -> bytes:
     # 1. Preferido: Piper local (gratis, privado, sin API)
-    if TTS_PROVIDER == "local" and _piper_available:
+    if TTS_PROVIDER == "local":
+        if not _piper_available:
+            raise RuntimeError("Piper no está instalado. Instala con: pip install piper-tts")
         global _client_local
         try:
             if _client_local is None:
@@ -58,11 +60,11 @@ async def synthesize(text: str) -> bytes:
                         os.unlink(temp_path)
             return await loop.run_in_executor(None, synth_sync)
         except Exception as e:
-            # Si piper falla, intentar respaldo
-            pass
+            # Si piper falla, levantar el error claramente
+            raise RuntimeError(f"Error al sintetizar con Piper: {str(e)}")
 
     # 2. Respaldo gratuito: edge-tts (Microsoft, gratuito)
-    if TTS_PROVIDER == "edge" or (TTS_PROVIDER == "local" and not _piper_available):
+    elif TTS_PROVIDER == "edge":
         if not _edge_available:
             raise RuntimeError("edge-tts no instalado. Instala con: pip install edge-tts")
         import asyncio, tempfile
@@ -81,7 +83,7 @@ async def synthesize(text: str) -> bytes:
         return data
 
     # 3. Respaldo con API de OpenAI (si tiene key y quiere usar)
-    if TTS_PROVIDER == "openai":
+    elif TTS_PROVIDER == "openai":
         from openai import AsyncOpenAI
         _client = AsyncOpenAI()
         resp = await _client.audio.speech.create(
@@ -93,4 +95,5 @@ async def synthesize(text: str) -> bytes:
         )
         return resp.content
 
-    raise RuntimeError("TTS no configurado. Usa local (Piper), edge (edge-tts) o openai.")
+    else:
+        raise RuntimeError(f"TTS no configurado correctamente. Proveedor '{TTS_PROVIDER}' no soportado. Usa local, edge o openai.")
