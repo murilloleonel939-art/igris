@@ -124,8 +124,16 @@ Se configuran en el servicio de **backend** en Coolify. Después de cambiarlas h
 |----------|-------------|-----------------------|
 | `IGRIS_STT_PROVIDER` | Proveedor de transcripción: `local` u `openai` | `local` |
 | `IGRIS_WHISPER_MODEL` | Modelo de Whisper local (`tiny`, `base`, `small`, `medium`) | `base` |
-| `IGRIS_STT_MODEL` | Modelo de Whisper para el proveedor `openai` | `whisper-1` |
+| `IGRIS_STT_MODEL` | Modelo de Whisper para el proveedor `openai` (no aplica al local) | `whisper-1` |
+| `IGRIS_STT_LANGUAGE` | Idioma del audio a transcribir (código de 2 letras) | `es` |
 | `IGRIS_TTS_PROVIDER` | Proveedor de síntesis de voz | `local` |
+| `IGRIS_TTS_VOICE` | Voz a usar (los valores válidos dependen del proveedor de TTS) | según proveedor |
+| `IGRIS_TTS_RATE` | Velocidad de la voz | según proveedor |
+| `IGRIS_TTS_PITCH` | Tono de la voz | según proveedor |
+| `IGRIS_TTS_INSTRUCTIONS` | Instrucciones de estilo para la voz (en proveedores que lo soporten) | texto libre |
+| `IGRIS_PIPER_VOICE` | Voz del modelo Piper (cuando se usa Piper) | según modelo instalado |
+
+> Los valores aceptados por las variables `IGRIS_TTS_*` y `IGRIS_PIPER_VOICE` los define `core/tts.py`; revísalo antes de cambiarlos.
 
 ### Telegram
 
@@ -134,13 +142,21 @@ Se configuran en el servicio de **backend** en Coolify. Después de cambiarlas h
 | `TELEGRAM_TOKEN` | Token del bot (de @BotFather) |
 | `ALLOWED_TELEGRAM_IDS` | IDs de Telegram autorizados, separados por comas |
 | `TELEGRAM_WEBHOOK_URL` | URL pública del webhook, p. ej. `https://igris.zottagroup.com/telegram/webhook` |
-| `TELEGRAM_WEBHOOK_SECRET` | Secreto para validar que las peticiones vienen de Telegram |
+| `TELEGRAM_WEBHOOK_SECRET` | Secreto para validar que las peticiones vienen de Telegram. **Obligatorio en producción**: si está vacío, el webhook no valida el origen |
 
 ### Base de datos
 
 | Variable | Descripción |
 |----------|-------------|
 | `DATABASE_URL` | Conexión a PostgreSQL (usa el prefijo `postgresql://`, no `postgres://`) |
+
+### Otras
+
+| Variable | Descripción |
+|----------|-------------|
+| `NODE_TOKEN` | Token reservado para los clientes `node/` (Raspberry Pi). Hoy ningún endpoint lo exige |
+
+> ⚠️ Las variables `VITE_*` son del **frontend**: se configuran en el servicio del frontend y se incrustan en el JavaScript público al compilar. Nunca pongas secretos en ellas ni las agregues al backend.
 
 ### Ejemplo mínimo
 
@@ -221,9 +237,4 @@ La primera nota de voz tras un despliegue descarga el modelo de Whisper (unos 14
 
 ---
 
-*Última actualización: Octubre 2026*
-
-**¡Disfruta conversando con Iris usando el poder de NVIDIA Nemotron 3 Super 120B y la flexibilidad de cambiar entre proveedores de IA según tus necesidades!** 🚀
-
----
 *Última actualización: Octubre 2026*
