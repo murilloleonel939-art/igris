@@ -21,6 +21,12 @@ AudioInput = Union[bytes, bytearray, memoryview, io.BytesIO]
 _whisper_model = None
 
 
+def _language() -> str:
+    """Idioma del audio (código ISO-639-1). Se configura con IGRIS_STT_LANGUAGE."""
+    lang = os.getenv("IGRIS_STT_LANGUAGE", "es").strip().lower().split("-")[0]
+    return lang or "es"
+
+
 def _to_bytes(audio: AudioInput) -> bytes:
     """Normaliza cualquier entrada de audio a bytes.
 
@@ -76,7 +82,7 @@ def transcribe(audio: AudioInput) -> str:
             resp = client.audio.transcriptions.create(
                 model=os.getenv("IGRIS_STT_MODEL", "whisper-1"),
                 file=("audio.ogg", data, "audio/ogg"),
-                language="es",
+                language=_language(),
             )
             return (resp.text or "").strip()
         except Exception as e:  # pragma: no cover
@@ -90,7 +96,7 @@ def transcribe(audio: AudioInput) -> str:
 
         try:
             model = _load_whisper_model()
-            result = model.transcribe(tmp_path, fp16=False, language="es")
+            result = model.transcribe(tmp_path, fp16=False, language=_language())
             return (result.get("text") or "").strip()
         finally:
             try:
