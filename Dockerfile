@@ -26,6 +26,13 @@ RUN pip install --upgrade pip setuptools wheel
 WORKDIR /app
 
 # --------------------------------------------------------------
+# PyTorch SOLO CPU (el servidor no tiene GPU). Se instala antes que el resto
+# para que openai-whisper encuentre torch ya instalado y no descargue la
+# versión con CUDA, que pesa varios GB.
+# --------------------------------------------------------------
+RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
+
+# --------------------------------------------------------------
 # Copiar únicamente el fichero de requirements para aprovechar la capa de caché
 # --------------------------------------------------------------
 COPY requirements.txt .
