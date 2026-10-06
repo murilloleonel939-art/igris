@@ -19,7 +19,7 @@
                aria-label="Reproducir respuesta"
              >
                <svg v-if="!isPlayingTTS[i]" class="w-4 h-4 text-slate-400" viewBox="0 0 24 24">
-                 <path fill="currentColor" d="M12 4a2 2 0 012 2v1.5a3 3 0 1000-6zm0 14a2 2 0 012-2v-1.5a3 3 0 1000 6zm9.66-9.66l-1.42-1.42L18 12.17V7l-1.5-1.5-1.5 1.5V13l3.66-3.66z"/>
+                 <path fill="currentColor" d="M12 4a2 2 0 012 2v1.5a3 3 0 100-6zm0 14a2 2 0 012-2v-1.5a3 3 0 100 6zm9.66-9.66l-1.42-1.42L18 12.17V7l-1.5-1.5-1.5 1.5V13l3.66-3.66z"/>
                </svg>
                <svg v-else class="w-4 h-4 animate-spin text-slate-400" viewBox="0 0 24 24">
                  <path fill="currentColor" d="M12 2a10 10 0 100 20 20 20 10 10 0 00-20-20zm0 2a8 8 0 110 0 16 8 8 0 010-16z"/>
