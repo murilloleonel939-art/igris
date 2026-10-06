@@ -1,77 +1,89 @@
-"""STT (Speech-to-Text) libre/local. Usa Whisper local (faster-whisper) o la API gratuita de OpenAI como respaldo."""
-import io, os, sys
-STT_PROVIDER = os.environ.get("IGRIS_STT_PROVIDER", "local").lower()  # "local" o "openai"
-STT_MODEL = os.environ.get("IGRIS_STT_MODEL", "tiny")  # para local: tiny, base, small, medium, large
-STT_LANGUAGE = os.environ.get("IGRIS_STT_LANGUAGE", "es")
+# core/stt.py
+import os
+import io
+import tempfile
+from typing import Union
 
-_client_local = None
-
-# Intento de carga local libre (faster-whisper / whisper)
+# ---- OPTIONAL: openai (for the cloud API) ----
 try:
-    from faster_whisper import WhisperModel
-except Exception:
-    WhisperModel = None
+    import openai  # type: ignore
+except Exception:  # pragma: no cover
+    openai = None  # type: ignore
 
+# ---- OPTIONAL: whisper (for local STT) ----
 try:
-    import whisper
-except Exception:
-    whisper = None
+    import whisper  # type: ignore
+except Exception:  # pragma: no cover
+    whisper = None  # type: ignore
 
-
-def _load_local_model():
-    model_name = STT_MODEL
-    if WhisperModel is not None:
-        # faster-whisper (más rápido, libre)
-        model = WhisperModel(model_name, device="cpu", compute_type="int8")
-        return model, "faster"
-    elif whisper is not None:
-        # openai-whisper local
-        model = whisper.load_model(model_name)
-        return model, "whisper"
-    return None, None
-
-
-async def transcribe(wav_bytes: bytes) -> str:
-    # 1. Intentar local/gratuito
-    if STT_PROVIDER == "local" and (WhisperModel is not None or whisper is not None):
-        global _client_local
-        if _client_local is None:
-            model, mode = _load_local_model()
-            _client_local = (model, mode)
-        model, mode = _client_local
-        if model is None:
-            raise RuntimeError("Modelo local no cargado.")
-        # Guardar temporalmente para decodificar (o usar BytesIO si es posible)
-        # faster-whisper puede usar audio numpy; simplificamos con archivo temporal
-        import tempfile, soundfile as sf
-        temp_path = None
-        try:
-            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
-                f.write(wav_bytes)
-                temp_path = f.name
-            if mode == "faster":
-                segments, _ = model.transcribe(temp_path, language=STT_LANGUAGE, task="transcribe")
-                text = " ".join([seg.text for seg in segments])
-            else:
-                result = model.transcribe(temp_path, language=STT_LANGUAGE)
-                text = result.get("text", "")
-            return text.strip()
-        finally:
-            if temp_path and os.path.exists(temp_path):
-                os.unlink(temp_path)
-    # 2. Respaldo con API gratuita de OpenAI (si se configura OPENAI_API_KEY libre)
-    if STT_PROVIDER == "openai" or (STT_PROVIDER == "local" and (WhisperModel is None and whisper is None)):
-        try:
-            import openai
-            from openai import AsyncOpenAI
-            client = AsyncOpenAI()
-            f = io.BytesIO(wav_bytes)
-            f.name = "voz.wav"
-            r = await client.audio.transcriptions.create(
-                model=STT_MODEL, file=f, language=STT_LANGUAGE,
-                prompt="Igris, asistente personal. Órdenes para la casa y el trabajo."
+def _load_whisper_model(model_name: str = "tiny"):
+    """
+    Carga (y cachea) un modelo de Whisper local.
+    Se llama solo la primera vez que se necesita STT local.
+    """
+    global _whisper_model
+    if "_whisper_model" not in globals() or _whisper_model is None:
+        if whisper is None:
+            raise RuntimeError(
+                "El paquete 'openai-whisper' no está instalado. "
+                "Instálalo con: pip install openai-whisper"
             )
-            return (r.text or "").strip()
-        except Exception as e:
-            raise RuntimeError(f"STT falló (openai): {e}")
-    raise RuntimeError("STT no configurado. Usa local (faster-whisper/whisper) o openai.")
+        # El modelo se descarga automáticamente la primera vez.
+        _whisper_model = whisper.load_model(model_name)
+    return _whisper_model  # type: ignore
+
+
+def transcribe(audio_bytes: Union[bytes, io.BytesIO]) -> str:
+    """
+    Recibe un arreglo de bytes con el audio (formato que Telegram envía:
+    normalmente OGG Opus) y devuelve el texto reconocido.
+    """
+    provider = os.getenv("IGRIS_STT_PROVIDER", "local").lower().strip()
+
+    if provider == "openai":
+        if openai is None:
+            raise RuntimeError(
+                "El paquete 'openai' no está instalado. "
+                "Instálalo con: pip install openai"
+            )
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise RuntimeError(
+                "Falta la variable de entorno OPENAI_API_KEY necesaria para usar Whisper en la nube."
+            )
+        openai.api_key = api_key  # type: ignore
+
+        # Telegram envía OGG Opus; OpenAI acepta muchos formatos.
+        audio_file = ("audio.ogg", audio_bytes, "audio/ogg")
+        try:
+            resp = openai.Audio.transcribe(  # type: ignore
+                model=os.getenv("IGRIS_STT_MODEL", "whisper-1"),
+                file=audio_file,
+            )
+            return resp.get("text", "").strip()
+        except Exception as e:  # pragma: no cover
+            raise RuntimeError(f"Error al llamar a la API de Whisper de OpenAI: {e}")
+
+    elif provider == "local":
+        # Guardamos los bytes en un archivo temporal porque whisper.load_audio
+        # espera una ruta o un file‑like object.
+        with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as tmp:
+            tmp.write(audio_bytes if isinstance(audio_bytes, bytes) else audio_bytes.read())
+            tmp_path = tmp.name
+
+        try:
+            model = _load_whisper_model()
+            result = model.transcribe(tmp_path, fp16=False)  # type: ignore
+            text = result.get("text", "").strip()
+            return text
+        finally:
+            try:
+                os.remove(tmp_path)
+            except Exception:
+                pass
+
+    else:
+        raise RuntimeError(
+            f"Proveedor de STT desconocido '{provider}'. "
+            "Utiliza 'openai' o 'local'."
+        )
