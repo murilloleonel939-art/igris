@@ -3,12 +3,13 @@
     <!-- Igris a pantalla completa de fondo (solo en el chat) -->
     <IgrisHero v-if="$route.name === 'Chat'" />
 
-    <!-- Navigation Menu -->
+    <!-- Navigation Menu (oculto en la pantalla de acceso) -->
     <nav
+      v-if="$route.name && $route.name !== 'Access'"
       class="border-b border-slate-700"
       style="position: relative; z-index: 10; background: rgba(15, 23, 42, 0.55); backdrop-filter: blur(6px)"
     >
-      <div class="max-w-2xl mx-auto px-6 py-3 flex justify-center space-x-4">
+      <div class="max-w-2xl mx-auto px-6 py-3 flex justify-center items-center space-x-4">
         <router-link 
           to="/" 
           :class="{ 'bg-blue-600 text-white': $route.name === 'Chat', 'bg-slate-600 hover:bg-slate-700 text-slate-300': $route.name !== 'Chat' }"
@@ -23,6 +24,13 @@
         >
           ⚙️ Configuración
         </router-link>
+        <button
+          type="button"
+          class="px-3 py-1.5 rounded text-sm text-slate-400 hover:text-white hover:bg-slate-700 transition-all"
+          @click="logout"
+        >
+          Salir
+        </button>
       </div>
     </nav>
 
@@ -34,7 +42,18 @@
 </template>
 
 <script setup>
+import { useRouter } from 'vue-router'
 import IgrisHero from './components/IgrisHero.vue'
+import { clearKey } from './api'
+
+const router = useRouter()
+
+// Borra la clave guardada y vuelve a la pantalla de acceso.
+// Al cambiar de ruta, la página actual se desmonta (Dashboard detiene el micrófono).
+function logout() {
+  clearKey()
+  router.replace({ name: 'Access' })
+}
 </script>
 
 <style>
