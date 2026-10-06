@@ -28,6 +28,10 @@
 - **Menú de navegación**: 
   - 💬 **Chat**: interfaz para conversar con Iris
   - ⚙️ **Configuración**: página para ver y modificar proveedor de IA activo y cadena de fallback
+
+  - 🎤 **Entrada de voz**: Botón de micrófono en el chat para hablar con Iris (usa Web Speech API del navegador)
+  - 🔊 **Salida de voz**: Botón de altavoz junto a cada mensaje de Iris para escuchar sus respuestas (usa configuración TTS del backend)
+
 - **Configuración de IA**: 
   - Proveedores disponibles: groq, nemotron, openai, anthropic, local
   - Cadena de fallback personalizable (orden de prioridad)
