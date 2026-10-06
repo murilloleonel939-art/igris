@@ -99,21 +99,51 @@ const startVoiceInput = async () => {
 
   isListening.value = true
 
+  // Flag to ensure we only process one result per session
+  let resultProcessed = false
+  let finalTranscript = ''
+
   recognition.onresult = (event) => {
-    const transcript = event.results[0][0].transcript
-    chatInput.value = transcript
-    isListening.value = false
-    // Auto-send after voice input
-    sendChat()
+    // Prevent processing multiple results
+    if (resultProcessed) return
+    
+    try {
+      // Get the transcript from the most recent result
+      const transcript = event.results[event.resultIndex][0].transcript
+      
+      // Only update if we have meaningful content
+      if (transcript.trim().length > 0) {
+        finalTranscript = transcript.trim()
+      }
+    } catch (err) {
+      console.error('Error processing voice result:', err)
+    }
   }
 
   recognition.onend = () => {
     isListening.value = false
+    // Process the final result when recognition ends
+    if (!resultProcessed && finalTranscript.trim().length > 0) {
+      resultProcessed = true
+      try {
+        // Send the captured transcript
+        chatInput.value = finalTranscript
+        sendChat()
+      } catch (err) {
+        console.error('Error sending chat message:', err)
+      }
+    }
+    // Reset for next attempt
+    resultProcessed = false
+    finalTranscript = ''
   }
 
   recognition.onerror = (event) => {
-    console.error('Error de reconocimiento de voz:', event.error)
+    console.error('Speech recognition error:', event.error)
     isListening.value = false
+    resultProcessed = false
+    finalTranscript = ''
+    
     if (event.error === 'not-allowed') {
       alert('Permiso de micrófono denegado. Por favor permite el acceso al micrófono en la configuración de tu navegador.')
     } else if (event.error === 'audio-capture') {
@@ -126,7 +156,7 @@ const startVoiceInput = async () => {
   try {
     recognition.start()
   } catch (err) {
-    console.error('Error al iniciar reconocimiento de voz:', err)
+    console.error('Error starting recognition:', err)
     isListening.value = false
     alert('No se pudo iniciar el reconocimiento de voz. Por favor verifica tu micrófono y permisos.')
   }
