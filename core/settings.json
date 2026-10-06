@@ -1,14 +1,15 @@
 {
   "version": "1.0",
   "ai": {
-    "primary_provider": "groq",
+    "primary_provider": "nemotron",
     "fallback_chain": [
-      "groq",
+      "nemotron",
       "openai",
       "anthropic",
       "local"
     ],
     "models": {
+      "nemotron": "nvidia/nemotron-3-super-120b-a12b",
       "groq": "llama-3.1-70b-versatile",
       "openai": "gpt-4o-mini",
       "anthropic": "claude-sonnet-3-5",
