@@ -232,3 +232,5 @@ async def tts_endpoint(req: TTSRequest):
         print(f"Error en TTS endpoint: {e}")
         from fastapi import HTTPException
         raise HTTPException(status_code=500, detail=f"Error generating speech: {str(e)}")
+
+# Trivial update to force new commit for deployment - 1791253999
