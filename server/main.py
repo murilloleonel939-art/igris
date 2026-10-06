@@ -204,6 +204,8 @@ async def update_ai_config(config_update: AIConfigUpdate):
             primary_provider="groq",
             fallback_chain=["groq", "openai", "anthropic", "local"],
             message=f"Error al actualizar configuración: {str(e)}"
+        )
+
 # ============= TTS ENDPOINT =============
 from pydantic import BaseModel
 
@@ -230,6 +232,3 @@ async def tts_endpoint(req: TTSRequest):
         print(f"Error en TTS endpoint: {e}")
         from fastapi import HTTPException
         raise HTTPException(status_code=500, detail=f"Error generating speech: {str(e)}")
-        )
-
-
