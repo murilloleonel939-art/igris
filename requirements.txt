@@ -18,3 +18,4 @@ pillow
 pyjwt
 email-validator
 piper-tts
+edge-tts

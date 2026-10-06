@@ -30,7 +30,7 @@ except Exception:
 
 def _load_piper():
     # Piper local (gratuito, funciona en Raspberry Pi y PC)
-    from piper import Voice
+    from piper import PiperVoice as Voice
     voice = Voice.load(PIPER_VOICE)
     return voice
 
@@ -45,14 +45,15 @@ async def synthesize(text: str) -> bytes:
             if _client_local is None:
                 _client_local = _load_piper()
             voice = _client_local
-            # Piper usa síntesis bloqueante; envolvemos en executor para async
-            import asyncio, tempfile
+            # Piper usa síntesis bloqueante; envolviendo en executor para async
+            import asyncio, tempfile, wave
             loop = asyncio.get_event_loop()
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
                 temp_path = f.name
             def synth_sync():
                 try:
-                    voice.synthesize(text[:4000], wav_file=temp_path)
+                    with wave.open(temp_path, 'wb') as wav_file:
+                        voice.synthesize_wav(text[:4000], wav_file)
                     with open(temp_path, "rb") as f:
                         return f.read()
                 finally:
