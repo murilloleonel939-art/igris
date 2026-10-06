@@ -227,5 +227,3 @@ const startVoiceInput = async () => {
 }
 </script>
 <!-- Trivial update to force new commit for deployment - 1791254000 -->
-</script>
-<!-- Trivial update to force new commit for deployment - 1791254000 -->
