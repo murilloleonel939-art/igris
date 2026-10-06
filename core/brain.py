@@ -11,7 +11,11 @@ from core.settings_manager import get_settings
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_CHAIN = ["nemotron", "groq", "openai", "anthropic", "local"]
+DEFAULT_CHAIN = ["nemotron", "openai", "anthropic", "local"]
+
+# Tokens máximos por respuesta. Nemotron es un modelo con razonamiento:
+# con límites bajos (ej. 512) gasta todo pensando y devuelve content vacío.
+MAX_TOKENS = int(os.environ.get("IGRIS_MAX_TOKENS", "2048"))
 
 # Todos los proveedores se consumen con el SDK de OpenAI (APIs compatibles).
 PROVIDERS = {
@@ -21,29 +25,27 @@ PROVIDERS = {
         "base_default": "https://integrate.api.nvidia.com/v1",
         "model_env": "IGRIS_NEMOTRON_MODEL",
         "model_default": "nvidia/nemotron-3-super-120b-a12b",
-    },
-    "groq": {
-        "key_env": "GROQ_API_KEY",
-        "base_default": "https://api.groq.com/openai/v1",
-        "model_env": "IGRIS_GROQ_MODEL",
-        "model_default": "llama-3.1-70b-versatile",
+        "timeout": 60,
     },
     "openai": {
         "key_env": "OPENAI_API_KEY",
         "base_default": "https://api.openai.com/v1",
         "model_env": "IGRIS_OPENAI_MODEL",
         "model_default": "gpt-4o-mini",
+        "timeout": 30,
     },
     "anthropic": {
         "key_env": "ANTHROPIC_API_KEY",
         "base_default": "https://api.anthropic.com/v1/",
         "model_env": "IGRIS_ANTHROPIC_MODEL",
         "model_default": "claude-sonnet-5-5",
+        "timeout": 30,
     },
     "local": {
         "key_env": None,
         "model_env": "IGRIS_LOCAL_MODEL",
         "model_default": "llama3.1",
+        "timeout": 60,
     },
 }
 
@@ -61,7 +63,7 @@ def _build_client(name: str):
         base = os.environ.get("IGRIS_LOCAL_URL", "http://localhost:11434").rstrip("/")
         if not base.endswith("/v1"):
             base += "/v1"
-        return AsyncOpenAI(api_key="ollama", base_url=base, timeout=60), model
+        return AsyncOpenAI(api_key="ollama", base_url=base, timeout=spec["timeout"]), model
 
     api_key = os.environ.get(spec["key_env"], "")
     if not api_key:
@@ -69,7 +71,7 @@ def _build_client(name: str):
         return None
 
     base = os.environ.get(spec.get("base_env", ""), "") or spec["base_default"]
-    return AsyncOpenAI(api_key=api_key, base_url=base, timeout=30), model
+    return AsyncOpenAI(api_key=api_key, base_url=base, timeout=spec["timeout"]), model
 
 
 class BrainSession:
@@ -97,11 +99,14 @@ class BrainSession:
                     model=model,
                     messages=messages,
                     temperature=0.7,
-                    max_tokens=512,
+                    max_tokens=MAX_TOKENS,
                 )
-                reply = (resp.choices[0].message.content or "").strip()
+                choice = resp.choices[0]
+                reply = (choice.message.content or "").strip()
                 if not reply:
-                    raise ValueError("respuesta vacía")
+                    raise ValueError(
+                        f"respuesta vacía (finish_reason={choice.finish_reason})"
+                    )
                 self.history.append({"role": "user", "content": text})
                 self.history.append({"role": "assistant", "content": reply})
                 return reply
@@ -136,6 +141,11 @@ class Brain:
         if not isinstance(chain, list) or not chain:
             env_chain = os.environ.get("IGRIS_FALLBACK_CHAIN", "")
             chain = [p.strip() for p in env_chain.split(",") if p.strip()] or list(DEFAULT_CHAIN)
+
+        # Descarta proveedores que ya no existen (ej. groq guardado en settings viejos)
+        chain = [p for p in chain if p in PROVIDERS]
+        if primary not in PROVIDERS:
+            primary = DEFAULT_CHAIN[0]
 
         self.provider = primary
         self.fallback_chain = [primary] + [p for p in chain if p != primary]
