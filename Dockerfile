@@ -13,8 +13,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # --------------------------------------------------------------
 # Mejorar pip, setuptools y wheel antes de instalar las dependencias de Python
-# Esto evita el error:
-#   ModuleNotFoundError: No module named 'pkg_resources'
 # --------------------------------------------------------------
 RUN pip install --upgrade pip setuptools wheel
 
