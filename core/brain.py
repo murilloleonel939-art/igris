@@ -1,11 +1,7 @@
 """Brain module for IGRIS - Core AI orchestration"""
 
-import json
 import logging
-from datetime import datetime
 from core import config
-from core.database import get_db_session
-from sqlalchemy import text
 
 logger = logging.getLogger(__name__)
 
@@ -19,12 +15,12 @@ else:
 
 class Brain:
     """Brain class for managing AI responses"""
-    
+
     def __init__(self):
         self.provider = PROVIDER
         self.config = PROVIDER_CONFIG
         self.logger = logger
-        
+
     def process(self, message: str, context: dict = None) -> str:
         """Process a message and generate a response"""
         try:
@@ -33,15 +29,15 @@ class Brain:
             if provider_config:
                 self.provider = provider_config.get("active_provider", "nemotron")
                 self.config = provider_config
-            
+
             # Aquí va la lógica de procesamiento
             response = self._generate_response(message, context)
             return response
-            
+
         except Exception as e:
             self.logger.error(f"Error in Brain.process: {e}")
             raise
-    
+
     def _generate_response(self, message: str, context: dict = None) -> str:
         """Generate response using configured provider"""
         # Implementation goes here
