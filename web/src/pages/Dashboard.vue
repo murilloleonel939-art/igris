@@ -9,7 +9,7 @@
          <div v-for="(msg, i) in chatMessages" :key="i" class="mb-2 text-sm flex items-start">
            <span :class="msg.from === 'user' ? 'text-blue-300' : 'text-green-300'">{{ msg.from }}:</span>
            <span class="text-white ml-2">{{ msg.text }}</span>
-           <!-- Botón de altavoz solo para mensajes de Iris -->
+           <!-- Botón de altavoz solo para mensajes de Iris (SVG fix v2) -->
            <template v-if="msg.from === 'igris'">
              <button 
                @click.stop="playIrisResponse(msg.text, i)"
