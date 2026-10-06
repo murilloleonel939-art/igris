@@ -1,12 +1,25 @@
 """Texto a voz (TTS) libre/local. Usa Piper (local, gratis) o edge-tts/API gratuita como respaldo."""
 import os
-TTS_PROVIDER = os.environ.get("IGRIS_TTS_PROVIDER", "local").lower()  # "local" / "edge" / "openai"
-TTS_ENABLED = TTS_PROVIDER in ["local", "edge", "openai"]  # Compatible con server/main.py
+from core.settings_manager import get_settings
+
+def _get_tts_config():
+    """Obtiene configuración de TTS desde settings.json."""
+    try:
+        return get_settings().get_tts_config()
+    except Exception:
+        return {}
+
+_TTS_CFG = _get_tts_config()
+TTS_PROVIDER = os.environ.get("IGRIS_TTS_PROVIDER", _TTS_CFG.get("provider", "local")).lower()
+TTS_ENABLED = TTS_PROVIDER in ["local", "edge", "openai"]
 TTS_INSTRUCTIONS = os.environ.get(
     "IGRIS_TTS_INSTRUCTIONS",
-    "Habla como un caballero de las sombras: grave, solemne, pausado, con respeto. "
-    "Usa frases cortas. No uses listas ni markdown. Responde en español. "
-    "Dirígete al usuario como 'mi señor'. Si hay riesgo, advierte con calma antes de actuar.",
+    _TTS_CFG.get(
+        "instructions",
+        "Habla como un caballero de las sombras: grave, solemne, pausado, con respeto. "
+        "Usa frases cortas. No uses listas ni markdown. Responde en español. "
+        "Dirígete al usuario como 'mi señor'. Si hay riesgo, advierte con calma antes de actuar.",
+    ),
 )
 
 # Configuración local gratuita (Piper / Coqui)
@@ -72,8 +85,13 @@ async def synthesize(text: str) -> bytes:
         loop = asyncio.get_event_loop()
         with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
             temp_path = f.name
+        # Voice configurável via env IGRIS_TTS_VOICE o settings.tts.voice
+        tts_voice = os.environ.get(
+            "IGRIS_TTS_VOICE",
+            _TTS_CFG.get("voice", "es-ES-AlvaroNeural"),
+        )
         async def _edge():
-            communicate = edge_tts.Communicate(text[:4000], "es-ES-AlvaroNeural", rate="+0%", volume="+0%")
+            communicate = edge_tts.Communicate(text[:4000], tts_voice, rate="+0%", volume="+0%")
             await communicate.save(temp_path)
         await _edge()
         with open(temp_path, "rb") as f:
