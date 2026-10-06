@@ -1,107 +1,189 @@
-"""Configuración centralizada de Igris: proveedores, modelos, fallbacks.
-Diseñado para ser controlable desde un panel de administración futuro."""
-import os
-import json
+"""
+Configuración central de Igris
+Sistema de configuración de modelos, proveedores de IA y prompts
+"""
 
-# Configuración de proveedores disponibles
-PROVIDERS_CONFIG = {
-    "groq": {
-        "enabled": os.environ.get("GROQ_API_KEY") is not None,
-        "api_key": os.environ.get("GROQ_API_KEY", ""),
-        "model": os.environ.get("IGRIS_GROQ_MODEL", "openai/gpt-oss-120b"),
-        "priority": 1,  # Prioridad más alta = se intenta primero
-    },
-    "nemotron": {
-        "enabled": os.environ.get("NEMOTRON_API_KEY") is not None,
-        "api_key": os.environ.get("NEMOTRON_API_KEY", ""),
-        "api_base": os.environ.get("NEMOTRON_API_BASE", "https://integrate.api.nvidia.com/v1"),
-        "model": "nvidia/nemotron-3-super-120b-a12b",
-        "priority": 1,  # Alta prioridad (misma que groq para tentar primero)
-    },
-    "openai": {
-        "enabled": os.environ.get("OPENAI_API_KEY") is not None,
-        "api_key": os.environ.get("OPENAI_API_KEY", ""),
-        "model": os.environ.get("IGRIS_OPENAI_MODEL", "gpt-4o-mini"),
-        "priority": 2,
-    },
-    "anthropic": {
-        "enabled": os.environ.get("ANTHROPIC_API_KEY") is not None,
-        "api_key": os.environ.get("ANTHROPIC_API_KEY", ""),
-        "model": os.environ.get("IGRIS_ANTHROPIC_MODEL", "claude-sonnet-3-5"),
-        "priority": 3,
-    },
-    "local": {
-        "enabled": True,  # Siempre disponible como último recurso
-        "model": os.environ.get("IGRIS_LOCAL_MODEL", "ollama"),
-        "url": os.environ.get("IGRIS_LOCAL_URL", "http://localhost:11434"),
-        "priority": 999,  # Último recurso
-    },
+import os
+from typing import Optional
+
+# ==================== SYSTEM PROMPT ====================
+# Versión NEUTRAL - Sin acento españolete
+
+SYSTEM_PROMPT = """Eres Igris, un asistente de inteligencia artificial útil y eficiente.
+Hablas en español de forma clara, profesional y directa.
+Respondes de manera concisa y precisa a las solicitudes del usuario.
+Si detectas un riesgo o limitación, lo adviertes de forma clara antes de actuar.
+Tus respuestas son prácticas: sin markdown innecesario, sin listas extensas a menos que sea necesario.
+Proporciona información relevante sin repetir contexto previo.
+Sé directo y evita jerga innecesaria."""
+
+# ==================== CONFIGURACIÓN DE PROVEEDORES ====================
+
+# Proveedor activo por defecto
+DEFAULT_PROVIDER = os.getenv("IGRIS_PROVIDER", "nemotron")
+
+# Cadena de fallback (orden de intento)
+FALLBACK_CHAIN = os.getenv(
+    "IGRIS_FALLBACK_CHAIN",
+    "nemotron,groq,openai,anthropic,local"
+).split(",")
+
+# ==================== CONFIGURACIÓN DE MODELOS ====================
+
+# NVIDIA Nemotron 3 Super 120B
+NEMOTRON_CONFIG = {
+    "provider": "nemotron",
+    "model": os.getenv("IGRIS_NEMOTRON_MODEL", "nvidia/nemotron-3-super-120b-a12b"),
+    "api_key": os.getenv("NEMOTRON_API_KEY", ""),
+    "api_base": os.getenv("NEMOTRON_API_BASE", "https://integrate.api.nvidia.com/v1"),
+    "temperature": 0.7,
+    "max_tokens": 2048,
 }
 
-# Ordenar proveedores por prioridad
-ORDERED_PROVIDERS = sorted(
-    [(name, config) for name, config in PROVIDERS_CONFIG.items() if config.get("enabled")],
-    key=lambda x: x[1].get("priority", 999)
+# Groq
+GROQ_CONFIG = {
+    "provider": "groq",
+    "model": os.getenv("IGRIS_GROQ_MODEL", "llama-3.1-70b-versatile"),
+    "api_key": os.getenv("GROQ_API_KEY", ""),
+    "temperature": 0.7,
+    "max_tokens": 2048,
+}
+
+# OpenAI
+OPENAI_CONFIG = {
+    "provider": "openai",
+    "model": os.getenv("IGRIS_OPENAI_MODEL", "gpt-4o-mini"),
+    "api_key": os.getenv("OPENAI_API_KEY", ""),
+    "temperature": 0.7,
+    "max_tokens": 2048,
+}
+
+# Anthropic
+ANTHROPIC_CONFIG = {
+    "provider": "anthropic",
+    "model": os.getenv("IGRIS_ANTHROPIC_MODEL", "claude-3-5-sonnet-20241022"),
+    "api_key": os.getenv("ANTHROPIC_API_KEY", ""),
+    "temperature": 0.7,
+    "max_tokens": 2048,
+}
+
+# Ollama (Local)
+LOCAL_CONFIG = {
+    "provider": "local",
+    "model": os.getenv("IGRIS_LOCAL_MODEL", "llama2"),
+    "api_base": os.getenv("IGRIS_LOCAL_URL", "http://localhost:11434"),
+    "temperature": 0.7,
+    "max_tokens": 2048,
+}
+
+# Mapeo de proveedores
+PROVIDERS_CONFIG = {
+    "nemotron": NEMOTRON_CONFIG,
+    "groq": GROQ_CONFIG,
+    "openai": OPENAI_CONFIG,
+    "anthropic": ANTHROPIC_CONFIG,
+    "local": LOCAL_CONFIG,
+}
+
+# ==================== CONFIGURACIÓN DE VOZ ====================
+
+# Proveedor de Speech-to-Text (STT)
+STT_PROVIDER = os.getenv("IGRIS_STT_PROVIDER", "local")
+
+# Proveedor de Text-to-Speech (TTS)
+TTS_PROVIDER = os.getenv("IGRIS_TTS_PROVIDER", "local")
+
+# Configuración de TTS local
+TTS_LOCAL_CONFIG = {
+    "provider": "pyttsx3",  # Motor de síntesis de voz local
+    "language": "es",
+    "rate": 150,
+}
+
+# ==================== CONFIGURACIÓN DE BASE DE DATOS ====================
+
+DATABASE_URL = os.getenv(
+    "DATABASE_URL",
+    "postgresql://user:password@localhost/igris"
 )
 
-# Proveedor activo y cadena de fallback: definido por el usuario o auto-detectado
-ACTIVE_PROVIDER = os.environ.get("IGRIS_PROVIDER", "").lower().strip()
-FALLBACK_CHAIN_STR = os.environ.get("IGRIS_FALLBACK_CHAIN", "groq,openai,anthropic,local").lower().split(",")
+# Nota: Usar "postgresql://" no "postgres://"
 
-# Si IGRIS_PROVIDER está vacío, usar el primero disponible
-if not ACTIVE_PROVIDER:
-    available = [name for name, cfg in PROVIDERS_CONFIG.items() if cfg.get("enabled")]
-    if available:
-        ACTIVE_PROVIDER = available[0]
-        print(f"ℹ️ IGRIS_PROVIDER vacío. Auto-detectado: {ACTIVE_PROVIDER}")
-    else:
-        # Fallback a groq (puede fallar luego si no tiene API key, pero al menos inicia)
-        ACTIVE_PROVIDER = "groq"
-        print(f"⚠️ IGRIS_PROVIDER vacío y no hay proveedores disponibles. Usando: {ACTIVE_PROVIDER}")
+# ==================== CONFIGURACIÓN DE LA APLICACIÓN ====================
 
-# Validar que el proveedor está disponible
-if ACTIVE_PROVIDER not in PROVIDERS_CONFIG:
-    raise ValueError(f"❌ IGRIS_PROVIDER='{ACTIVE_PROVIDER}' no es válido. Opciones: {list(PROVIDERS_CONFIG.keys())}")
+# Entorno
+ENVIRONMENT = os.getenv("ENVIRONMENT", "production")
 
-# Validar cadena de fallback
-FALLBACK_CHAIN = [p.strip() for p in FALLBACK_CHAIN_STR if p.strip() in PROVIDERS_CONFIG]
-if ACTIVE_PROVIDER not in FALLBACK_CHAIN:
-    FALLBACK_CHAIN.insert(0, ACTIVE_PROVIDER)
+# Host y puerto
+API_HOST = os.getenv("API_HOST", "0.0.0.0")
+API_PORT = int(os.getenv("API_PORT", "8000"))
 
-print(f"ℹ️ IGRIS: Proveedor primario={ACTIVE_PROVIDER}, Fallback chain={FALLBACK_CHAIN}")
+# CORS
+CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:5173").split(",")
 
-TIMEZONE = os.environ.get("IGRIS_TZ", "America/Bogota")
+# ==================== CONFIGURACIÓN DE ALMACENAMIENTO DE SETTINGS ====================
 
-# Configuración global
-SYSTEM_PROMPT = """Eres Igris, el caballero de las sombras y comandante leal de tu señor.
-Hablas en español, con formalidad, lealtad y economía de palabras.
-Te diriges al usuario como "mi señor". Ejecutas y confirmas con brevedad.
-Si detectas un riesgo, lo adviertes con calma antes de actuar.
-Tus respuestas se dicen EN VOZ ALTA: sin markdown, sin listas, frases cortas.
-Si hay nota importante, recuérdala solo si es relevante. No repitas el contexto completo."""
+# Ruta del archivo de configuración de settings (donde se guarda la config de IA por usuario)
+SETTINGS_JSON_PATH = os.getenv("IGRIS_SETTINGS_PATH", "core/settings.json")
 
-def get_active_provider():
-    """Obtiene el proveedor activo actual."""
-    return ACTIVE_PROVIDER
+# ==================== FUNCIONES AUXILIARES ====================
 
-def set_active_provider(provider_name):
-    """Cambia el proveedor activo (para panel de control futuro)."""
-    global ACTIVE_PROVIDER
-    if provider_name in dict(ORDERED_PROVIDERS):
-        ACTIVE_PROVIDER = provider_name
+def get_provider_config(provider_name: str) -> Optional[dict]:
+    """Obtiene la configuración de un proveedor específico"""
+    return PROVIDERS_CONFIG.get(provider_name.lower())
+
+def get_active_provider_config() -> dict:
+    """Obtiene la configuración del proveedor activo actual"""
+    provider_config = get_provider_config(DEFAULT_PROVIDER)
+    if not provider_config:
+        # Fallback al primer disponible si hay error
+        return PROVIDERS_CONFIG.get(FALLBACK_CHAIN[0], NEMOTRON_CONFIG)
+    return provider_config
+
+def is_provider_available(provider_name: str) -> bool:
+    """Verifica si un proveedor está disponible (tiene API key configurada)"""
+    config = get_provider_config(provider_name)
+    if not config:
+        return False
+    
+    # Para local, siempre está disponible (sin API key necesaria)
+    if provider_name.lower() == "local":
         return True
-    return False
+    
+    # Para otros, necesita API key
+    return bool(config.get("api_key"))
 
-def get_available_providers():
-    """Devuelve lista de proveedores disponibles."""
-    return [name for name, _ in ORDERED_PROVIDERS]
+# ==================== CONFIGURACIÓN DE LOGGING ====================
 
-def get_provider_config(provider_name=None):
-    """Obtiene configuración de un proveedor."""
-    if provider_name is None:
-        provider_name = ACTIVE_PROVIDER
-    return PROVIDERS_CONFIG.get(provider_name)
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 
-def get_fallback_chain():
-    """Devuelve la cadena de fallback ordenada por prioridad."""
-    return [name for name, _ in ORDERED_PROVIDERS]
+# ==================== MODELOS ALTERNATIVOS (REFERENCIAS) ====================
+
+# Modelos recomendados por proveedor (para documentación)
+RECOMMENDED_MODELS = {
+    "nemotron": [
+        "nvidia/nemotron-3-super-120b-a12b",
+        "nvidia/nemotron-3-large-8b-instruct",
+    ],
+    "groq": [
+        "llama-3.1-70b-versatile",
+        "llama-3.1-8b-instant",
+        "mixtral-8x7b-32768",
+    ],
+    "openai": [
+        "gpt-4o",
+        "gpt-4o-mini",
+        "gpt-3.5-turbo",
+    ],
+    "anthropic": [
+        "claude-3-5-sonnet-20241022",
+        "claude-3-opus-20240229",
+        "claude-3-haiku-20240307",
+    ],
+    "local": [
+        "llama2",
+        "mistral",
+        "neural-chat",
+        "orca-mini",
+    ],
+}
