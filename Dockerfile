@@ -29,8 +29,10 @@ WORKDIR /app
 # PyTorch SOLO CPU (el servidor no tiene GPU). Se instala antes que el resto
 # para que openai-whisper encuentre torch ya instalado y no descargue la
 # versión con CUDA, que pesa varios GB.
+# La versión debe coincidir con la de requirements.txt (torch==2.3.0): pip
+# trata 2.3.0+cpu como 2.3.0 y no la reinstala.
 # --------------------------------------------------------------
-RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
+RUN pip install --no-cache-dir torch==2.3.0 --index-url https://download.pytorch.org/whl/cpu
 
 # --------------------------------------------------------------
 # Copiar únicamente el fichero de requirements para aprovechar la capa de caché
