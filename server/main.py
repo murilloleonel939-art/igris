@@ -117,13 +117,13 @@ async def http_chat(req: ChatRequest):
 # Funciones reutilizables de Igris (evitan hacer llamadas HTTP a sí mismas)
 # ----------------------------------------------------------------------
 async def _get_igris_reply(text: str) -> str:
-    """Envía el texto al cerebro de Igris y devuelve la respuesta de Iris."""
+    """Envía el texto al cerebro de Igris y devuelve la respuesta de Igris."""
     try:
         session = brain.new_session()
         reply = await session.say(text)
         return reply
     except Exception as e:
-        return f"Lo siento, mi señor, ocurrió un error al consultar a Iris: {e}"
+        return f"Lo siento, mi señor, ocurrió un error al consultar a Igris: {e}"
 
 
 async def _get_igris_ai_config() -> dict:
@@ -322,6 +322,7 @@ async def tts_endpoint(req: TTSRequest):
         audio_bytes = await tts.synthesize(req.text)
          
         # Devolver como respuesta binaria con tipo de contenido correcto
+        from fastapi.responses import Response
         return Response(
             content=audio_bytes,
             media_type="audio/mpeg",  # Asumimos MP3 (funciona para Piper, edge-tts, OpenAI)
@@ -384,20 +385,15 @@ async def process_telegram_update(update_dict: dict):
         cmd = parts[0].lower()
 
         if cmd in ("/start", "/help"):
-            welcome = (
-                "¡Saludos, mi señor! Soy el relay de Iris. Envíeme cualquier orden y la transmitiré a Iris.\n"
-                "Comandos disponibles:\n"
-                "/config – muestra la configuración actual de IA\n"
-                "/setprovider <nombre> – cambia el proveedor activo\n"
-                "/setfallback <lista> – establece la cadena de fallback (ej: nemotron,openai,local)"
+            await message.reply_text(
+                "¡Saludos, mi señor! Soy Igris. Envíeme su orden."
             )
-            await message.reply_text(welcome)
             return
 
         if cmd == "/config":
             cfg = await _get_igris_ai_config()
             txt = (
-                f"Configuración actual de Iris:\n"
+                f"Configuración actual de Igris:\n"
                 f"• Proveedor activo: {cfg['primary_provider']}\n"
                 f"• Cadena de fallback: {', '.join(cfg['fallback_chain'])}"
             )
