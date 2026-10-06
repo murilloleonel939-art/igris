@@ -23,7 +23,9 @@
   "tts": {
     "provider": "edge",
     "voice": "es-CO-GonzaloNeural",
-    "instructions": "Habla con un tono calmado, neutral y claro, dirigiéndote al usuario como 'mi señor'."
+    "rate": "-10%",
+    "pitch": "-2Hz",
+    "instructions": "Habla con un tono grave, servicial y claro, dirigiéndote al usuario como 'mi señor'."
   },
   "system": {
     "personality": "caballero_sombras",
