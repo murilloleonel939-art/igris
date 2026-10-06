@@ -4,10 +4,30 @@
     <div class="flex-1 px-6">
       <!-- Chat Messages -->
       <div class="bg-slate-800 rounded-lg p-4 mb-4 flex-1 overflow-y-auto">
-        <div v-for="(msg, i) in chatMessages" :key="i" class="mb-2 text-sm">
-          <span :class="msg.from === 'user' ? 'text-blue-300' : 'text-green-300'">{{ msg.from }}:</span>
-          <span class="text-white">{{ msg.text }}</span>
-        </div>
+       <!-- Chat Messages -->
+       <div class="bg-slate-800 rounded-lg p-4 mb-4 flex-1 overflow-y-auto">
+         <div v-for="(msg, i) in chatMessages" :key="i" class="mb-2 text-sm flex items-start">
+           <span :class="msg.from === 'user' ? 'text-blue-300' : 'text-green-300'">{{ msg.from }}:</span>
+           <span class="text-white ml-2">{{ msg.text }}</span>
+           <!-- Botón de altavoz solo para mensajes de Iris -->
+           <template v-if="msg.from === 'igris'">
+             <button 
+               @click.stop="playIrisResponse(msg.text, i)"
+               :disabled="isPlayingTTS[i]"
+               class="ml-1 p-1 rounded hover:bg-slate-600 transition-opacity opacity-70"
+               title="Reproducir respuesta"
+               aria-label="Reproducir respuesta"
+             >
+               <svg v-if="!isPlayingTTS[i]" class="w-4 h-4 text-slate-400" viewBox="0 0 24 24">
+                 <path fill="currentColor" d="M12 4a2 2 0 012 2v1.5a3 3 0 1000-6zm0 14a2 2 0 012-2v-1.5a3 3 0 1000 6zm9.66-9.66l-1.42-1.42L18 12.17V7l-1.5-1.5-1.5 1.5V13l3.66-3.66z"/>
+               </svg>
+               <svg v-else class="w-4 h-4 animate-spin text-slate-400" viewBox="0 0 24 24">
+                 <path fill="currentColor" d="M12 2a10 10 0 100 20 20 20 10 10 0 00-20-20zm0 2a8 8 0 110 0 16 8 8 0 010-16z"/>
+               </svg>
+             </button>
+           </template>
+         </div>
+       </div>
       </div>
       
       <!-- Input Area -->
@@ -46,6 +66,7 @@ import api from '../api'
 const chatInput = ref('')
 const chatMessages = ref([])
 const isListening = ref(false)
+const isPlayingTTS = ref([])
 
 const sendChat = async () => {
   if (!chatInput.value.trim()) return
@@ -59,6 +80,8 @@ const sendChat = async () => {
     const response = await api.post('/api/chat', { text: msg })
     if (response.data.status === 'ok') {
       chatMessages.value.push({ from: 'igris', text: response.data.reply })
+       // ¡NUEVO! Reproducir la respuesta de Iris con voz
+       await playIrisResponse(response.data.reply)
     } else {
       chatMessages.value.push({
         from: 'igris',
@@ -80,6 +103,33 @@ const sendChat = async () => {
       chatContainer.scrollTop = chatContainer.scrollHeight
     }
   })
+}
+const playIrisResponse = async (text: string) => {
+  if (!text || text.trim().length === 0) return
+  
+  try {
+    const response = await api.post('/api/tts', { text: text })
+    if (response.data) {
+      // Crear objeto URL desde el blob de audio
+      const audioBlob = new Blob([response.data], { type: 'audio/mpeg' })
+      const audioUrl = URL.createObjectURL(audioBlob)
+      
+      // Reproducir el audio
+      const audio = new Audio(audioUrl)
+      audio.play().catch(err => {
+        console.error('Error playing audio:', err)
+        // Intentar de vuelta con user gesture si falló por autoplay policy
+      })
+      
+      // Limpiar object URL después de reproducir (opcional, pero buena práctica)
+      audio.onended = () => {
+        URL.revokeObjectURL(audioUrl)
+      }
+    }
+  } catch (err) {
+    console.error('Error fetching TTS:', err)
+    // No mostrar alerta al usuario para no interrumpir la experiencia
+  }
 }
 
 const startVoiceInput = async () => {

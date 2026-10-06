@@ -9,6 +9,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from core import Brain, config
 from core.settings_manager import get_settings
+from core import tts
 from core.database import init_db
 
 # Inicializar BD
@@ -203,6 +204,32 @@ async def update_ai_config(config_update: AIConfigUpdate):
             primary_provider="groq",
             fallback_chain=["groq", "openai", "anthropic", "local"],
             message=f"Error al actualizar configuración: {str(e)}"
+# ============= TTS ENDPOINT =============
+from pydantic import BaseModel
+
+class TTSRequest(BaseModel):
+    text: str
+
+@app.post("/api/tts")
+async def tts_endpoint(req: TTSRequest):
+    """Convertir texto a voz usando la configuración de TTS"""
+    try:
+        # Usar la función existente de core/tts.py
+        audio_bytes = await tts.synthesize(req.text)
+        
+        # Devolver como respuesta binaria con tipo de contenido correcto
+        from fastapi.responses import Response
+        return Response(
+            content=audio_bytes,
+            media_type="audio/mpeg",  # Asumimos MP3 (funciona para Piper, edge-tts, OpenAI)
+            headers={
+                "Content-Disposition": "inline; filename=iris_response.mp3"
+            }
+        )
+    except Exception as e:
+        print(f"Error en TTS endpoint: {e}")
+        from fastapi import HTTPException
+        raise HTTPException(status_code=500, detail=f"Error generating speech: {str(e)}")
         )
 
 
