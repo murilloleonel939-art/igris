@@ -1,12 +1,14 @@
 """
 IGRIS - Servidor FastAPI simplificado para solo chat con Igris
 """
+import asyncio
+import logging
 import os
 import secrets
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import FastAPI, Request, Header, HTTPException
+from fastapi import FastAPI, Request, Header, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 
@@ -18,6 +20,8 @@ from core.database import init_db
 # Telegram imports
 from telegram import Update, Bot
 from telegram.ext import Application, ContextTypes
+
+logger = logging.getLogger(__name__)
 
 # Inicializar BD
 init_db()
@@ -254,6 +258,18 @@ async def tts_endpoint(req: TTSRequest):
         raise HTTPException(status_code=500, detail=f"Error generating speech: {str(e)}")
 
 # ----------------------------------------------------------------------
+# Transcripción de audio de Telegram
+# ----------------------------------------------------------------------
+async def _transcribe_telegram_file(file_id: str) -> str:
+    """Descarga un audio/nota de voz de Telegram y lo transcribe a texto."""
+    tg_file = await telegram_bot.get_file(file_id)
+    audio_bytes = await tg_file.download_as_bytearray()
+    # stt.transcribe() es una función síncrona y pesada (Whisper): no se usa
+    # `await` directamente; se ejecuta en un hilo para no congelar el servidor.
+    return await asyncio.to_thread(stt.transcribe, audio_bytes)
+
+
+# ----------------------------------------------------------------------
 # Procesamiento de actualizaciones entrantes de Telegram
 # ----------------------------------------------------------------------
 async def process_telegram_update(update_dict: dict):
@@ -301,34 +317,23 @@ async def process_telegram_update(update_dict: dict):
 
     if message.text:
         user_text = message.text.strip()
-    elif message.voice:
-        # ----- Nota de voz -----
+    elif message.voice or message.audio:
+        # ----- Nota de voz o archivo de audio -----
+        media = message.voice or message.audio
         try:
-            voice_file = await telegram_bot.get_file(message.voice.file_id)
-            voice_bytes = await voice_file.download_as_bytearray()
-            # Llamamos al STT de Igris
-            user_text = await stt.transcribe(voice_bytes)
+            await message.chat.send_action(action="typing")
+            user_text = (await _transcribe_telegram_file(media.file_id)).strip()
         except Exception as e:
-            # Mejorar el mensaje de error para guiar al usuario
+            logger.exception("Fallo al transcribir audio de Telegram")
             await message.reply_text(
-                "Lo siento, mi señor, no pude transcribir su nota de voz. "
-                "El servicio de transcripción (STT) no está configurado correctamente. "
-                "Por favor, asegúrese de que la variable de entorno IGRIS_STT_PROVIDER esté definida y que las dependencias necesarias estén instaladas. "
+                "Lo siento, mi señor, no pude transcribir el audio. "
                 f"Detalle técnico: {e}"
             )
             return
-    elif message.audio:
-        # ----- Archivo de audio -----
-        try:
-            audio_file = await telegram_bot.get_file(message.audio.file_id)
-            audio_bytes = await audio_file.download_as_bytearray()
-            user_text = await stt.transcribe(audio_bytes)
-        except Exception as e:
+
+        if not user_text:
             await message.reply_text(
-                "Lo siento, mi señor, no pude transcribir su archivo de audio. "
-                "El servicio de transcripción (STT) no está configurado correctamente. "
-                "Por favor, asegúrese de que la variable de entorno IGRIS_STT_PROVIDER esté definida y que las dependencias necesarias estén instaladas. "
-                f"Detalle técnico: {e}"
+                "Lo siento, mi señor, no logré entender el audio. ¿Puede repetirlo?"
             )
             return
     else:
@@ -480,6 +485,7 @@ async def _set_igris_ai_config(primary: Optional[str] = None,
 @app.post("/telegram/webhook")
 async def telegram_webhook(
     request: Request,
+    background_tasks: BackgroundTasks,
     x_telegram_bot_api_secret_token: Optional[str] = Header(None),
 ):
     """
@@ -496,8 +502,10 @@ async def telegram_webhook(
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON")
 
-    # 3️⃣ Procesar el update
-    await process_telegram_update(update_dict)
+    # 3️⃣ Procesar el update en segundo plano: así respondemos 200 a Telegram de
+    # inmediato y evitamos que reintente el envío si la transcripción o la IA
+    # tardan (lo que duplicaría las respuestas).
+    background_tasks.add_task(process_telegram_update, update_dict)
 
     # Telegram espera una respuesta 200 OK para considerar que el update fue procesado.
     return {"status": "ok"}
