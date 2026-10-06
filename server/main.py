@@ -1,5 +1,5 @@
 """
-IGRIS - Servidor FastAPI simplificado para solo chat con Iris
+IGRIS - Servidor FastAPI simplificado para solo chat con Igris
 """
 import os
 import secrets
@@ -17,7 +17,7 @@ init_db()
 
 app = FastAPI(
     title="IGRIS Chat",
-    description="Servidor de chat simple con Iris",
+    description="Servidor de chat simple con Igris",
     version="1.0.0"
 )
 
@@ -143,19 +143,25 @@ async def get_ai_config():
     """Obtener configuración actual de IA"""
     try:
         settings = get_settings()
-        ai_config = settings.get_ai_config()
-        # Ensure we have the expected fields
-        primary_provider = ai_config.get("primary_provider", "groq")
-        fallback_chain = ai_config.get("fallback_chain", ["groq", "openai", "anthropic", "local"])
-        # Ensure fallback_chain is a valid list
+        ai_config = settings.get_ai_config() or {}
+        # Use config module to get defaults (from env or hardcoded defaults)
+        from core import config
+        defaults = config.get_active_provider_config()
+        primary_provider = ai_config.get("primary_provider")
+        fallback_chain = ai_config.get("fallback_chain")
+        if primary_provider is None:
+            primary_provider = defaults.get("active_provider")
+        if fallback_chain is None:
+            fallback_chain = defaults.get("fallback_chain", [])
+        # Ensure fallback_chain is a list
         if not isinstance(fallback_chain, list):
             fallback_chain = []
         # Ensure primary provider is in fallback chain (fixes 'not in list' error)
         if primary_provider is not None and primary_provider not in fallback_chain:
             fallback_chain.insert(0, primary_provider)
-        # If fallback_chain is empty, use default
+        # If fallback_chain is empty, use default from config
         if not fallback_chain:
-            fallback_chain = ["groq", "openai", "anthropic", "local"]
+            fallback_chain = defaults.get("fallback_chain", [])
         return AIConfigResponse(
             status="ok",
             primary_provider=primary_provider,
@@ -163,10 +169,13 @@ async def get_ai_config():
             message="Configuración cargada correctamente"
         )
     except Exception as e:
+        # Fallback to config defaults on error
+        from core import config
+        defaults = config.get_active_provider_config()
         return AIConfigResponse(
             status="error",
-            primary_provider="groq",
-            fallback_chain=["groq", "openai", "anthropic", "local"],
+            primary_provider=defaults.get("active_provider", "nemotron"),
+            fallback_chain=defaults.get("fallback_chain", []),
             message=f"Error al cargar configuración: {str(e)}"
         )
 
@@ -177,6 +186,8 @@ async def update_ai_config(config_update: AIConfigUpdate):
     try:
         settings = get_settings()
         current_ai_config = settings.get_ai_config()
+        from core import config
+        defaults = config.get_active_provider_config()
         
         # Update only the fields that were provided
         if config_update.primary_provider is not None:
@@ -202,22 +213,25 @@ async def update_ai_config(config_update: AIConfigUpdate):
             brain.reload_settings()
             return AIConfigResponse(
                 status="ok",
-                primary_provider=current_ai_config.get("primary_provider", "groq"),
-                fallback_chain=current_ai_config.get("fallback_chain", ["groq", "openai", "anthropic", "local"]),
+                primary_provider=current_ai_config.get("primary_provider", defaults.get("active_provider")),
+                fallback_chain=current_ai_config.get("fallback_chain", defaults.get("fallback_chain", [])),
                 message="Configuración actualizada correctamente. Los cambios toman efecto inmediatamente para nuevos chats."
             )
         else:
             return AIConfigResponse(
                 status="error",
-                primary_provider=current_ai_config.get("primary_provider", "groq"),
-                fallback_chain=current_ai_config.get("fallback_chain", ["groq", "openai", "anthropic", "local"]),
+                primary_provider=current_ai_config.get("primary_provider", defaults.get("active_provider")),
+                fallback_chain=current_ai_config.get("fallback_chain", defaults.get("fallback_chain", [])),
                 message="Error al guardar la configuración"
             )
     except Exception as e:
+        # Fallback to config defaults on error
+        from core import config
+        defaults = config.get_active_provider_config()
         return AIConfigResponse(
             status="error",
-            primary_provider="groq",
-            fallback_chain=["groq", "openai", "anthropic", "local"],
+            primary_provider=defaults.get("active_provider", "nemotron"),
+            fallback_chain=defaults.get("fallback_chain", []),
             message=f"Error al actualizar configuración: {str(e)}"
         )
 
