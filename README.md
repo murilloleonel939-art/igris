@@ -29,8 +29,7 @@
   - 💬 **Chat**: interfaz para conversar con Iris
   - ⚙️ **Configuración**: página para ver y modificar proveedor de IA activo y cadena de fallback
 
-  - 🎤 **Entrada de voz**: Botón de micrófono en el chat para hablar con Iris (usa Web Speech API del navegador)
-  - 🔊 **Salida de voz**: Botón de altavoz junto a cada mensaje de Iris para escuchar sus respuestas (usa configuración TTS del backend)
+**Nota sobre capacidades de voz**: La entrada de voz (micrófono) funciona correctamente. La salida de voz está implementada en el backend, pero el botón de altavoz en la interfaz puede no ser visible en algunas configuraciones de despliegue.
 
 - **Configuración de IA**: 
   - Proveedores disponibles: groq, nemotron, openai, anthropic, local
