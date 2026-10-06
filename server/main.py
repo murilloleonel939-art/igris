@@ -309,8 +309,12 @@ async def process_telegram_update(update_dict: dict):
             # Llamamos al STT de Igris
             user_text = await stt.transcribe(voice_bytes)
         except Exception as e:
+            # Mejorar el mensaje de error para guiar al usuario
             await message.reply_text(
-                f"Lo siento, mi señor, no pude transcribir su nota de voz: {e}"
+                "Lo siento, mi señor, no pude transcribir su nota de voz. "
+                "El servicio de transcripción (STT) no está configurado correctamente. "
+                "Por favor, asegúrese de que la variable de entorno IGRIS_STT_PROVIDER esté definida y que las dependencias necesarias estén instaladas. "
+                f"Detalle técnico: {e}"
             )
             return
     elif message.audio:
@@ -321,7 +325,10 @@ async def process_telegram_update(update_dict: dict):
             user_text = await stt.transcribe(audio_bytes)
         except Exception as e:
             await message.reply_text(
-                f"Lo siento, mi señor, no pude transcribir su archivo de audio: {e}"
+                "Lo siento, mi señor, no pude transcribir su archivo de audio. "
+                "El servicio de transcripción (STT) no está configurado correctamente. "
+                "Por favor, asegúrese de que la variable de entorno IGRIS_STT_PROVIDER esté definida y que las dependencias necesarias estén instaladas. "
+                f"Detalle técnico: {e}"
             )
             return
     else:
@@ -466,7 +473,7 @@ async def _set_igris_ai_config(primary: Optional[str] = None,
             "message": "Configuración actualizada correctamente."
         }
     except Exception as e:
-        return {"status": "error", "message": f"Error al actualizar configuración: {e}"}
+        return {"status": "error", "message": f"Error al actualizar configuración: {e}"
 
 
 # ============= WEBHOOK DE TELEGRAM =============
