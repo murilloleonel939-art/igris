@@ -113,7 +113,9 @@ const playIrisResponse = async (text, index) => {
   }
 
   try {
-    const response = await api.post('/api/tts', { text: text })
+    const response = await api.post('/api/tts', { text: text }, {
+      responseType: 'arraybuffer'
+    })
     if (response.data) {
       // Crear objeto URL desde el blob de audio
       const audioBlob = new Blob([response.data], { type: 'audio/mpeg' })
@@ -223,5 +225,7 @@ const startVoiceInput = async () => {
     alert('No se pudo iniciar el reconocimiento de voz. Por favor verifica tu micrófono y permisos.')
   }
 }
+</script>
+<!-- Trivial update to force new commit for deployment - 1791254000 -->
 </script>
 <!-- Trivial update to force new commit for deployment - 1791254000 -->
