@@ -4,13 +4,15 @@
 FROM python:3.12-slim
 
 # --------------------------------------------------------------
-# Dependencias del sistema necesarias para compilar algunos paquetes
-# y para que pip pueda clonar repositorios git
+# Dependencias del sistema necesarias para compilar algunos paquetes,
+# para que pip pueda clonar repositorios git y para que Whisper pueda
+# leer audio (ffmpeg es requerido por openai-whisper)
 # (build-essential incluye gcc, make, etc.)
 # --------------------------------------------------------------
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
         git \
+        ffmpeg \
         && rm -rf /var/lib/apt/lists/*
 
 # --------------------------------------------------------------
