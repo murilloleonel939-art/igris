@@ -8,7 +8,7 @@ from openai import AsyncOpenAI
 
 from core.config import SYSTEM_PROMPT
 from core.settings_manager import get_settings
-from core.tools import TOOLS, run_tool
+from core.tools import TOOLS, run_tool, calendar_write
 from core.tools.time_tools import now_context
 
 logger = logging.getLogger(__name__)
@@ -174,13 +174,46 @@ class BrainSession:
         self.last_user_text = ""       # último mensaje real del usuario
         self.pending_event: Optional[dict] = None
 
+    async def _try_quick_confirm(self, text: str) -> Optional[str]:
+        """Si hay una propuesta pendiente y el usuario acaba de confirmarla, la crea
+        directamente, sin depender de que el modelo llame a confirm_event.
+
+        Es seguro: confirm_event sigue exigiendo turno inmediato, que no haya caducado y
+        que el mensaje REAL del usuario sea una afirmación clara. Devuelve None si no aplica.
+        """
+        if not self.pending_event or not calendar_write.is_affirmative(text):
+            return None
+        try:
+            result = await calendar_write.confirm_event(self)
+        except Exception:
+            logger.exception("Falló la confirmación directa del evento")
+            return "Mi señor, no pude agendar el evento por un fallo interno."
+        if result.get("estado") == "creado":
+            return f"Hecho, mi señor. He agendado {result['titulo']}, {result['inicio']}."
+        if result.get("error"):
+            return f"Mi señor, no pude agendarlo. {result['error']}"
+        return None
+
     async def say(self, text: str, context: Optional[dict] = None) -> str:
         user_msg = {"role": "user", "content": text}
+        prev_turn_no, prev_user_text = self.turn_no, self.last_user_text
         self.turn_no += 1
         self.last_user_text = text
+        logger.info(
+            f"say: sesion_obj={id(self)} turno={self.turn_no} "
+            f"historial={len(self.turns)} pendiente={bool(self.pending_event)}"
+        )
         # Una propuesta solo puede confirmarse en el mensaje inmediatamente siguiente
         if self.pending_event and self.turn_no > self.pending_event["turn"] + 1:
             self.pending_event = None
+
+        # Confirmación directa en el servidor (no depende del modelo)
+        quick = await self._try_quick_confirm(text)
+        if quick is not None:
+            self.turns.append([user_msg, {"role": "assistant", "content": quick}])
+            self.turns = self.turns[-MAX_HISTORY_TURNS:]
+            return quick
+
         messages = [{"role": "system", "content": _system_message()}]
         for turn in self.turns[-MAX_HISTORY_TURNS:]:
             messages += turn
@@ -205,6 +238,8 @@ class BrainSession:
             finally:
                 await client.close()
 
+        # El turno no ocurrió: no consumirlo, para no invalidar una propuesta pendiente
+        self.turn_no, self.last_user_text = prev_turn_no, prev_user_text
         raise RuntimeError("Todos los proveedores fallaron -> " + " | ".join(errors))
 
 
