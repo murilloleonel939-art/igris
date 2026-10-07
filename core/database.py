@@ -1,10 +1,13 @@
 """
-Base de datos - Modelos de usuarios, perfiles y configuración 2FA
+Base de datos - Modelos de usuarios, perfiles, configuración 2FA, recordatorios y notas
 PostgreSQL para EC2 (Coolify), SQLite para RPi (fallback)
 """
 import os
-from datetime import datetime
-from sqlalchemy import create_engine, Column, String, Integer, Boolean, DateTime, Text, ForeignKey, JSON
+from datetime import datetime, timezone
+from sqlalchemy import (
+    create_engine, Column, String, Integer, BigInteger, Boolean, DateTime, Text,
+    ForeignKey, JSON, Index,
+)
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 
@@ -13,6 +16,12 @@ DATABASE_URL = os.environ.get(
     "DATABASE_URL",
     "sqlite:///./igris.db"  # Fallback a SQLite local
 )
+
+# Coolify entrega "postgres://" o "postgresql://"; con psycopg 3 SQLAlchemy necesita el prefijo del driver
+for _prefix in ("postgres://", "postgresql://"):
+    if DATABASE_URL.startswith(_prefix):
+        DATABASE_URL = "postgresql+psycopg://" + DATABASE_URL[len(_prefix):]
+        break
 
 # Para PostgreSQL en Coolify, espera: postgresql://user:pass@host:5432/db
 if not DATABASE_URL.startswith("sqlite"):
@@ -27,6 +36,11 @@ else:
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
+
+
+def utcnow() -> datetime:
+    """Ahora en UTC, sin zona horaria (así se guardan todas las fechas de recordatorios)."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 class User(Base):
@@ -86,8 +100,8 @@ class AIConfig(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), unique=True, nullable=False)
-    primary_provider = Column(String(50), default="groq")  # groq, openai, anthropic, local
-    fallback_chain = Column(JSON, default=["groq", "openai", "anthropic", "local"])
+    primary_provider = Column(String(50), default="nemotron")  # nemotron, openai, anthropic, local
+    fallback_chain = Column(JSON, default=["nemotron", "openai", "anthropic", "local"])
     stt_provider = Column(String(50), default="local")  # local, openai
     tts_provider = Column(String(50), default="local")  # local, edge-tts
     stt_model = Column(String(50), default="tiny")  # tiny, base, small, medium, large
@@ -111,6 +125,33 @@ class Session(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     expires_at = Column(DateTime, nullable=False)
     is_active = Column(Boolean, default=True)
+
+
+class Reminder(Base):
+    """Recordatorio de Igris. due_at se guarda en UTC (sin zona); se muestra en hora de Colombia."""
+    __tablename__ = "reminders"
+
+    id = Column(Integer, primary_key=True, index=True)
+    text = Column(String(200), nullable=False)
+    due_at = Column(DateTime, nullable=False)                    # UTC
+    status = Column(String(20), default="pendiente", nullable=False)  # pendiente | enviado | cancelado
+    channel = Column(String(20), default="telegram", nullable=False)  # canal de aviso
+    chat_id = Column(BigInteger, nullable=True)                  # Telegram de quien lo creó; NULL = todos los autorizados
+    repeat = Column(String(20), nullable=True)                   # NULL | diaria | semanal
+    attempts = Column(Integer, default=0, nullable=False)        # intentos de envío fallidos
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    sent_at = Column(DateTime, nullable=True)
+
+    __table_args__ = (Index("ix_reminders_status_due", "status", "due_at"),)
+
+
+class Note(Base):
+    """Nota de texto libre del usuario"""
+    __tablename__ = "notes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    text = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
 
 
 # Crear tablas
