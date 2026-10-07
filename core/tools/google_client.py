@@ -53,7 +53,7 @@ async def get_access_token(client: httpx.AsyncClient) -> str:
             reason = r.status_code
         logger.error(f"Google rechazó el refresh token: {reason}")
         raise RuntimeError(
-            f"Google rechazó la autorización ({reason}). Hay que volver a autorizar con scripts/google_auth.py"
+            f"Google rechazó la autorización ({reason}). Hay que generar un refresh token nuevo y actualizar GOOGLE_REFRESH_TOKEN"
         )
 
     data = r.json()
@@ -66,5 +66,18 @@ async def google_get(client: httpx.AsyncClient, url: str, params=None) -> dict:
     """GET autenticado a una API de Google. Devuelve el JSON."""
     token = await get_access_token(client)
     r = await client.get(url, params=params, headers={"Authorization": f"Bearer {token}"})
+    r.raise_for_status()
+    return r.json()
+
+
+async def google_post(client: httpx.AsyncClient, url: str, json_body: dict, params=None) -> dict:
+    """POST autenticado (JSON) a una API de Google. Devuelve el JSON."""
+    token = await get_access_token(client)
+    r = await client.post(
+        url,
+        json=json_body,
+        params=params,
+        headers={"Authorization": f"Bearer {token}"},
+    )
     r.raise_for_status()
     return r.json()
