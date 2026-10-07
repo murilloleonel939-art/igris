@@ -14,10 +14,10 @@ logger = logging.getLogger(__name__)
 # Ruta del archivo de configuración (la usa settings_manager)
 SETTINGS_FILE = Path(__file__).parent / "settings.json"
 
-# Available providers
-AVAILABLE_PROVIDERS = ["nemotron", "groq", "openai", "anthropic", "local"]
+# Proveedores válidos (deben coincidir con PROVIDERS de core/brain.py)
+AVAILABLE_PROVIDERS = ["nemotron", "openai", "anthropic", "local"]
 
-DEFAULT_CHAIN = ["nemotron", "groq", "openai", "anthropic", "local"]
+DEFAULT_CHAIN = ["nemotron", "openai", "anthropic", "local"]
 
 
 def _split_chain(value) -> list:
@@ -29,16 +29,25 @@ def _split_chain(value) -> list:
     return [p.strip() for p in value if isinstance(p, str) and p.strip()]
 
 
+def _clean_chain(value) -> list:
+    """Como _split_chain, pero descarta proveedores que no existen (ej. groq
+    guardado en un settings.json antiguo) y los repetidos."""
+    chain = [p for p in _split_chain(value) if p in AVAILABLE_PROVIDERS]
+    return list(dict.fromkeys(chain))
+
+
 def get_default_config():
     """Get default configuration (desde variables de entorno)"""
+    provider = os.getenv("IGRIS_PROVIDER", "nemotron")
+    if provider not in AVAILABLE_PROVIDERS:
+        provider = DEFAULT_CHAIN[0]
     return {
-        "active_provider": os.getenv("IGRIS_PROVIDER", "nemotron"),
-        "fallback_chain": _split_chain(
+        "active_provider": provider,
+        "fallback_chain": _clean_chain(
             os.getenv("IGRIS_FALLBACK_CHAIN", ",".join(DEFAULT_CHAIN))
         ) or list(DEFAULT_CHAIN),
         "models": {
             "nemotron": os.getenv("IGRIS_NEMOTRON_MODEL", "nvidia/nemotron-3-super-120b-a12b"),
-            "groq": os.getenv("IGRIS_GROQ_MODEL", "llama-3.1-70b-versatile"),
             "openai": os.getenv("IGRIS_OPENAI_MODEL", "gpt-4o-mini"),
             "anthropic": os.getenv("IGRIS_ANTHROPIC_MODEL", "claude-sonnet-5-5"),
             "local": os.getenv("IGRIS_LOCAL_MODEL", "llama3.1"),
@@ -71,10 +80,17 @@ def get_active_provider_config():
         logger.error(f"Error getting active provider config: {e}")
         ai = {}
 
+    primary = ai.get("primary_provider")
+    if primary not in AVAILABLE_PROVIDERS:
+        primary = defaults["active_provider"]
+
+    models = {**defaults["models"], **(ai.get("models") or {})}
+    models = {k: v for k, v in models.items() if k in AVAILABLE_PROVIDERS}
+
     return {
-        "active_provider": ai.get("primary_provider") or defaults["active_provider"],
-        "fallback_chain": _split_chain(ai.get("fallback_chain")) or defaults["fallback_chain"],
-        "models": {**defaults["models"], **(ai.get("models") or {})},
+        "active_provider": primary,
+        "fallback_chain": _clean_chain(ai.get("fallback_chain")) or defaults["fallback_chain"],
+        "models": models,
         "stt_provider": defaults["stt_provider"],
         "tts_provider": defaults["tts_provider"],
     }
@@ -106,11 +122,14 @@ def get_available_providers() -> list:
 def get_fallback_chain() -> list:
     """Cadena de fallback actual (orden de prioridad)"""
     config = get_active_provider_config() or {}
-    return _split_chain(config.get("fallback_chain")) or list(DEFAULT_CHAIN)
+    return _clean_chain(config.get("fallback_chain")) or list(DEFAULT_CHAIN)
 
 
 def update_active_provider(provider: str):
     """Update the active provider"""
+    if provider not in AVAILABLE_PROVIDERS:
+        logger.error(f"Proveedor no válido: {provider}")
+        return False
     try:
         from core.settings_manager import get_settings
         return get_settings().set("ai.primary_provider", provider)
@@ -121,9 +140,13 @@ def update_active_provider(provider: str):
 
 def update_fallback_chain(providers: list):
     """Update the fallback chain"""
+    chain = _clean_chain(providers)
+    if not chain:
+        logger.error("Cadena de fallback sin proveedores válidos")
+        return False
     try:
         from core.settings_manager import get_settings
-        return get_settings().set("ai.fallback_chain", providers)
+        return get_settings().set("ai.fallback_chain", chain)
     except Exception as e:
         logger.error(f"Error updating fallback chain: {e}")
         return False
@@ -133,7 +156,6 @@ def get_api_key(provider: str) -> str:
     """Get API key for a provider from environment variables"""
     env_var_map = {
         "nemotron": "NEMOTRON_API_KEY",
-        "groq": "GROQ_API_KEY",
         "openai": "OPENAI_API_KEY",
         "anthropic": "ANTHROPIC_API_KEY",
         "local": "IGRIS_LOCAL_URL",
@@ -149,7 +171,6 @@ def get_api_base(provider: str) -> str:
     """Get API base URL for a provider"""
     env_var_map = {
         "nemotron": "NEMOTRON_API_BASE",
-        "groq": "GROQ_API_BASE",
         "openai": "OPENAI_API_BASE",
         "anthropic": "ANTHROPIC_API_BASE",
         "local": "IGRIS_LOCAL_URL",
@@ -157,7 +178,6 @@ def get_api_base(provider: str) -> str:
 
     default_bases = {
         "nemotron": "https://integrate.api.nvidia.com/v1",
-        "groq": "https://api.groq.com/openai/v1",
         "openai": "https://api.openai.com/v1",
         "anthropic": "https://api.anthropic.com/v1",
         "local": "http://localhost:11434",
