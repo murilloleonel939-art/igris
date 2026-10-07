@@ -79,6 +79,12 @@ const needsTap = ref(
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
+// Identificador de esta conversación: se crea al abrir la pantalla.
+// Al recargar la página empieza una conversación nueva (igual que el historial en pantalla).
+const sessionId = crypto.randomUUID
+  ? crypto.randomUUID()
+  : Date.now().toString(36) + Math.random().toString(36).slice(2)
+
 let noticeTimer = 0
 const setNotice = (msg, ms = 9000) => {
   notice.value = msg
@@ -199,7 +205,7 @@ const sendMessage = async (raw) => {
   setIgrisState('thinking')
 
   try {
-    const response = await api.post('/api/chat', { text: msg })
+    const response = await api.post('/api/chat', { text: msg, session_id: sessionId })
     if (response.data.status === 'ok') {
       chatMessages.value.push({ from: 'igris', text: response.data.reply })
       scrollToBottom()
