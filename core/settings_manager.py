@@ -6,6 +6,30 @@ from pathlib import Path
 
 SETTINGS_FILE = Path(__file__).parent / "settings.json"
 
+# Proveedores válidos (deben coincidir con core/config.py y PROVIDERS de core/brain.py)
+VALID_PROVIDERS = ("nemotron", "openai", "anthropic", "local")
+
+
+def _sanitize_ai(ai: dict) -> dict:
+    """Quita de la sección "ai" los proveedores que ya no existen (ej. groq de un
+    settings.json antiguo). Solo corrige en memoria; el disco se actualiza en el
+    próximo guardado."""
+    primary = ai.get("primary_provider")
+    if primary not in VALID_PROVIDERS:
+        ai.pop("primary_provider", None)  # se usará el valor por defecto
+
+    chain = ai.get("fallback_chain")
+    if isinstance(chain, list):
+        clean = [p for p in chain if isinstance(p, str) and p in VALID_PROVIDERS]
+        ai["fallback_chain"] = list(dict.fromkeys(clean))
+        if not ai["fallback_chain"]:
+            ai.pop("fallback_chain")
+
+    models = ai.get("models")
+    if isinstance(models, dict):
+        ai["models"] = {k: v for k, v in models.items() if k in VALID_PROVIDERS}
+    return ai
+
 
 class SettingsManager:
     def __init__(self):
@@ -30,6 +54,8 @@ class SettingsManager:
         # completar con los defaults para no perder la configuración.
         if not isinstance(data.get("ai"), dict):
             data["ai"] = self.get_defaults()["ai"]
+        else:
+            data["ai"] = _sanitize_ai(data["ai"])
         return data
 
     def save(self) -> bool:
@@ -71,7 +97,7 @@ class SettingsManager:
 
     def set_ai_config(self, config: dict) -> bool:
         """Establece configuración de IA."""
-        self.settings["ai"] = config
+        self.settings["ai"] = _sanitize_ai(dict(config))
         return self.save()
 
     def get_stt_config(self) -> dict:
@@ -87,6 +113,7 @@ class SettingsManager:
         ai = self.settings.setdefault("ai", {})
         ai["primary_provider"] = provider
         ai["fallback_chain"] = fallback_chain
+        self.settings["ai"] = _sanitize_ai(ai)
         return self.save()
 
     def get_defaults(self) -> dict:
@@ -94,18 +121,20 @@ class SettingsManager:
         chain = [
             p.strip()
             for p in os.getenv(
-                "IGRIS_FALLBACK_CHAIN", "nemotron,groq,openai,anthropic,local"
+                "IGRIS_FALLBACK_CHAIN", ",".join(VALID_PROVIDERS)
             ).split(",")
-            if p.strip()
-        ]
+            if p.strip() in VALID_PROVIDERS
+        ] or list(VALID_PROVIDERS)
+        primary = os.getenv("IGRIS_PROVIDER", "nemotron")
+        if primary not in VALID_PROVIDERS:
+            primary = "nemotron"
         return {
             "version": "1.0",
             "ai": {
-                "primary_provider": os.getenv("IGRIS_PROVIDER", "nemotron"),
+                "primary_provider": primary,
                 "fallback_chain": chain,
                 "models": {
                     "nemotron": os.getenv("IGRIS_NEMOTRON_MODEL", "nvidia/nemotron-3-super-120b-a12b"),
-                    "groq": "llama-3.1-70b-versatile",
                     "openai": "gpt-4o-mini",
                     "anthropic": "claude-sonnet-5-5",
                     "local": "llama3.1"
