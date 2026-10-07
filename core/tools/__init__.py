@@ -9,7 +9,7 @@ Para añadir una herramienta nueva:
 import json
 import logging
 
-from core.tools import calendar_write, gcalendar, gmail, time_tools, weather
+from core.tools import calendar_write, gcalendar, gmail, notes, reminders, time_tools, weather
 
 logger = logging.getLogger(__name__)
 
@@ -140,8 +140,8 @@ TOOLS = [
             "description": (
                 "Prepara un evento en el Google Calendar del usuario SIN crearlo todavía: devuelve un "
                 "resumen para que el usuario lo confirme. Úsala cuando pida agendar, programar o "
-                "crear una reunión, cita o recordatorio con fecha y hora. Si el usuario pide cambios "
-                "antes de confirmar, vuelve a llamarla con los datos corregidos."
+                "crear una reunión o cita con fecha y hora en su calendario. Si el usuario pide "
+                "cambios antes de confirmar, vuelve a llamarla con los datos corregidos."
             ),
             "parameters": {
                 "type": "object",
@@ -178,6 +178,119 @@ TOOLS = [
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_reminder",
+            "description": (
+                "Crea un recordatorio que Igris enviará como aviso por Telegram a la hora indicada. "
+                "Úsala cuando el usuario pida que le recuerdes algo (por ejemplo 'recuérdame mañana "
+                "a las 8 llamar al banco'). Calcula la fecha con la fecha y hora actuales de Colombia. "
+                "Si falta la hora, pregúntala. No es para eventos del calendario (eso es propose_event)."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "text": {
+                        "type": "string",
+                        "description": "Qué recordar, corto y en infinitivo o frase simple, por ejemplo 'llamar al banco'.",
+                    },
+                    "when": {
+                        "type": "string",
+                        "description": "Cuándo avisar, en hora de Colombia, formato AAAA-MM-DDTHH:MM, por ejemplo 2026-10-07T08:00.",
+                    },
+                    "repeat": {
+                        "type": "string",
+                        "enum": ["ninguna", "diaria", "semanal"],
+                        "description": "Repetición opcional. Por defecto 'ninguna' (una sola vez).",
+                    },
+                },
+                "required": ["text", "when"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_reminders",
+            "description": (
+                "Lista los recordatorios pendientes con su id y cuándo avisarán. Úsala cuando "
+                "pregunte qué recordatorios tiene, y antes de cancelar uno para conocer su id."
+            ),
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "delete_reminder",
+            "description": (
+                "Cancela UN recordatorio pendiente por su id (obtenido con list_reminders). "
+                "Solo cuando el usuario lo pidió en su último mensaje; si hay dudas sobre cuál es, "
+                "pregúntale antes. Un solo recordatorio por orden."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {"id": {"type": "integer", "description": "Id del recordatorio."}},
+                "required": ["id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "add_note",
+            "description": (
+                "Guarda una nota de texto. Úsala cuando el usuario pida anotar o guardar algo "
+                "(por ejemplo 'anota que la clave del wifi de la oficina es X'). Guarda el dato "
+                "completo y tal cual lo dijo."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {"text": {"type": "string", "description": "Texto completo de la nota."}},
+                "required": ["text"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_notes",
+            "description": "Lista las notas más recientes con su id. Úsala cuando pregunte qué notas tiene.",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_notes",
+            "description": (
+                "Busca en las notas por palabras clave (sin importar tildes). Úsala cuando pregunte "
+                "qué anotó sobre un tema, por ejemplo 'wifi'. Usa una o dos palabras clave, no la frase entera."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {"query": {"type": "string", "description": "Palabras clave a buscar."}},
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "delete_note",
+            "description": (
+                "Borra UNA nota por su id (obtenido con list_notes o search_notes). El borrado no se "
+                "puede deshacer: solo cuando el usuario lo pidió en su último mensaje; si hay dudas "
+                "sobre cuál es, pregúntale antes. Una sola nota por orden."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {"id": {"type": "integer", "description": "Id de la nota."}},
+                "required": ["id"],
+            },
+        },
+    },
 ]
 
 _HANDLERS = {
@@ -188,10 +301,17 @@ _HANDLERS = {
     "list_events": gcalendar.list_events,
     "propose_event": calendar_write.propose_event,
     "confirm_event": calendar_write.confirm_event,
+    "create_reminder": reminders.create_reminder,
+    "list_reminders": reminders.list_reminders,
+    "delete_reminder": reminders.delete_reminder,
+    "add_note": notes.add_note,
+    "list_notes": notes.list_notes,
+    "search_notes": notes.search_notes,
+    "delete_note": notes.delete_note,
 }
 
-# Herramientas que necesitan la sesión de conversación (estado y confirmación del usuario)
-_SESSION_TOOLS = {"propose_event", "confirm_event"}
+# Herramientas que necesitan la sesión de conversación (estado, origen y confirmación del usuario)
+_SESSION_TOOLS = {"propose_event", "confirm_event", "create_reminder", "delete_reminder", "delete_note"}
 
 
 async def run_tool(name: str, arguments: str, session=None) -> str:
