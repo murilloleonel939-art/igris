@@ -9,7 +9,7 @@ Para añadir una herramienta nueva:
 import json
 import logging
 
-from core.tools import time_tools, weather
+from core.tools import gcalendar, gmail, time_tools, weather
 
 logger = logging.getLogger(__name__)
 
@@ -60,11 +60,87 @@ TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_emails",
+            "description": (
+                "Lista correos de la bandeja de entrada de Gmail del usuario (remitente, asunto, "
+                "fecha y vista previa) y cuántos no leídos hay. Úsala cuando pregunte por sus "
+                "correos, mensajes nuevos o si le escribió alguien."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": (
+                            "Búsqueda opcional con sintaxis de Gmail, por ejemplo 'from:banco' "
+                            "o 'subject:factura'."
+                        ),
+                    },
+                    "unread_only": {
+                        "type": "boolean",
+                        "description": "true para solo no leídos (por defecto). false para incluir leídos.",
+                    },
+                    "max_results": {
+                        "type": "integer",
+                        "description": "Cantidad de correos a listar (1 a 10, por defecto 5).",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "read_email",
+            "description": (
+                "Lee el contenido de un correo concreto usando el id obtenido con list_emails. "
+                "Úsala cuando el usuario pida saber qué dice un correo."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "message_id": {"type": "string", "description": "Id del correo (de list_emails)."}
+                },
+                "required": ["message_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_events",
+            "description": (
+                "Lista los eventos del Google Calendar del usuario. Úsala cuando pregunte por su "
+                "agenda, reuniones o qué tiene hoy, mañana o esta semana."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "date": {
+                        "type": "string",
+                        "description": "Fecha de inicio AAAA-MM-DD. Omitir para hoy.",
+                    },
+                    "days": {
+                        "type": "integer",
+                        "description": "Cuántos días cubrir desde la fecha (1 a 14, por defecto 1).",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
 ]
 
 _HANDLERS = {
     "get_time": time_tools.get_time,
     "get_weather": weather.get_weather,
+    "list_emails": gmail.list_emails,
+    "read_email": gmail.read_email,
+    "list_events": gcalendar.list_events,
 }
 
 
