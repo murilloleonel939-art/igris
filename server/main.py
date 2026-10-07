@@ -18,11 +18,14 @@ from core import Brain, config, stt          # ← añadido stt
 from core.settings_manager import get_settings
 from core import tts
 from core.database import init_db
+from core.session_store import SessionStore
 
 # Telegram imports
 from telegram import Update, Bot
 from telegram.ext import Application, ContextTypes
 
+# Sin esto, los logger.info de core/ (brain, tools) no aparecen en los logs de Coolify
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
 
 # Inicializar BD
@@ -133,8 +136,9 @@ async def require_key(request: Request, x_igris_key: Optional[str] = Header(defa
     # 3) Clave correcta: se limpian los fallos de esa IP
     _failures.pop(ip, None)
 
-# Instancia global del cerebro
+# Instancia global del cerebro y almacén de sesiones (historial por conversación)
 brain = Brain()
+sessions = SessionStore(brain)
 NODE_TOKEN = os.environ.get("NODE_TOKEN", "")
 
 def valid_node_token(token) -> bool:
@@ -203,12 +207,16 @@ from pydantic import BaseModel
 
 class ChatRequest(BaseModel):
     text: str
+    session_id: Optional[str] = None  # opcional: si el frontend no lo envía, se usa una sesión única
 
 @app.post("/api/chat", dependencies=[Depends(require_key)])
 async def http_chat(req: ChatRequest):
     """Endpoint de chat simple - requiere X-Igris-Key"""
     try:
-        session = brain.new_session()
+        # Se limpia el id y se prefija "web:"; sin id se usa una sesión única
+        # (uso personal con una sola clave de acceso).
+        sid = "".join(c for c in (req.session_id or "") if c.isalnum() or c in "-_")[:64] or "default"
+        session = sessions.get(f"web:{sid}")
         reply = await session.say(req.text)
         return {"status": "ok", "reply": reply}
     except Exception as e:
@@ -490,17 +498,17 @@ async def process_telegram_update(update_dict: dict):
 
     # ----- Mensaje libre (se envía a Igris) -----
     await message.chat.send_action(action="typing")  # opcional: muestra "escribiendo..."
-    reply = await _get_igris_reply(user_text)
+    reply = await _get_igris_reply(user_text, f"tg:{user.id}")
     await message.reply_text(reply)
 
 
 # ----------------------------------------------------------------------
 # Funciones reutilizables de Igris (evitan hacer llamadas HTTP a sí mismas)
 # ----------------------------------------------------------------------
-async def _get_igris_reply(text: str) -> str:
+async def _get_igris_reply(text: str, session_key: Optional[str] = None) -> str:
     """Envía el texto al cerebro de Igris y devuelve la respuesta de Igris."""
     try:
-        session = brain.new_session()
+        session = sessions.get(session_key)
         reply = await session.say(text)
         return reply
     except Exception as e:
