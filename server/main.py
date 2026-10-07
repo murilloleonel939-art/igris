@@ -17,8 +17,9 @@ from fastapi.responses import Response
 from core import Brain, config, stt          # ← añadido stt
 from core.settings_manager import get_settings
 from core import tts
-from core.database import init_db
+from core.database import init_db, engine
 from core.session_store import SessionStore
+from core.scheduler import run_reminder_loop
 
 # Telegram imports
 from telegram import Update, Bot
@@ -28,8 +29,11 @@ from telegram.ext import Application, ContextTypes
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
 
-# Inicializar BD
+# Inicializar BD (crea las tablas que falten: recordatorios y notas incluidas)
 init_db()
+logger.info(f"Base de datos activa: {engine.dialect.name}")  # solo el tipo, nunca la URL
+if engine.dialect.name == "sqlite":
+    logger.warning("Usando SQLite: los datos se pierden en cada despliegue si no hay volumen persistente")
 
 app = FastAPI(
     title="IGRIS Chat",
@@ -288,7 +292,20 @@ async def update_ai_config(config_update: AIConfigUpdate):
         current_ai_config = settings.get_ai_config()
         from core import config
         defaults = config.get_active_provider_config()
-        
+
+        # Rechaza proveedores que no existen (ej. groq)
+        valid = config.get_available_providers()
+        requested = ([config_update.primary_provider] if config_update.primary_provider else []) \
+            + (config_update.fallback_chain or [])
+        invalid = [p for p in requested if p.strip() and p.strip() not in valid]
+        if invalid:
+            return AIConfigResponse(
+                status="error",
+                primary_provider=current_ai_config.get("primary_provider") or defaults.get("active_provider", "nemotron"),
+                fallback_chain=current_ai_config.get("fallback_chain") or defaults.get("fallback_chain", []),
+                message=f"Proveedor no válido: {', '.join(invalid)}. Disponibles: {', '.join(valid)}",
+            )
+
         # Update only the fields that were provided
         if config_update.primary_provider is not None:
             current_ai_config["primary_provider"] = config_update.primary_provider
@@ -297,7 +314,7 @@ async def update_ai_config(config_update: AIConfigUpdate):
             fallback_list = [p.strip() for p in config_update.fallback_chain if p.strip()]
             if fallback_list:
                 current_ai_config["fallback_chain"] = fallback_list
-          
+
         # Ensure primary provider is in fallback chain (fixes 'not in list' error)
         primary = current_ai_config.get("primary_provider")
         if primary is not None:
@@ -347,7 +364,7 @@ async def tts_endpoint(req: TTSRequest):
     try:
         # Usar la función existente de core/tts.py
         audio_bytes = await tts.synthesize(req.text)
-          
+
         # Devolver como respuesta binaria con tipo de contenido correcto
         from fastapi.responses import Response
         return Response(
@@ -509,6 +526,8 @@ async def _get_igris_reply(text: str, session_key: Optional[str] = None) -> str:
     """Envía el texto al cerebro de Igris y devuelve la respuesta de Igris."""
     try:
         session = sessions.get(session_key)
+        if session_key and session_key.startswith("tg:"):
+            session.telegram_id = int(session_key[3:])  # los recordatorios avisarán a este chat
         reply = await session.say(text)
         return reply
     except Exception as e:
@@ -554,6 +573,13 @@ async def _set_igris_ai_config(primary: Optional[str] = None,
         settings = get_settings()
         current = settings.get_ai_config() or {}
         defaults = config.get_active_provider_config()
+
+        # Rechaza proveedores que no existen (ej. groq)
+        valid = config.get_available_providers()
+        bad = [p for p in ([primary] if primary else []) + (fallback or []) if p.strip() and p.strip() not in valid]
+        if bad:
+            return {"status": "error",
+                    "message": f"Proveedor no válido: {', '.join(bad)}. Disponibles: {', '.join(valid)}"}
 
         if primary is not None:
             current["primary_provider"] = primary
@@ -616,15 +642,27 @@ async def telegram_webhook(
     return {"status": "ok"}
 
 
-# ============= CONFIGURAR WEBHOOK AUTOMÁTICAMENTE AL INICIAR (OPCIONAL) =============
+# ============= RECORDATORIOS: ENVÍO Y ARRANQUE =============
+async def _send_telegram(chat_id: int, text: str) -> None:
+    """Función de envío que usa el planificador de recordatorios."""
+    if telegram_bot is None:
+        raise RuntimeError("Telegram no configurado")
+    await telegram_bot.send_message(chat_id=chat_id, text=text)
+
+
 @app.on_event("startup")
 async def on_startup():
-    """Configura el webhook de Telegram si se providieron las variables necesarias."""
-    if not TELEGRAM_TOKEN or not TELEGRAM_WEBHOOK_URL:
-        # No hacemos nada si faltan datos; el usuario puede configurar el webhook manualmente.
-        return
+    """Inicia el planificador de recordatorios y configura el webhook de Telegram."""
+    # El planificador arranca siempre, aunque no haya webhook configurado
+    if telegram_bot is not None:
+        app.state.reminder_task = asyncio.create_task(
+            run_reminder_loop(_send_telegram, ALLOWED_TELEGRAM_IDS)
+        )
+    else:
+        logger.warning("TELEGRAM_TOKEN no definido: los recordatorios NO se enviarán")
 
-    if telegram_bot is None:
+    if not TELEGRAM_TOKEN or not TELEGRAM_WEBHOOK_URL:
+        # No hacemos nada más si faltan datos; el usuario puede configurar el webhook manualmente.
         return
 
     try:
@@ -636,6 +674,13 @@ async def on_startup():
         print(f"[Telegram] Webhook establecido en {TELEGRAM_WEBHOOK_URL}")
     except Exception as e:
         print(f"[Telegram] Error al establecer webhook: {e}")
+
+
+@app.on_event("shutdown")
+async def on_shutdown():
+    task = getattr(app.state, "reminder_task", None)
+    if task:
+        task.cancel()
 
 
 # ============= ROOT =============
