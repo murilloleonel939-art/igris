@@ -1,4 +1,4 @@
-"""Brain module for IGRIS - orquestación de IA con cadena de fallback"""
+"""Brain module for IGRIS - orquestación de IA con cadena de fallback y herramientas"""
 
 import logging
 import os
@@ -8,6 +8,8 @@ from openai import AsyncOpenAI
 
 from core.config import SYSTEM_PROMPT
 from core.settings_manager import get_settings
+from core.tools import TOOLS, run_tool
+from core.tools.time_tools import now_context
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +18,16 @@ DEFAULT_CHAIN = ["nemotron", "openai", "anthropic", "local"]
 # Tokens máximos por respuesta. Nemotron es un modelo con razonamiento:
 # con límites bajos (ej. 512) gasta todo pensando y devuelve content vacío.
 MAX_TOKENS = int(os.environ.get("IGRIS_MAX_TOKENS", "2048"))
+
+# Máximo de rondas de herramientas por mensaje (evita bucles infinitos).
+MAX_TOOL_ROUNDS = 4
+
+TOOLS_PROMPT = (
+    "Dispones de herramientas para consultar la hora y el clima. Úsalas siempre que "
+    "la pregunta dependa de datos en tiempo real; no inventes cifras. "
+    "Di la hora en palabras naturales, por ejemplo 'las dos y quince de la tarde'. "
+    "Si una herramienta falla, informa con brevedad."
+)
 
 # Todos los proveedores se consumen con el SDK de OpenAI (APIs compatibles).
 PROVIDERS = {
@@ -74,6 +86,63 @@ def _build_client(name: str):
     return AsyncOpenAI(api_key=api_key, base_url=base, timeout=spec["timeout"]), model
 
 
+def _system_message() -> str:
+    """System prompt + instrucciones de herramientas + fecha/hora actual de Colombia."""
+    return f"{SYSTEM_PROMPT}\n\n{TOOLS_PROMPT}\n{now_context()}"
+
+
+async def _complete_with_tools(client, model: str, messages: List[dict]) -> str:
+    """Llama al modelo y resuelve las llamadas a herramientas hasta obtener texto final."""
+    work = list(messages)  # copia: el bucle añade mensajes de herramientas
+
+    for round_no in range(MAX_TOOL_ROUNDS + 1):
+        kwargs = dict(
+            model=model,
+            messages=work,
+            temperature=0.7,
+            max_tokens=MAX_TOKENS,
+        )
+        # En la última ronda no se ofrecen herramientas: fuerza una respuesta final.
+        if round_no < MAX_TOOL_ROUNDS:
+            kwargs["tools"] = TOOLS
+
+        resp = await client.chat.completions.create(**kwargs)
+        choice = resp.choices[0]
+        msg = choice.message
+
+        if msg.tool_calls:
+            work.append({
+                "role": "assistant",
+                "content": msg.content or "",
+                "tool_calls": [
+                    {
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {
+                            "name": tc.function.name,
+                            "arguments": tc.function.arguments,
+                        },
+                    }
+                    for tc in msg.tool_calls
+                ],
+            })
+            for tc in msg.tool_calls:
+                result = await run_tool(tc.function.name, tc.function.arguments)
+                work.append({
+                    "role": "tool",
+                    "tool_call_id": tc.id,
+                    "content": result,
+                })
+            continue
+
+        reply = (msg.content or "").strip()
+        if not reply:
+            raise ValueError(f"respuesta vacía (finish_reason={choice.finish_reason})")
+        return reply
+
+    raise ValueError("demasiadas rondas de herramientas sin respuesta final")
+
+
 class BrainSession:
     """Una conversación con historial."""
 
@@ -82,7 +151,7 @@ class BrainSession:
         self.history: List[Dict[str, str]] = []
 
     async def say(self, text: str, context: Optional[dict] = None) -> str:
-        messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+        messages = [{"role": "system", "content": _system_message()}]
         messages += self.history[-20:]
         messages.append({"role": "user", "content": text})
 
@@ -95,18 +164,7 @@ class BrainSession:
             client, model = built
             logger.info(f"Intentando proveedor: {name} ({model})")
             try:
-                resp = await client.chat.completions.create(
-                    model=model,
-                    messages=messages,
-                    temperature=0.7,
-                    max_tokens=MAX_TOKENS,
-                )
-                choice = resp.choices[0]
-                reply = (choice.message.content or "").strip()
-                if not reply:
-                    raise ValueError(
-                        f"respuesta vacía (finish_reason={choice.finish_reason})"
-                    )
+                reply = await _complete_with_tools(client, model, messages)
                 self.history.append({"role": "user", "content": text})
                 self.history.append({"role": "assistant", "content": reply})
                 return reply
