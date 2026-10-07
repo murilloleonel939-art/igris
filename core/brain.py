@@ -2,7 +2,7 @@
 
 import logging
 import os
-from typing import Dict, List, Optional
+from typing import List, Optional, Tuple
 
 from openai import AsyncOpenAI
 
@@ -21,6 +21,9 @@ MAX_TOKENS = int(os.environ.get("IGRIS_MAX_TOKENS", "2048"))
 
 # Máximo de rondas de herramientas por mensaje (evita bucles infinitos).
 MAX_TOOL_ROUNDS = 4
+
+# Turnos de conversación que se recuerdan (un turno = tu mensaje + herramientas + respuesta).
+MAX_HISTORY_TURNS = int(os.environ.get("IGRIS_HISTORY_TURNS", "6"))
 
 TOOLS_PROMPT = (
     "Dispones de herramientas para consultar la hora, el clima, el correo de Gmail y el "
@@ -96,9 +99,14 @@ def _system_message() -> str:
     return f"{SYSTEM_PROMPT}\n\n{TOOLS_PROMPT}\n{now_context()}"
 
 
-async def _complete_with_tools(client, model: str, messages: List[dict]) -> str:
-    """Llama al modelo y resuelve las llamadas a herramientas hasta obtener texto final."""
+async def _complete_with_tools(client, model: str, messages: List[dict]) -> Tuple[str, List[dict]]:
+    """Llama al modelo y resuelve las llamadas a herramientas hasta obtener texto final.
+
+    Devuelve (respuesta, mensajes_nuevos): los mensajes nuevos incluyen las llamadas a
+    herramientas, sus resultados y la respuesta final, para guardarlos en el historial.
+    """
     work = list(messages)  # copia: el bucle añade mensajes de herramientas
+    base_len = len(work)
 
     for round_no in range(MAX_TOOL_ROUNDS + 1):
         kwargs = dict(
@@ -143,22 +151,27 @@ async def _complete_with_tools(client, model: str, messages: List[dict]) -> str:
         reply = (msg.content or "").strip()
         if not reply:
             raise ValueError(f"respuesta vacía (finish_reason={choice.finish_reason})")
-        return reply
+        return reply, work[base_len:] + [{"role": "assistant", "content": reply}]
 
     raise ValueError("demasiadas rondas de herramientas sin respuesta final")
 
 
 class BrainSession:
-    """Una conversación con historial."""
+    """Una conversación con historial (por turnos completos)."""
 
     def __init__(self, brain: "Brain"):
         self.brain = brain
-        self.history: List[Dict[str, str]] = []
+        # Cada turno es una lista de mensajes: usuario, [llamadas a herramientas y
+        # resultados], respuesta. Se recorta por turnos para no separar nunca una
+        # llamada a herramienta de su resultado (los proveedores lo rechazarían).
+        self.turns: List[List[dict]] = []
 
     async def say(self, text: str, context: Optional[dict] = None) -> str:
+        user_msg = {"role": "user", "content": text}
         messages = [{"role": "system", "content": _system_message()}]
-        messages += self.history[-20:]
-        messages.append({"role": "user", "content": text})
+        for turn in self.turns[-MAX_HISTORY_TURNS:]:
+            messages += turn
+        messages.append(user_msg)
 
         errors = []
         for name in self.brain.fallback_chain:
@@ -169,9 +182,9 @@ class BrainSession:
             client, model = built
             logger.info(f"Intentando proveedor: {name} ({model})")
             try:
-                reply = await _complete_with_tools(client, model, messages)
-                self.history.append({"role": "user", "content": text})
-                self.history.append({"role": "assistant", "content": reply})
+                reply, new_msgs = await _complete_with_tools(client, model, messages)
+                self.turns.append([user_msg] + new_msgs)
+                self.turns = self.turns[-MAX_HISTORY_TURNS:]
                 return reply
             except Exception as e:
                 logger.error(f"Proveedor '{name}' falló: {e}")
