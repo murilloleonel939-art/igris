@@ -820,21 +820,23 @@ async def google_callback(
     from html import escape
 
     def _page(title: str, detail: str, ok: bool) -> HTMLResponse:
-        # Todo lo que se pinta aquí puede venir de fuera (el parámetro `error` lo
-        # pone Google, y una excepción puede arrastrar texto de una respuesta
-        # ajena). Se escapa siempre: sin esto, un mensaje de error que traiga
-        # etiquetas HTML se ejecutaría en el navegador del usuario.
         color = "#10b981" if ok else "#ef4444"
+        # En la página de éxito se redirige automáticamente al chat del usuario.
+        # En la de error no: el usuario necesita leer el motivo antes de cerrar.
+        redirect_snippet = ""
+        if ok:
+            redirect_snippet = """
+<meta http-equiv="refresh" content="3;url=https://webigris.zottagroup.com/u">
+<script>setTimeout(()=>{window.location.replace('https://webigris.zottagroup.com/u')},3000)</script>"""
         return HTMLResponse(f"""<!doctype html>
 <html lang="es"><head><meta charset="utf-8">
-<title>Igris</title></head>
+<title>Igris</title>{redirect_snippet}</head>
 <body style="margin:0;font-family:system-ui,sans-serif;background:#0f172a;color:#e2e8f0;
              display:flex;align-items:center;justify-content:center;height:100vh">
   <div style="text-align:center;max-width:32rem;padding:2rem">
     <h1 style="color:{color};font-size:1.25rem;margin:0 0 .75rem">{escape(title)}</h1>
     <p style="color:#94a3b8;line-height:1.6;margin:0">{escape(detail)}</p>
-    <p style="color:#64748b;font-size:.875rem;margin-top:1.5rem">
-      Puedes cerrar esta pestaña y volver a Igris.</p>
+    {'<p style="color:#64748b;font-size:.875rem;margin-top:1.5rem">Redirigiendo a Igris en unos segundos… <a href="https://webigris.zottagroup.com/u" style="color:#6366f1;text-decoration:none">Ir ahora</a></p>' if ok else '<p style="color:#64748b;font-size:.875rem;margin-top:1.5rem">Puedes cerrar esta pestaña y volver a Igris.</p>'}
   </div>
 </body></html>""")
 
