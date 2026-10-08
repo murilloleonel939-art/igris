@@ -481,6 +481,41 @@ def delete_user(
     return {"success": True, "message": f"Usuario '{username}' eliminado"}
 
 
+@router.delete("/api/admin/users/{user_id}/telegram")
+def admin_unlink_telegram(
+    user_id: int,
+    _: None = Depends(require_admin_key),
+    db: Session = Depends(get_db),
+):
+    """El administrador desvincula el Telegram de cualquier usuario.
+
+    Borra el chat_id de la fila TelegramLink del usuario. A partir de ese momento
+    el bot deja de atender al chat vinculado como ese usuario y no le envía
+    recordatorios. El usuario puede volver a vincular cuando quiera desde /u.
+    """
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Usuario no encontrado",
+        )
+    link = db.query(TelegramLink).filter(TelegramLink.user_id == user_id).first()
+    if not link or not link.chat_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Este usuario no tiene Telegram vinculado",
+        )
+    chat_id = link.chat_id
+    link.chat_id = None
+    link.username = None
+    link.linked_at = None
+    db.commit()
+    logger.info(
+        "Admin desvinculó Telegram del usuario %s (chat %s)", user_id, chat_id
+    )
+    return {"success": True, "message": f"Telegram desvinculado del usuario '{user.username}'"}
+
+
 # ============= ACCESO DE USUARIOS =============
 
 @router.post("/api/user/login")

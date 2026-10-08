@@ -211,13 +211,23 @@
             </span>
             <span v-else class="text-slate-500">sin conectar</span>
           </p>
-          <p class="text-slate-300">
-            Telegram:
-            <span v-if="permisosModal.connection.telegram_linked" class="text-emerald-400">vinculado</span>
-            <span v-else class="text-slate-500">sin vincular</span>
-          </p>
+          <div class="flex items-center justify-between">
+            <p class="text-slate-300">
+              Telegram:
+              <span v-if="permisosModal.connection.telegram_linked" class="text-emerald-400">vinculado</span>
+              <span v-else class="text-slate-500">sin vincular</span>
+            </p>
+            <button
+              v-if="permisosModal.connection.telegram_linked"
+              :disabled="unlinkingTelegram"
+              class="rounded px-2 py-0.5 text-xs font-medium text-red-400 ring-1 ring-red-400/40 hover:bg-red-400/10 disabled:opacity-50"
+              @click="adminUnlinkTelegram(permisosModal.id)"
+            >
+              {{ unlinkingTelegram ? 'Desvinculando…' : 'Desvincular' }}
+            </button>
+          </div>
           <p class="mt-1 text-xs text-slate-500">
-            Esto lo conecta el propio usuario desde su página; aquí solo se ve.
+            Esto lo conecta el propio usuario desde su página. Puedes desvincular su Telegram desde aquí.
           </p>
         </div>
 
@@ -286,6 +296,7 @@ const form = ref({ username: '', email: '', password: '', features: [] })
 // Modal de permisos
 const permisosModal = ref({ open: false, id: null, username: '', features: [], connection: null })
 const permisosSaving = ref(false)
+const unlinkingTelegram = ref(false)
 
 // Modal de edición de trato personalizado
 const tratoModal = ref({ open: false, id: null, username: '', value: '' })
@@ -381,6 +392,23 @@ function openPermisos(u) {
     username: u.username,
     features: [...(u.features || [])],
     connection: u.connections || null,
+  }
+}
+
+async function adminUnlinkTelegram(userId) {
+  unlinkingTelegram.value = true
+  try {
+    await api.delete(`/api/admin/users/${userId}/telegram`)
+    // Actualiza el estado local sin cerrar el modal
+    if (permisosModal.value.connection) {
+      permisosModal.value.connection.telegram_linked = false
+      permisosModal.value.connection.telegram = null
+    }
+    await load()
+  } catch (e) {
+    alert(e?.response?.data?.detail || 'Error al desvincular Telegram')
+  } finally {
+    unlinkingTelegram.value = false
   }
 }
 
