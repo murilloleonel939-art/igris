@@ -224,7 +224,7 @@ La pantalla del chat del administrador funciona como un asistente de voz:
 - **STT en el backend (Telegram):** `core/stt.py`. Proveedor `local` (Whisper, requiere ffmpeg en la imagen) u `openai` (API de Whisper).
 - **TTS (texto a voz):** `core/tts.py`, expuesto en `POST /api/tts`. La web lo reproduce automáticamente tras cada respuesta y mide su volumen con la Web Audio API para animar al avatar.
 ### Configuración de IA
-- **Proveedores:** `nemotron`, `openai`, `anthropic`, `local` (Ollama). Todos se consumen con el SDK de OpenAI (APIs compatibles). La lista válida está en `PROVIDERS` de `core/brain.py` y debe coincidir con `AVAILABLE_PROVIDERS` de `core/config.py`.
+- **Proveedores:** `nemotron`, `openai`, `anthropic`, `local` (Ollama). `nemotron`, `openai` y `local` se consumen con el SDK de OpenAI (APIs compatibles con `/v1/chat/completions`). **`anthropic` es la excepción:** Claude solo se sirve por el protocolo nativo de Anthropic (`/v1/messages`, con `x-api-key`), así que usa el SDK `anthropic` y su propio bucle de herramientas (`_complete_with_anthropic`); enviarlo por `/v1/chat/completions` devuelve `protocol_mismatch`. Por eso su URL base **no lleva `/v1`**: el SDK añade `/v1/messages`. La lista válida está en `PROVIDERS` de `core/brain.py` y debe coincidir con `AVAILABLE_PROVIDERS` de `core/config.py`.
 - **Cadena por defecto:** nemotron → openai → anthropic → local.
 - Si un proveedor falla (clave inválida, sin créditos, respuesta vacía, sin conexión), Igris pasa al siguiente automáticamente y deja el motivo en el log.
 - Los cambios hechos desde la web o Telegram se guardan en `core/settings.json` y aplican de inmediato, pero **no sobreviven a un redeploy completo**. Para dejarlos permanentes, usa variables de entorno en Coolify.
@@ -345,10 +345,12 @@ Los **usuarios** no usan esta variable: tienen su propia cuenta (usuario y contr
 | `NEMOTRON_API_KEY` | Clave de NVIDIA NIM | `nvapi-...` |
 | `NEMOTRON_API_BASE` | URL base de NVIDIA NIM (opcional) | `https://integrate.api.nvidia.com/v1` |
 | `IGRIS_NEMOTRON_MODEL` | Modelo de Nemotron (opcional) | `nvidia/nemotron-3-super-120b-a12b` |
-| `OPENAI_API_KEY` | Clave de OpenAI | `sk-...` |
-| `IGRIS_OPENAI_MODEL` | Modelo de OpenAI (opcional) | `gpt-4o-mini` |
-| `ANTHROPIC_API_KEY` | Clave de Anthropic | `sk-ant-...` |
-| `IGRIS_ANTHROPIC_MODEL` | Modelo de Anthropic (opcional) | `claude-sonnet-5-5` |
+| `OPENAI_API_KEY` | Clave de OpenAI (con pateway, la que emite pateway) | `sk-...` |
+| `OPENAI_API_BASE` | URL base del proveedor `openai` (opcional) | `https://api.pateway.ai/v1` |
+| `IGRIS_OPENAI_MODEL` | Modelo del proveedor `openai` (opcional) | `gpt-6-luna` |
+| `ANTHROPIC_API_KEY` | Clave de Anthropic (con pateway, la que emite pateway) | `sk-...` |
+| `ANTHROPIC_API_BASE` | URL base del proveedor `anthropic` (opcional) | `https://api.pateway.ai` |
+| `IGRIS_ANTHROPIC_MODEL` | Modelo del proveedor `anthropic` (opcional) | `claude-haiku-4-5-20251001` |
 | `IGRIS_LOCAL_URL` | URL de Ollama (debe ser alcanzable desde el contenedor) | `http://localhost:11434` |
 | `IGRIS_LOCAL_MODEL` | Modelo local de Ollama (opcional) | **qwen2.5:3b** |
 ### Google (Gmail y Calendar)

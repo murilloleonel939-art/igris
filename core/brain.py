@@ -1,10 +1,17 @@
 """Brain module for IGRIS - orquestación de IA con cadena de fallback y herramientas"""
 
+import json
 import logging
 import os
 from typing import List, Optional, Tuple
 
 from openai import AsyncOpenAI
+
+# Anthropic usa un protocolo propio (/v1/messages), no el de OpenAI.
+try:
+    from anthropic import AsyncAnthropic  # type: ignore
+except Exception:  # pragma: no cover
+    AsyncAnthropic = None  # type: ignore
 
 from core.config import SYSTEM_PROMPT
 from core.settings_manager import get_settings
@@ -68,7 +75,9 @@ PROVIDERS = {
     "anthropic": {
         "key_env": "ANTHROPIC_API_KEY",
         "base_env": "ANTHROPIC_API_BASE",
-        "base_default": "https://api.pateway.ai/v1",
+        # Sin '/v1': el SDK de Anthropic añade '/v1/messages' por su cuenta.
+        # Con '/v1' la URL final sería '/v1/v1/messages' (404).
+        "base_default": "https://api.pateway.ai",
         "model_env": "IGRIS_ANTHROPIC_MODEL",
         "model_default": "claude-haiku-4-5-20251001",
         "timeout": 30,
@@ -103,6 +112,19 @@ def _build_client(name: str):
         return None
 
     base = os.environ.get(spec.get("base_env", ""), "") or spec["base_default"]
+
+    # Claude solo se sirve por el protocolo nativo de Anthropic (/v1/messages):
+    # enviarlo por /v1/chat/completions devuelve 'protocol_mismatch'.
+    if name == "anthropic":
+        if AsyncAnthropic is None:
+            logger.warning("Proveedor 'anthropic' omitido: falta el paquete 'anthropic'")
+            return None
+        # El SDK añade '/v1/messages': la base no debe acabar en '/v1' ni en '/'.
+        base = base.rstrip("/")
+        if base.endswith("/v1"):
+            base = base[: -len("/v1")]
+        return AsyncAnthropic(api_key=api_key, base_url=base, timeout=spec["timeout"]), model
+
     return AsyncOpenAI(api_key=api_key, base_url=base, timeout=spec["timeout"]), model
 
 
@@ -164,6 +186,149 @@ async def _complete_with_tools(client, model: str, messages: List[dict], session
         if not reply:
             raise ValueError(f"respuesta vacía (finish_reason={choice.finish_reason})")
         return reply, work[base_len:] + [{"role": "assistant", "content": reply}]
+
+    raise ValueError("demasiadas rondas de herramientas sin respuesta final")
+
+
+def _tools_for_anthropic() -> List[dict]:
+    """Convierte TOOLS (formato OpenAI) al formato de herramientas de Anthropic.
+
+    Solo cambia el envoltorio: el esquema de 'parameters' es idéntico a 'input_schema'.
+    """
+    return [
+        {
+            "name": t["function"]["name"],
+            "description": t["function"].get("description", ""),
+            "input_schema": t["function"]["parameters"],
+        }
+        for t in TOOLS
+    ]
+
+
+def _anthropic_payload(messages: List[dict]) -> Tuple[str, List[dict]]:
+    """Traduce el historial (formato OpenAI) a (system, messages) de Anthropic.
+
+    El historial se guarda siempre en formato OpenAI porque lo comparten todos los
+    proveedores; aquí se traduce solo en el momento de la llamada.
+
+    Reglas del protocolo nativo que hay que respetar:
+      - El mensaje de sistema va en el parámetro 'system', no en la lista.
+      - Una herramienta se invoca con un bloque 'tool_use' dentro del turno del
+        asistente, y se responde con un bloque 'tool_result' en un turno de usuario.
+      - Todos los 'tool_result' que responden al mismo turno van juntos en un único
+        mensaje de usuario (Anthropic rechaza varios seguidos).
+    """
+    system = ""
+    out: List[dict] = []
+
+    for msg in messages:
+        role = msg.get("role")
+
+        if role == "system":
+            system = (system + "\n\n" + (msg.get("content") or "")).strip()
+
+        elif role == "user":
+            out.append({"role": "user", "content": msg.get("content") or ""})
+
+        elif role == "assistant":
+            blocks: List[dict] = []
+            if msg.get("content"):
+                blocks.append({"type": "text", "text": msg["content"]})
+            for tc in msg.get("tool_calls") or []:
+                fn = tc.get("function") or {}
+                try:
+                    args = json.loads(fn.get("arguments") or "{}")
+                except json.JSONDecodeError:
+                    args = {}
+                if not isinstance(args, dict):
+                    args = {}
+                blocks.append({
+                    "type": "tool_use",
+                    "id": tc.get("id"),
+                    "name": fn.get("name"),
+                    "input": args,
+                })
+            if blocks:
+                out.append({"role": "assistant", "content": blocks})
+
+        elif role == "tool":
+            block = {
+                "type": "tool_result",
+                "tool_use_id": msg.get("tool_call_id"),
+                "content": msg.get("content") or "",
+            }
+            # Si el mensaje anterior ya es de usuario con resultados, se añade ahí.
+            if out and out[-1]["role"] == "user" and isinstance(out[-1]["content"], list):
+                out[-1]["content"].append(block)
+            else:
+                out.append({"role": "user", "content": [block]})
+
+    return system, out
+
+
+async def _complete_with_anthropic(client, model: str, messages: List[dict], session=None) -> Tuple[str, List[dict]]:
+    """Igual que _complete_with_tools, pero por el protocolo nativo de Anthropic.
+
+    Devuelve (respuesta, mensajes_nuevos) en formato OpenAI, para que el historial
+    siga siendo intercambiable entre proveedores.
+    """
+    work = list(messages)
+    base_len = len(work)
+    tools = _tools_for_anthropic()
+
+    for round_no in range(MAX_TOOL_ROUNDS + 1):
+        system, conv = _anthropic_payload(work)
+
+        kwargs = dict(
+            model=model,
+            messages=conv,
+            max_tokens=MAX_TOKENS,
+        )
+        # 'temperature' no se envía: algunas versiones del SDK de Anthropic no la
+        # aceptan y el valor por defecto del modelo es correcto para este uso.
+        if system:
+            kwargs["system"] = system
+        # En la última ronda no se ofrecen herramientas: fuerza una respuesta final.
+        if round_no < MAX_TOOL_ROUNDS:
+            kwargs["tools"] = tools
+
+        resp = await client.messages.create(**kwargs)
+
+        text = "".join(
+            b.text for b in resp.content if getattr(b, "type", None) == "text"
+        ).strip()
+        tool_uses = [b for b in resp.content if getattr(b, "type", None) == "tool_use"]
+
+        if tool_uses:
+            work.append({
+                "role": "assistant",
+                "content": text,
+                "tool_calls": [
+                    {
+                        "id": tu.id,
+                        "type": "function",
+                        "function": {
+                            "name": tu.name,
+                            # run_tool espera los argumentos como string JSON.
+                            "arguments": json.dumps(tu.input or {}, ensure_ascii=False),
+                        },
+                    }
+                    for tu in tool_uses
+                ],
+            })
+            for tu in tool_uses:
+                args = json.dumps(tu.input or {}, ensure_ascii=False)
+                result = await run_tool(tu.name, args, session)
+                work.append({
+                    "role": "tool",
+                    "tool_call_id": tu.id,
+                    "content": result,
+                })
+            continue
+
+        if not text:
+            raise ValueError(f"respuesta vacía (stop_reason={resp.stop_reason})")
+        return text, work[base_len:] + [{"role": "assistant", "content": text}]
 
     raise ValueError("demasiadas rondas de herramientas sin respuesta final")
 
@@ -237,7 +402,11 @@ class BrainSession:
             client, model = built
             logger.info(f"Intentando proveedor: {name} ({model})")
             try:
-                reply, new_msgs = await _complete_with_tools(client, model, messages, self)
+                # Claude habla el protocolo nativo de Anthropic; el resto, el de OpenAI.
+                if name == "anthropic":
+                    reply, new_msgs = await _complete_with_anthropic(client, model, messages, self)
+                else:
+                    reply, new_msgs = await _complete_with_tools(client, model, messages, self)
                 self.turns.append([user_msg] + new_msgs)
                 self.turns = self.turns[-MAX_HISTORY_TURNS:]
                 return reply
