@@ -1,5 +1,5 @@
 # ⚔️ IGRIS - Asistente de IA con Avatar, Voz, Chat Web y Telegram
-> Igris, el caballero de las sombras: un asistente personal tipo Jarvis, leal y formal, que habla en español neutro. Se usa desde una interfaz web con avatar animado a pantalla completa y modo manos libres (le hablas y te responde en voz alta) y desde Telegram (texto, notas de voz y archivos de audio), con modelos de IA intercambiables, una cadena de fallback automática entre proveedores y herramientas para consultar la hora, el clima, el correo y el calendario, y para guardar recordatorios y notas.
+> Igris, el caballero de las sombras: un asistente personal tipo Jarvis, leal y formal, que habla en español neutro. Se usa desde una interfaz web con avatar animado a pantalla completa y modo manos libres (le hablas y te responde en voz alta) y desde Telegram (texto, notas de voz y archivos de audio), con modelos de IA intercambiables, una cadena de fallback automática entre proveedores y herramientas para consultar la hora, el clima, el correo y el calendario, enviar y eliminar correos, agendar, mover y borrar eventos, y guardar recordatorios y notas.
 [![GitHub](https://img.shields.io/badge/GitHub-murilloleonel939--art%2Figris-blue)](https://github.com/murilloleonel939-art/igris) [![Python](https://img.shields.io/badge/Python-3.12%2B-green)](https://www.python.org/) [![FastAPI](https://img.shields.io/badge/FastAPI-0.100%2B-009688)](https://fastapi.tiangolo.com/) [![Vue](https://img.shields.io/badge/Vue-3.3-4FC08D)](https://vuejs.org/)
 ---
 ## ✅ Qué hace Igris hoy
@@ -24,10 +24,14 @@
 | 🕒 Hora y fecha de Colombia | Funcional |
 | 🌦️ Clima de una ciudad | Funcional |
 | 📧 Gmail (lectura de la bandeja) | Funcional |
+| ✉️ **Enviar correos** con confirmación obligatoria antes de enviar | Funcional |
+| 🗑️ **Eliminar correos** (mueve a papelera, reversible desde Gmail) | Funcional |
 | 📅 Google Calendar: consultar agenda y crear eventos con confirmación obligatoria | Funcional |
+| 🗓️ **Mover y reagendar eventos** del calendario con confirmación obligatoria | Funcional |
+| 🗑️ **Eliminar eventos** del calendario | Funcional |
 | ⏰ Recordatorios con aviso por Telegram (únicos, diarios o semanales) | Funcional |
 | 📝 Notas: anotar, listar, buscar y borrar | Funcional |
-| 🔑 **Permisos por usuario**: el admin activa o desactiva cada función (hora, clima, correo, calendario, notas, recordatorios) por cuenta | Funcional |
+| 🔑 **Permisos por usuario**: el admin activa o desactiva cada función (hora, clima, correo, enviar/eliminar correos, calendario, agendar/mover/eliminar eventos, notas, recordatorios) por cuenta | Funcional |
 | 🔗 **Google por usuario**: cada cuenta conecta su propio Gmail/Calendar desde `/u` | Funcional |
 | 📲 **Telegram por usuario**: cada cuenta vincula su propio chat con un código de 6 dígitos | Funcional |
 | 🛡️ **Admin puede desvincular Telegram de cualquier usuario** desde el panel | Funcional |
