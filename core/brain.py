@@ -59,16 +59,18 @@ PROVIDERS = {
     },
     "openai": {
         "key_env": "OPENAI_API_KEY",
-        "base_default": "https://api.openai.com/v1",
+        "base_env": "OPENAI_API_BASE",
+        "base_default": "https://api.pateway.ai/v1",
         "model_env": "IGRIS_OPENAI_MODEL",
-        "model_default": "gpt-4o-mini",
+        "model_default": "gpt-6-luna",
         "timeout": 30,
     },
     "anthropic": {
         "key_env": "ANTHROPIC_API_KEY",
-        "base_default": "https://api.anthropic.com/v1/",
+        "base_env": "ANTHROPIC_API_BASE",
+        "base_default": "https://api.pateway.ai/v1",
         "model_env": "IGRIS_ANTHROPIC_MODEL",
-        "model_default": "claude-sonnet-5-5",
+        "model_default": "claude-haiku-4-5-20251001",
         "timeout": 30,
     },
     "local": {
