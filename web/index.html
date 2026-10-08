@@ -13,8 +13,15 @@
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https://igris.zottagroup.com wss://igris.zottagroup.com; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob: data:; worker-src 'self'; manifest-src 'self';">
     <title>IGRIS</title>
 
-    <!-- PWA -->
-    <link rel="manifest" href="/manifest.webmanifest">
+    <!-- PWA.
+         Hay DOS manifests, porque son dos aplicaciones instalables distintas:
+           /manifest-admin.webmanifest -> abre en /acceso   (administrador)
+           /manifest.webmanifest       -> abre en /u/login  (usuarios)
+         Aquí queda el del administrador como predeterminado, y server.js lo
+         cambia por el de usuarios en las rutas que empiezan por /u. Sin ese
+         cambio, quien instalara la app desde /u/login acabaría abriendo el
+         panel del administrador. -->
+    <link rel="manifest" href="/manifest-admin.webmanifest">
     <meta name="theme-color" content="#0b1226">
     <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png">
     <link rel="icon" type="image/png" sizes="16x16" href="/icons/favicon-16.png">
@@ -26,7 +33,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="IGRIS">
+    <meta name="apple-mobile-web-app-title" content="IGRIS Admin">
 </head>
 <body>
     <div id="app"></div>

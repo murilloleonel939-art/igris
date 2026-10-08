@@ -1,0 +1,53 @@
+{
+  "name": "IGRIS Admin",
+  "short_name": "IGRIS Admin",
+  "description": "Panel de administración de IGRIS",
+  "lang": "es",
+  "dir": "ltr",
+  "id": "/acceso",
+  "start_url": "/acceso",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "any",
+  "background_color": "#0b1226",
+  "theme_color": "#0b1226",
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-maskable-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Usuarios",
+      "short_name": "Usuarios",
+      "url": "/panel/usuarios"
+    },
+    {
+      "name": "Configuración",
+      "short_name": "Config",
+      "url": "/config"
+    }
+  ]
+}

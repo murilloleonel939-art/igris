@@ -1,6 +1,18 @@
 /**
  * pwa.js — Instalación de IGRIS como aplicación (PWA).
  *
+ * Hay DOS aplicaciones instalables y no una, porque el administrador y los
+ * usuarios entran por pantallas distintas:
+ *
+ *   /manifest-admin.webmanifest -> start_url /acceso   (administrador)
+ *   /manifest.webmanifest       -> start_url /u/login  (usuarios)
+ *
+ * El navegador elige leyendo el <link rel="manifest"> del HTML, así que lo
+ * principal lo hace server.js al servir la página. syncManifest() es el
+ * complemento para la navegación interna de la SPA: si se pasa de /acceso a
+ * /u/login sin recargar, el enlace se corrige aquí para que una instalación
+ * hecha justo después apunte al área correcta.
+ *
  * Un navegador solo permite instalar la web si se cumplen tres cosas:
  *   1. Hay un manifest con nombre, iconos y display: standalone.
  *   2. Hay un service worker registrado en el ámbito ("scope") de la página.
@@ -11,6 +23,42 @@
  * versiones antiguas del código.
  */
 import { ref, computed } from 'vue'
+
+const MANIFEST_ADMIN = '/manifest-admin.webmanifest'
+const MANIFEST_USER = '/manifest.webmanifest'
+
+/** ¿Esta ruta pertenece al área de usuarios (/u y /u/login)? */
+function isUserPath(pathname) {
+  return pathname === '/u' || pathname.startsWith('/u/')
+}
+
+/**
+ * Pone en el <link rel="manifest"> el manifest que corresponde a la ruta.
+ * Devuelve el href que quedó puesto.
+ */
+export function syncManifest(pathname = window.location.pathname) {
+  if (typeof document === 'undefined') return MANIFEST_ADMIN
+
+  const link = document.querySelector('link[rel="manifest"]')
+  if (!link) return MANIFEST_ADMIN
+
+  const want = isUserPath(pathname) ? MANIFEST_USER : MANIFEST_ADMIN
+  if (link.getAttribute('href') !== want) {
+    link.setAttribute('href', want)
+  }
+
+  // El nombre que iOS usa bajo el icono de la pantalla de inicio también
+  // distingue las dos apps.
+  const title = document.querySelector('meta[name="apple-mobile-web-app-title"]')
+  if (title) {
+    const wantTitle = isUserPath(pathname) ? 'IGRIS' : 'IGRIS Admin'
+    if (title.getAttribute('content') !== wantTitle) {
+      title.setAttribute('content', wantTitle)
+    }
+  }
+
+  return want
+}
 
 // Evento que dispara el navegador cuando la app SE PUEDE instalar. Solo llega
 // si no está instalada ya y si el manifest + service worker son correctos.

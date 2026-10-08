@@ -17,10 +17,19 @@
  *                              deben quedar en disco ni reutilizarse sin conexión.
  *   - Cualquier otro origen    -> solo se gestiona lo propio.
  */
-const CACHE = 'igris-v1'
+const CACHE = 'igris-v2'
 
-// Mínimo imprescindible para que la app abra sin conexión
-const PRECACHE = ['/', '/u', '/u/login', '/manifest.webmanifest']
+// Mínimo imprescindible para que la app abra sin conexión.
+// Se guardan las dos pantallas de acceso y los dos manifests, porque son dos
+// aplicaciones instalables distintas (administrador y usuarios).
+const PRECACHE = [
+  '/',
+  '/acceso',
+  '/u',
+  '/u/login',
+  '/manifest-admin.webmanifest',
+  '/manifest.webmanifest',
+]
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -80,10 +89,13 @@ self.addEventListener('fetch', (event) => {
       .catch(() =>
         caches.match(request).then((cached) => {
           if (cached) return cached
-          // Navegación sin conexión y sin copia: se abre el login de usuarios.
-          // Nunca se devuelve la pantalla del administrador por defecto.
+          // Navegación sin conexión y sin copia guardada: se abre la pantalla
+          // de acceso del área que corresponda. Nunca la del administrador
+          // para quien venía de /u.
           if (request.mode === 'navigate') {
-            return caches.match('/u/login')
+            const isUserArea =
+              url.pathname === '/u' || url.pathname.startsWith('/u/')
+            return caches.match(isUserArea ? '/u/login' : '/acceso')
           }
           return Response.error()
         })

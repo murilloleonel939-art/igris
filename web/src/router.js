@@ -7,6 +7,7 @@ import UserLogin from './pages/UserLogin.vue'
 import UserChat from './pages/UserChat.vue'
 import { getKey } from './api'
 import { isLoggedIn } from './userApi'
+import { syncManifest } from './pwa'
 
 // Las dos superficies de la aplicación, separadas:
 //
@@ -93,6 +94,14 @@ router.beforeEach((to) => {
   if (hasKey && to.name === 'Access') {
     return { path: '/' }
   }
+})
+
+// Cada ruta necesita su propio manifest: /u y /u/login son la app de los
+// usuarios (abren en /u/login) y el resto es la del administrador (abre en
+// /acceso). El servidor ya sirve el correcto al cargar la página; esto lo
+// mantiene al día en la navegación interna, sin recargar.
+router.afterEach((to) => {
+  syncManifest(to.path)
 })
 
 // api.js emite este evento cuando el backend responde 401 (clave borrada o

@@ -9,6 +9,7 @@ import express from 'express';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import http from 'http';
+import fs from 'fs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -92,17 +93,78 @@ app.get('/sw.js', (req, res) => {
   res.sendFile(join(__dirname, 'dist', 'sw.js'));
 });
 
+/**
+ * Los DOS manifests de la PWA.
+ *
+ * Son aplicaciones instalables distintas: la del administrador tiene que abrir
+ * en /acceso y la de los usuarios en /u/login. El navegador decide cuál usa
+ * leyendo el <link rel="manifest"> del HTML, así que lo único que hace falta es
+ * servir un index.html con el enlace correcto en cada caso. El mismo archivo
+ * index.html vale para las dos: aquí solo se cambia ese enlace.
+ */
+const MANIFEST_ADMIN = '/manifest-admin.webmanifest';
+const MANIFEST_USER = '/manifest.webmanifest';
+
+function isUserPath(pathname) {
+  return pathname === '/u' || pathname.startsWith('/u/');
+}
+
+/**
+ * Devuelve el index.html con el manifest que corresponde a la ruta.
+ *
+ * Se lee el archivo en cada petición a propósito: son solo unas pocas (una por
+ * navegación, no por recurso) y así al volver a compilar en local nunca se
+ * sirve una copia antigua en memoria.
+ */
+function renderIndex(pathname) {
+  const html = fs.readFileSync(join(__dirname, 'dist', 'index.html'), 'utf8');
+
+  // Las rutas de usuarios (/u y /u/login) llevan el manifest de usuarios; todo
+  // lo demás (/, /config, /panel/usuarios, /acceso) es del administrador.
+  if (isUserPath(pathname)) {
+    return html
+      .replace(`href="${MANIFEST_ADMIN}"`, `href="${MANIFEST_USER}"`)
+      .replace('content="IGRIS Admin"', 'content="IGRIS"');
+  }
+  return html;
+}
+
+function sendIndex(req, res) {
+  try {
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    // Sin caché: si el navegador guardara este HTML se quedaría con el enlace
+    // al manifest equivocado, y al instalar la app abriría en el área que no es.
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.send(renderIndex(req.path));
+  } catch (err) {
+    console.error('No se pudo servir index.html:', err);
+    res.status(500).send('Error interno');
+  }
+}
+
 // Proxy rutas API y auth hacia el backend
 app.use('/api', proxyToBackend);
 app.use('/auth', proxyToBackend);
 
-// Servir archivos estáticos desde dist
-app.use(express.static(join(__dirname, 'dist')));
+// Servir archivos estáticos desde dist.
+// index: false -> que NO sirva index.html por su cuenta; de eso se encarga
+// sendIndex, que además inyecta el manifest correcto.
+app.use(
+  express.static(join(__dirname, 'dist'), {
+    index: false,
+    setHeaders(res, filePath) {
+      // El tipo MIME del manifest importa: si no es application/manifest+json
+      // (o application/json), el navegador lo ignora y la app no es instalable.
+      if (filePath.endsWith('.webmanifest')) {
+        res.setHeader('Content-Type', 'application/manifest+json; charset=utf-8');
+      }
+    }
+  })
+);
 
-// Redirigir todas las rutas restantes a index.html (para que Vue Router funcione)
-app.get('*', (req, res) => {
-  res.sendFile(join(__dirname, 'dist', 'index.html'));
-});
+// Rutas de la SPA: cualquier cosa que no sea un archivo estático devuelve el
+// index.html (para que Vue Router funcione al recargar o al abrir /u directo).
+app.get('*', sendIndex);
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 IGRIS Frontend corriendo en puerto ${PORT}`);

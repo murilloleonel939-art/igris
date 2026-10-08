@@ -63,6 +63,7 @@ for path, expect_ct in [
     ("/u/login", "text/html"),
     ("/acceso", "text/html"),
     ("/manifest.webmanifest", "manifest"),
+    ("/manifest-admin.webmanifest", "manifest"),
     ("/sw.js", "javascript"),
     ("/icons/icon-192.png", "image/png"),
     ("/igris.mp4", "video/mp4"),
@@ -75,6 +76,74 @@ for path, expect_ct in [
         s, ct = e.code, e.headers.get("Content-Type", "")
     ok = s == 200 and expect_ct in ct
     check(f"{path} -> 200 ({expect_ct})", ok, f"(status {s}, tipo {ct!r})")
+
+
+# ------------------------------------------- 1b. LAS DOS PWAs INSTALABLES
+# Son dos aplicaciones distintas: la del administrador tiene que abrir en
+# /acceso y la de los usuarios en /u/login. El navegador decide cuál usa
+# leyendo el <link rel="manifest"> del HTML, así que cada ruta tiene que
+# traer el suyo. Si todas trajeran el mismo, instalar desde /u/login abriría
+# el panel del administrador.
+print("\n1b) Cada ruta declara el manifest que le toca")
+
+
+def manifest_of(path):
+    r = urllib.request.Request(FRONT + path)
+    with urllib.request.urlopen(r, timeout=10) as resp:
+        html = resp.read().decode("utf-8", "replace")
+    i = html.find('rel="manifest"')
+    if i == -1:
+        return ""
+    frag = html[i : i + 120]
+    j = frag.find('href="')
+    if j == -1:
+        return ""
+    return frag[j + 6 : frag.find('"', j + 6)]
+
+
+def manifest_json(name):
+    r = urllib.request.Request(FRONT + name)
+    with urllib.request.urlopen(r, timeout=10) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+for path in ("/", "/acceso", "/config", "/panel/usuarios"):
+    check(
+        f"el administrador en {path} usa el manifest de admin",
+        manifest_of(path) == "/manifest-admin.webmanifest",
+        f"({manifest_of(path)!r})",
+    )
+
+for path in ("/u", "/u/login"):
+    check(
+        f"los usuarios en {path} usan el manifest de usuarios",
+        manifest_of(path) == "/manifest.webmanifest",
+        f"({manifest_of(path)!r})",
+    )
+
+adm = manifest_json("/manifest-admin.webmanifest")
+usr = manifest_json("/manifest.webmanifest")
+
+check("el manifest de admin abre en /acceso", adm.get("start_url") == "/acceso", f"({adm.get('start_url')!r})")
+check("el de usuarios abre en /u/login", usr.get("start_url") == "/u/login", f"({usr.get('start_url')!r})")
+
+# El id es lo que hace que el navegador las trate como DOS apps y no como una
+# misma que cambia de dirección: si coincidieran, instalar la segunda
+# actualizaría la primera en lugar de crear un icono aparte.
+check("los dos manifests tienen id distinto", adm.get("id") != usr.get("id"), f"({adm.get('id')!r} vs {usr.get('id')!r})")
+check("los dos tienen nombre distinto", adm.get("name") != usr.get("name"))
+check("ambos con scope / (la app instalada navega por todo el sitio)", adm.get("scope") == "/" and usr.get("scope") == "/")
+
+for label, m in (("admin", adm), ("usuarios", usr)):
+    check(f"el manifest de {label} declara iconos maskable",
+          any(i.get("purpose") == "maskable" for i in m.get("icons", [])))
+
+# El service worker no puede quedarse cacheado, o los usuarios seguirían
+# ejecutando la versión antigua y no recibirían las actualizaciones.
+r = urllib.request.Request(FRONT + "/sw.js")
+with urllib.request.urlopen(r, timeout=10) as resp:
+    cc = resp.headers.get("Cache-Control", "")
+check("el service worker se sirve sin caché", "no-cache" in cc or "no-store" in cc, f"({cc!r})")
 
 # --------------------------------------------------- 2. EL PROXY FUNCIONA
 print("\n2) El proxy conserva la ruta completa (req.originalUrl)")
