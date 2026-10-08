@@ -128,9 +128,16 @@ def _build_client(name: str):
     return AsyncOpenAI(api_key=api_key, base_url=base, timeout=spec["timeout"]), model
 
 
-def _system_message() -> str:
-    """System prompt + instrucciones de herramientas + fecha/hora actual de Colombia."""
-    return f"{SYSTEM_PROMPT}\n\n{TOOLS_PROMPT}\n{now_context()}"
+def _system_message(addressing_instruction: Optional[str] = None) -> str:
+    """System prompt + instrucciones de herramientas + fecha/hora actual de Colombia.
+
+    Si el usuario tiene una instrucción de trato personalizada, se añade al final
+    del prompt base para que el modelo la aplique sobre las instrucciones globales.
+    """
+    base = f"{SYSTEM_PROMPT}\n\n{TOOLS_PROMPT}\n{now_context()}"
+    if addressing_instruction and addressing_instruction.strip():
+        base += f"\n\nInstrucciones específicas para este usuario:\n{addressing_instruction.strip()}"
+    return base
 
 
 async def _complete_with_tools(client, model: str, messages: List[dict], session=None) -> Tuple[str, List[dict]]:
@@ -347,6 +354,7 @@ class BrainSession:
         self.last_user_text = ""       # último mensaje real del usuario
         self.pending_event: Optional[dict] = None
         self.telegram_id: Optional[int] = None  # lo fija main.py en sesiones de Telegram
+        self.addressing_instruction: str = ""   # instrucción de trato personalizado (la fija user_routes)
 
     async def _try_quick_confirm(self, text: str) -> Optional[str]:
         """Si hay una propuesta pendiente y el usuario acaba de confirmarla, la crea

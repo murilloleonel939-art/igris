@@ -244,6 +244,7 @@ class UserUpdateIn(BaseModel):
     password: Optional[str] = None
     is_active: Optional[bool] = None
     is_admin: Optional[bool] = None
+    addressing_instruction: Optional[str] = None  # Instrucción de trato personalizado
 
     @field_validator("email")
     @classmethod
@@ -284,6 +285,7 @@ def _public_user(u: User) -> dict[str, Any]:
         "email": u.email,
         "is_admin": bool(u.is_admin),
         "is_active": bool(u.is_active),
+        "addressing_instruction": u.addressing_instruction or "",
         "created_at": u.created_at.isoformat() if u.created_at else None,
     }
 
@@ -357,6 +359,8 @@ def update_user(
         user.is_active = payload.is_active
     if payload.is_admin is not None:
         user.is_admin = payload.is_admin
+    if payload.addressing_instruction is not None:
+        user.addressing_instruction = payload.addressing_instruction.strip() or None
 
     db.commit()
     db.refresh(user)
@@ -466,6 +470,9 @@ async def user_chat(payload: ChatIn, user: User = Depends(require_user)):
     # El Brain se comparte con el resto del servidor, pero el historial queda
     # aislado por usuario gracias a la clave anterior.
     session = _sessions.get(_session_key(user.id, payload.session_id))
+    # Actualizar la instrucción de trato cada vez: si el admin la cambió
+    # en caliente, el próximo mensaje ya refleja el nuevo trato.
+    session.addressing_instruction = user.addressing_instruction or ""
     try:
         reply = await session.say(text)
         return {"status": "ok", "reply": reply}

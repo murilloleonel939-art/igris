@@ -11,17 +11,17 @@
     "prod": "npm run build && npm start"
   },
   "dependencies": {
-    "vue": "^3.3.4",
-    "vue-router": "^4.2.4",
-    "pinia": "^2.1.6",
     "axios": "^1.5.0",
-    "express": "^4.18.2"
+    "express": "^4.18.2",
+    "pinia": "^2.1.6",
+    "vue": "^3.3.4",
+    "vue-router": "^4.2.4"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^4.3.4",
-    "vite": "^4.4.9",
-    "tailwindcss": "^3.3.3",
+    "autoprefixer": "^10.4.16",
     "postcss": "^8.4.31",
-    "autoprefixer": "^10.4.16"
+    "tailwindcss": "^3.3.3",
+    "vite": "^4.4.9"
   }
 }

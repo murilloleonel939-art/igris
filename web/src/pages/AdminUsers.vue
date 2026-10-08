@@ -108,6 +108,7 @@
                     {{ u.is_active ? 'Desactivar' : 'Activar' }}
                   </button>
                   <button class="act" @click="resetPassword(u)">Cambiar contraseña</button>
+                  <button class="act" @click="openTrato(u)">Editar trato</button>
                   <button class="act danger" @click="removeUser(u)">Eliminar</button>
                 </div>
               </td>
@@ -116,6 +117,33 @@
         </table>
       </div>
     </section>
+
+    <!-- Modal: editar trato personalizado -->
+    <div v-if="tratoModal.open" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+      <div class="w-full max-w-lg rounded-xl border border-slate-700 bg-slate-900 p-6 shadow-xl">
+        <h3 class="mb-1 text-lg font-medium text-white">Trato personalizado</h3>
+        <p class="mb-4 text-sm text-slate-400">
+          Cómo debe dirigirse Igris a <strong class="text-slate-200">{{ tratoModal.username }}</strong>.
+          Déjalo vacío para usar el trato global ("mi señor").
+        </p>
+        <textarea
+          v-model="tratoModal.value"
+          rows="5"
+          placeholder='Ej: La usuaria se llama Diana. Dirígete a ella por su nombre con tono cordial. No uses "señor" ni tratamientos masculinos.'
+          class="w-full rounded-lg border border-slate-600 bg-slate-800 px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-blue-500 focus:outline-none"
+        />
+        <div class="mt-4 flex justify-end gap-2">
+          <button class="act" @click="tratoModal.open = false">Cancelar</button>
+          <button
+            class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+            :disabled="tratoSaving"
+            @click="saveTrato"
+          >
+            {{ tratoSaving ? 'Guardando…' : 'Guardar' }}
+          </button>
+        </div>
+      </div>
+    </div>
   </main>
 </template>
 
@@ -131,6 +159,10 @@ const flash = ref('')
 const flashError = ref(false)
 
 const form = ref({ username: '', email: '', password: '' })
+
+// Modal de edición de trato personalizado
+const tratoModal = ref({ open: false, id: null, username: '', value: '' })
+const tratoSaving = ref(false)
 
 let flashTimer = 0
 function showFlash(msg, isError = false) {
@@ -218,6 +250,31 @@ async function removeUser(u) {
     showFlash(`Usuario '${u.username}' eliminado`)
   } catch (e) {
     showFlash(errorMessage(e, 'No se pudo eliminar el usuario'), true)
+  }
+}
+
+function openTrato(u) {
+  tratoModal.value = {
+    open: true,
+    id: u.id,
+    username: u.username,
+    value: u.addressing_instruction || '',
+  }
+}
+
+async function saveTrato() {
+  tratoSaving.value = true
+  try {
+    await api.put(`/api/admin/users/${tratoModal.value.id}`, {
+      addressing_instruction: tratoModal.value.value,
+    })
+    await load()
+    tratoModal.value.open = false
+    showFlash(`Trato de '${tratoModal.value.username}' actualizado`)
+  } catch (e) {
+    showFlash(errorMessage(e, 'No se pudo guardar el trato'), true)
+  } finally {
+    tratoSaving.value = false
   }
 }
 
