@@ -221,7 +221,7 @@ La pantalla del chat del administrador funciona como un asistente de voz:
 - **Viven en memoria:** se pierden al reiniciar o redesplegar el backend (también una propuesta de evento pendiente de confirmar). Funciona con un solo worker de Uvicorn. Las cuentas de usuario, los recordatorios y las notas sí se guardan en la base de datos.
 ### Voz
 - **Web (entrada):** reconocimiento de voz del navegador (Web Speech API), en modo manos libres.
-- **STT en el backend (Telegram):** `core/stt.py`. Proveedor `local` (Whisper, requiere ffmpeg en la imagen) u `openai` (API de Whisper).
+- **STT en el backend (Telegram):** `core/stt.py`. Proveedor `local` (Whisper, requiere ffmpeg en la imagen) u `openai` (API de Whisper). Ojo con los nombres: `IGRIS_WHISPER_MODEL` elige el modelo **local** y `IGRIS_STT_MODEL` el de la API; cada uno solo se lee en su propia ruta, así que definir el que no corresponde no tiene efecto.
 - **TTS (texto a voz):** `core/tts.py`, expuesto en `POST /api/tts`. La web lo reproduce automáticamente tras cada respuesta y mide su volumen con la Web Audio API para animar al avatar.
 ### Configuración de IA
 - **Proveedores:** `nemotron`, `openai`, `anthropic`, `local` (Ollama). `nemotron`, `openai` y `local` se consumen con el SDK de OpenAI (APIs compatibles con `/v1/chat/completions`). **`anthropic` es la excepción:** Claude solo se sirve por el protocolo nativo de Anthropic (`/v1/messages`, con `x-api-key`), así que usa el SDK `anthropic` y su propio bucle de herramientas (`_complete_with_anthropic`); enviarlo por `/v1/chat/completions` devuelve `protocol_mismatch`. Por eso su URL base **no lleva `/v1`**: el SDK añade `/v1/messages`. La lista válida está en `PROVIDERS` de `core/brain.py` y debe coincidir con `AVAILABLE_PROVIDERS` de `core/config.py`.
@@ -400,6 +400,18 @@ IGRIS_STT_PROVIDER=local
 IGRIS_WHISPER_MODEL=base
 IGRIS_LOCAL_MODEL=qwen2.5:3b
 ```
+### Ejemplo: `openai` y `anthropic` a través de pateway
+Los proveedores `openai` y `anthropic` no tienen por qué apuntar a OpenAI y Anthropic directamente: basta con cambiar la URL base y usar la clave que emite el agregador. Con [pateway](https://pateway.ai) queda así:
+```
+OPENAI_API_KEY=sk-tu-clave-de-pateway
+OPENAI_API_BASE=https://api.pateway.ai/v1
+IGRIS_OPENAI_MODEL=gpt-6-luna
+
+ANTHROPIC_API_KEY=sk-tu-clave-de-pateway
+ANTHROPIC_API_BASE=https://api.pateway.ai
+IGRIS_ANTHROPIC_MODEL=claude-haiku-4-5-20251001
+```
+> ⚠️ **Las dos URL base no son iguales.** La de `openai` lleva `/v1`; la de `anthropic` **no**, porque el SDK de Anthropic añade `/v1/messages` por su cuenta (con `/v1` la petición iría a `/v1/v1/messages`). Cada proveedor usa su propia variable de clave: no se comparten.
 > 🔒 **Nunca subas el archivo `.env` al repositorio.** Las claves viven solo en las variables de Coolify. Si alguna clave se publicó alguna vez, regenérala.
 ---
 ## ▶️ Despliegue
@@ -470,6 +482,10 @@ Coolify limpia Docker cada día a las 00:00 UTC (Servers → Docker Cleanup). Si
 | Igris se responde a sí mismo en bucle | Altavoces muy fuertes cerca del micrófono | Usar audífonos o bajar el volumen |
 | `Proveedor 'nemotron' falló: respuesta vacía` | El modelo razona y agota los tokens antes de responder | Subir `IGRIS_MAX_TOKENS` (2048 o más); el log indica el `finish_reason` |
 | `Proveedor 'openai'/'anthropic' falló: ... crédito/quota` | Cuenta sin saldo | Recargar saldo o quitar el proveedor de la cadena |
+| `Proveedor 'anthropic' falló: 400 - protocol_mismatch` ("No compatible provider available for this request format") | Un modelo Claude se envió por `/v1/chat/completions` en formato OpenAI; Claude solo se sirve por `/v1/messages` | No apuntes `anthropic` a un modelo GPT ni fuerces el SDK de OpenAI. Con un agregador, comprueba que `ANTHROPIC_API_BASE` **no** lleve `/v1`. Si sale `<url>/v1/v1/messages` en el log, sobra un `/v1` |
+| `Proveedor 'anthropic'` da 404 y la URL acaba en `/v1/v1/messages` | La URL base lleva `/v1` pero el SDK añade `/v1/messages` | Definir `ANTHROPIC_API_BASE` sin `/v1` (por ejemplo `https://api.pateway.ai`) |
+| `Proveedor 'anthropic' falló: ... unexpected keyword argument 'temperature'` | Versión del SDK `anthropic` distinta a la esperada | Fijar la versión en `requirements.txt`; `brain.py` no envía `temperature` en esa ruta, así que solo aparece si se añade a mano |
+| Falla un modelo de un agregador y otro no | Protocolos separados: unos modelos van por `/v1/chat/completions` y otros por `/v1/messages` | Comprobar en la documentación del agregador por qué ruta sirve cada modelo, y qué id exacto usa (suele listarse en `GET /v1/models`; algunos devuelven listas distintas según el header de autenticación) |
 | `Proveedor 'local' falló: Connection error` | `localhost` dentro del contenedor no es el host de Ollama | Definir `IGRIS_LOCAL_URL` con la IP/servicio correcto o quitar `local` de la cadena |
 | Telegram: `No such file or directory: 'ffmpeg'` | Falta ffmpeg en la imagen | Añadir `ffmpeg` al `apt-get install` del `Dockerfile` y reconstruir sin caché |
 | Telegram: audio lento la primera vez | Descarga del modelo de Whisper | Montar volumen en `/root/.cache/whisper` |
@@ -499,11 +515,16 @@ Coolify limpia Docker cada día a las 00:00 UTC (Servers → Docker Cleanup). Si
 - Backend y frontend son servicios separados en Coolify; ambos necesitan sus propias variables de entorno.
 - **Video del avatar:** Igris es un personaje de *Solo Leveling* y el video es un recurso externo. Si vas a publicar el proyecto o usarlo comercialmente, asegúrate de tener derecho a usar ese material o reemplázalo por uno propio.
 - **IA local con Ollama:** El proyecto soporta un proveedor `local` que se conecta a una instancia de Ollama. En el ejemplo de variables de entorno se muestra el uso del modelo `qwen2.5:3b`, confirmando que Igris puede ejecutar este modelo localmente mediante Ollama.
+- **Proveedores tras un agregador:** `openai` y `anthropic` son en realidad *ranuras*: su nombre indica el protocolo que hablan, no la empresa a la que se conectan. Cambiando `*_API_BASE` y la clave, ambos pueden apuntar a un agregador (pateway u otro) que revenda modelos de varias casas. Por eso `openai` sirve para `gpt-6-luna` y `anthropic` para `claude-haiku-4-5-20251001`. Si el agregador sirve Claude por `/v1/messages`, el proveedor `anthropic` usa el SDK nativo y su propio bucle de herramientas; `nemotron`, `openai` y `local` comparten el bucle de OpenAI.
+- **Historial intercambiable:** el historial de conversación se guarda siempre en formato OpenAI (lo comparten todos los proveedores) y se traduce al protocolo nativo solo en el momento de la llamada. Por eso cambiar de proveedor a mitad de conversación no rompe el contexto.
+- **La clave nunca se comparte entre proveedores:** cada uno lee su propia variable (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `NEMOTRON_API_KEY`). Aunque dos apunten al mismo agregador, cada variable se define y rota por separado.
+- **La versión del SDK `anthropic` importa:** `requirements.txt` la instala sin fijar, y distintas versiones no aceptan los mismos argumentos (por ejemplo `temperature`). Conviene fijarla si el proveedor se vuelve crítico.
 ---
 
 ## 🔗 Enlaces útiles
 
 - [NVIDIA NIM](https://docs.nvidia.com/nim/)
+- [Pateway](https://pateway.ai) / [documentación](https://pateway.ai/docs/)
 - [FastAPI](https://fastapi.tiangolo.com/)
 - [python-telegram-bot](https://python-telegram-bot.org/)
 - [OpenAI Whisper](https://github.com/openai/whisper)
@@ -519,5 +540,6 @@ Coolify limpia Docker cada día a las 00:00 UTC (Servers → Docker Cleanup). Si
 - Modelo **NVIDIA Nemotron 3 Super 120B** por NVIDIA
 - **FastAPI** por @tiangolo, **Vue 3** por el equipo de Vue, **Tailwind CSS** por el equipo de Tailwind
 - **Whisper** por OpenAI
+- **SDK de Anthropic** para el protocolo nativo de los modelos Claude
 - **Coolify** por simplificar el despliegue con Docker
 - Personaje **Igris** de *Solo Leveling*
