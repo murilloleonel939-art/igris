@@ -4,14 +4,14 @@
  * Es un axios SEPARADO del de api.js (el del administrador) a propósito:
  *
  *   api.js     -> X-Igris-Key, guardada en localStorage  (administrador)
- *   userApi.js -> Authorization: Bearer <token>, en sessionStorage  (usuarios)
+ *   userApi.js -> Authorization: Bearer <token>, en localStorage  (usuarios)
  *
  * Al ser clientes distintos, un 401 de un usuario no puede borrar la clave del
  * administrador, y al revés. Cada uno limpia solo lo suyo.
  *
- * El token va en sessionStorage y no en localStorage: al cerrar el navegador la
- * sesión del usuario termina sola. Es lo adecuado para cuentas que se usan en
- * ordenadores compartidos.
+ * El token va en localStorage con fecha de expiración explícita (TOKEN_TTL_MS)
+ * para que la sesión sobreviva al cierre de la app en móvil sin durar para
+ * siempre. Si el token del servidor caduca antes, el 401 limpia la sesión igual.
  */
 import axios from 'axios'
 
@@ -22,11 +22,22 @@ import axios from 'axios'
 const API_URL = 'https://igris.zottagroup.com'
 
 const TOKEN_STORAGE = 'igris_user_token'
-const USER_STORAGE = 'igris_user_data'
+const USER_STORAGE  = 'igris_user_data'
+const EXPIRY_STORAGE = 'igris_user_token_exp'
+
+// Cuánto tiempo se recuerda la sesión en el dispositivo (7 días).
+// Si el JWT del servidor caduca antes, el 401 limpia la sesión de todas formas.
+const TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000
 
 export function getToken() {
   try {
-    return sessionStorage.getItem(TOKEN_STORAGE) || ''
+    const exp = localStorage.getItem(EXPIRY_STORAGE)
+    if (exp && Date.now() > Number(exp)) {
+      // Caducó el plazo local: limpiar para no dejar basura
+      clearSession()
+      return ''
+    }
+    return localStorage.getItem(TOKEN_STORAGE) || ''
   } catch {
     return ''
   }
@@ -34,7 +45,7 @@ export function getToken() {
 
 export function getUser() {
   try {
-    const raw = sessionStorage.getItem(USER_STORAGE)
+    const raw = localStorage.getItem(USER_STORAGE)
     return raw ? JSON.parse(raw) : null
   } catch {
     return null
@@ -43,8 +54,9 @@ export function getUser() {
 
 export function setSession(token, user) {
   try {
-    sessionStorage.setItem(TOKEN_STORAGE, token)
-    sessionStorage.setItem(USER_STORAGE, JSON.stringify(user || {}))
+    localStorage.setItem(TOKEN_STORAGE, token)
+    localStorage.setItem(USER_STORAGE, JSON.stringify(user || {}))
+    localStorage.setItem(EXPIRY_STORAGE, String(Date.now() + TOKEN_TTL_MS))
   } catch {
     // Almacenamiento no disponible (modo privado estricto): la sesión dura
     // solo lo que dure la pantalla abierta.
@@ -53,8 +65,9 @@ export function setSession(token, user) {
 
 export function clearSession() {
   try {
-    sessionStorage.removeItem(TOKEN_STORAGE)
-    sessionStorage.removeItem(USER_STORAGE)
+    localStorage.removeItem(TOKEN_STORAGE)
+    localStorage.removeItem(USER_STORAGE)
+    localStorage.removeItem(EXPIRY_STORAGE)
   } catch {
     // ignorar
   }
