@@ -1,115 +1,74 @@
 #!/usr/bin/env python3
 """
-Genera los iconos PNG de la PWA sin dependencias externas.
+Genera los iconos PNG de la PWA a partir de la imagen de Igris
+(web/src-assets/igris-icon-source.png) usando Pillow.
 
-No hay Pillow en el entorno, así que el PNG se construye a mano: cada fila de
-píxeles se codifica como RGBA y el conjunto se comprime con zlib. El formato PNG
-exige que cada línea empiece con un byte de filtro (0 = sin filtro), y que los
-bloques vayan con su CRC32.
-
-Dibujo: fondo azul oscuro con degradado suave y una "I" de Igris en violeta,
-con los bordes suavizados. Se genera una versión normal y otra "maskable",
-que lleva el dibujo más pequeño y centrado porque Android recorta el icono en
-círculo y se comería los bordes.
+- icon-*.png: la imagen recortada a cuadrado y reescalada, a sangre completa.
+- icon-maskable-*.png: la misma imagen pero más pequeña y centrada, dejando
+  un margen (zona segura) alrededor. Android recorta el icono "maskable" en
+  círculo (o en la forma que toque) y si el dibujo llega hasta el borde se
+  come partes del personaje.
+- apple-touch-icon.png / favicon-*.png: variantes a los tamaños que piden
+  iOS y las pestañas del navegador.
 """
 import os
-import struct
-import zlib
 
-BG_TOP = (11, 18, 38)      # #0b1226
-BG_BOTTOM = (30, 41, 59)   # #1e293b
-ACCENT = (139, 92, 246)    # #8b5cf6
-ACCENT_2 = (96, 165, 250)  # #60a5fa
+from PIL import Image
 
-
-def chunk(tag: bytes, data: bytes) -> bytes:
-    return (
-        struct.pack(">I", len(data))
-        + tag
-        + data
-        + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF)
-    )
+HERE = os.path.dirname(os.path.abspath(__file__))
+SOURCE = os.path.join(HERE, "..", "web", "src-assets", "igris-icon-source.png")
+OUT = os.path.abspath(os.path.join(HERE, "..", "web", "public", "icons"))
 
 
-def write_png(path: str, size: int, pixels) -> None:
-    raw = bytearray()
-    for y in range(size):
-        raw.append(0)  # filtro 0 (None) al inicio de cada línea
-        for x in range(size):
-            raw.extend(pixels[y][x])
+def load_square_source() -> Image.Image:
+    """Carga la imagen y la recorta a cuadrado por el centro.
 
-    png = b"\x89PNG\r\n\x1a\n"
-    png += chunk(b"IHDR", struct.pack(">IIBBBBB", size, size, 8, 6, 0, 0, 0))
-    png += chunk(b"IDAT", zlib.compress(bytes(raw), 9))
-    png += chunk(b"IEND", b"")
-
-    with open(path, "wb") as fh:
-        fh.write(png)
-
-
-def lerp(a: int, b: int, t: float) -> int:
-    return int(round(a + (b - a) * t))
+    El origen es más ancho que alto (202x177). Las franjas que sobran a los
+    lados son solo fondo (comprobado a mano), así que un recorte centrado no
+    corta ninguna parte del personaje.
+    """
+    im = Image.open(SOURCE).convert("RGB")
+    w, h = im.size
+    side = min(w, h)
+    left = (w - side) // 2
+    top = (h - side) // 2
+    return im.crop((left, top, left + side, top + side))
 
 
-def rounded_alpha(x: float, y: float, cx: float, cy: float, hw: float, hh: float, r: float) -> float:
-    """Cobertura de un rectángulo redondeado (0..1), con borde suavizado."""
-    dx = max(abs(x - cx) - (hw - r), 0.0)
-    dy = max(abs(y - cy) - (hh - r), 0.0)
-    dist = (dx * dx + dy * dy) ** 0.5 - r
-    # 1 píxel de transición para que no se vean los dientes de sierra
-    return max(0.0, min(1.0, 0.5 - dist))
+def make_icon(square: Image.Image, size: int) -> Image.Image:
+    """Icono normal: a sangre completa, sin márgenes."""
+    return square.resize((size, size), Image.LANCZOS)
 
 
-def make_icon(size: int, maskable: bool = False):
-    """Devuelve la matriz de píxeles RGBA del icono."""
-    # En maskable el dibujo ocupa menos: Android recorta hasta un 20% por lado
-    scale = 0.62 if maskable else 0.82
-    bar_w = size * 0.115 * (1 if not maskable else 0.95)
-    stem_h = size * scale * 0.5
-    cap_h = size * 0.042
-    gap = size * 0.028
+def make_maskable(square: Image.Image, size: int, safe_ratio: float = 0.82) -> Image.Image:
+    """Icono "maskable": el dibujo ocupa `safe_ratio` del lienzo y va centrado.
 
-    cx = size / 2.0
-    cy = size / 2.0
-    radius = bar_w / 2.0
+    El margen se rellena con el propio color de fondo de la imagen (el azul
+    de las esquinas, que es uniforme), no con la imagen desenfocada: así el
+    borde se ve como una continuación del fondo y no como un marco pegado.
+    """
+    inner = int(round(size * safe_ratio))
+    fg = square.resize((inner, inner), Image.LANCZOS)
 
-    rows = []
-    for y in range(size):
-        row = []
-        for x in range(size):
-            px, py = x + 0.5, y + 0.5
+    w, h = square.size
+    corners = [
+        square.getpixel((2, 2)),
+        square.getpixel((w - 3, 2)),
+        square.getpixel((2, h - 3)),
+        square.getpixel((w - 3, h - 3)),
+    ]
+    bg_color = tuple(sum(c[i] for c in corners) // len(corners) for i in range(3))
 
-            # Fondo con degradado vertical
-            t = py / size
-            r = lerp(BG_TOP[0], BG_BOTTOM[0], t)
-            g = lerp(BG_TOP[1], BG_BOTTOM[1], t)
-            b = lerp(BG_TOP[2], BG_BOTTOM[2], t)
-
-            # La "I": barra superior, tallo y barra inferior
-            a = 0.0
-            a = max(a, rounded_alpha(px, py, cx, cy - stem_h / 2 - gap - cap_h / 2, bar_w * 1.55, cap_h, cap_h / 2))
-            a = max(a, rounded_alpha(px, py, cx, cy + stem_h / 2 + gap + cap_h / 2, bar_w * 1.55, cap_h, cap_h / 2))
-            a = max(a, rounded_alpha(px, py, cx, cy, bar_w / 2, stem_h / 2, radius))
-
-            if a > 0:
-                # Degradado diagonal en la letra (violeta -> azul)
-                mix = max(0.0, min(1.0, ((px / size) + (py / size)) / 2))
-                ar = lerp(ACCENT[0], ACCENT_2[0], mix)
-                ag = lerp(ACCENT[1], ACCENT_2[1], mix)
-                ab = lerp(ACCENT[2], ACCENT_2[2], mix)
-                r = lerp(r, ar, a)
-                g = lerp(g, ag, a)
-                b = lerp(b, ab, a)
-
-            row.append((int(r), int(g), int(b), 255))
-        rows.append(row)
-    return rows
+    canvas = Image.new("RGB", (size, size), bg_color)
+    offset = (size - inner) // 2
+    canvas.paste(fg, (offset, offset))
+    return canvas
 
 
 def main() -> None:
-    base = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "web", "public", "icons")
-    base = os.path.abspath(base)
-    os.makedirs(base, exist_ok=True)
+    os.makedirs(OUT, exist_ok=True)
+    square = load_square_source()
+    print(f"Fuente cuadrada: {square.size}")
 
     targets = [
         ("icon-192.png", 192, False),
@@ -122,10 +81,12 @@ def main() -> None:
     ]
 
     for name, size, maskable in targets:
-        write_png(os.path.join(base, name), size, make_icon(size, maskable))
-        print(f"  {name}  ({size}x{size})")
+        img = make_maskable(square, size) if maskable else make_icon(square, size)
+        path = os.path.join(OUT, name)
+        img.save(path, "PNG", optimize=True)
+        print(f"  {name}  ({size}x{size}, {os.path.getsize(path)} bytes)")
 
-    print(f"\n✅ {len(targets)} iconos en {base}")
+    print(f"\n✅ {len(targets)} iconos generados en {OUT}")
 
 
 if __name__ == "__main__":
