@@ -83,6 +83,7 @@ async def list_events(date: Optional[str] = None, days: int = 1, _session=None) 
             item.update({"fecha": _format(ds)["fecha"], "todo_el_dia": True})
         if ev.get("location"):
             item["lugar"] = ev["location"][:100]
+        item["id"] = ev.get("id", "")
         events.append(item)
 
     return {

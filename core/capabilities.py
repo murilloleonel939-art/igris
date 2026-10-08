@@ -30,6 +30,7 @@ FEATURE_ORDER = (
     "time",
     "weather",
     "email",
+    "email_write",
     "calendar",
     "calendar_write",
     "notes",
@@ -71,6 +72,16 @@ FEATURES: dict[str, Feature] = {
         description="Ver la bandeja de entrada y leer correos. Solo lectura.",
         requires_google=True,
     ),
+    "email_write": Feature(
+        key="email_write",
+        column="can_use_email_write",
+        label="Enviar y eliminar correos (Gmail)",
+        description=(
+            "Redactar y enviar correos, y mover correos a la papelera. "
+            "Igris siempre pide confirmación antes de enviar."
+        ),
+        requires_google=True,
+    ),
     "calendar": Feature(
         key="calendar",
         column="can_use_calendar",
@@ -81,10 +92,10 @@ FEATURES: dict[str, Feature] = {
     "calendar_write": Feature(
         key="calendar_write",
         column="can_use_calendar_write",
-        label="Agendar eventos",
+        label="Agendar, mover y eliminar eventos",
         description=(
-            "Crear eventos en su calendario. Igris siempre pide confirmación antes "
-            "de agendar, y no invita a nadie."
+            "Crear eventos en su calendario, reagendarlos y eliminarlos. "
+            "Igris siempre pide confirmación antes de crear o mover, y no invita a nadie."
         ),
         requires_google=True,
     ),
@@ -109,9 +120,15 @@ TOOL_FEATURES: dict[str, str] = {
     "get_weather": "weather",
     "list_emails": "email",
     "read_email": "email",
+    "propose_email": "email_write",
+    "confirm_email": "email_write",
+    "delete_email": "email_write",
     "list_events": "calendar",
     "propose_event": "calendar_write",
     "confirm_event": "calendar_write",
+    "delete_event": "calendar_write",
+    "propose_reschedule": "calendar_write",
+    "confirm_reschedule": "calendar_write",
     "add_note": "notes",
     "list_notes": "notes",
     "search_notes": "notes",

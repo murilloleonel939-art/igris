@@ -38,6 +38,8 @@ AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 # Permisos que se piden. Se conceden por bloques según lo que el administrador
 # haya habilitado al usuario.
 SCOPE_EMAIL = "https://www.googleapis.com/auth/gmail.readonly"
+SCOPE_EMAIL_SEND = "https://www.googleapis.com/auth/gmail.send"
+SCOPE_EMAIL_MODIFY = "https://www.googleapis.com/auth/gmail.modify"
 SCOPE_CALENDAR_READ = "https://www.googleapis.com/auth/calendar.readonly"
 SCOPE_CALENDAR_WRITE = "https://www.googleapis.com/auth/calendar.events"
 
@@ -52,13 +54,22 @@ def scopes_for(features) -> list:
     Nunca se pide más de lo necesario: a quien solo tiene "ver calendario" no se
     le pide permiso para crear eventos. Menos permisos concedidos es menos riesgo
     si algún día se filtra un token.
+
+    email_write incluye gmail.send y gmail.modify (papelera). Si el usuario
+    tiene email_write, gmail.readonly queda implícito en gmail.modify, pero se
+    añade explícitamente por claridad y compatibilidad.
     """
     scopes = [SCOPE_IDENTITY]
     if "email" in features:
         scopes.append(SCOPE_EMAIL)
+    if "email_write" in features:
+        # gmail.modify cubre readonly + papelera; gmail.send es independiente.
+        scopes.append(SCOPE_EMAIL_SEND)
+        scopes.append(SCOPE_EMAIL_MODIFY)
     if "calendar" in features:
         scopes.append(SCOPE_CALENDAR_READ)
     if "calendar_write" in features:
+        # calendar.events cubre leer, crear, modificar y borrar eventos.
         scopes.append(SCOPE_CALENDAR_WRITE)
     return scopes
 
