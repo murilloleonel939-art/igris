@@ -48,10 +48,14 @@ try {
 
 // Proxy function: redirige /api y /auth al backend
 function proxyToBackend(req, res) {
+  // OJO: hay que usar req.originalUrl, no req.url.
+  // Al montar app.use('/api', ...) Express recorta el prefijo, así que req.url
+  // llega ya sin él ("/auth/check") y el backend respondería 404. originalUrl
+  // conserva la ruta completa tal como la pidió el navegador.
   const options = {
     hostname: backendHost,
     port: backendPort,
-    path: req.url,
+    path: req.originalUrl,
     method: req.method,
     headers: {
       ...req.headers,
