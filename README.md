@@ -7,6 +7,9 @@
 | --- | --- |
 | 💬 Chat web con Igris | Funcional |
 | 🔑 Acceso a la web con clave única (`IGRIS_ACCESS_KEY`) | Funcional |
+| 👥 **Área de usuarios**: cuentas con usuario y contraseña, chat propio | Funcional |
+| 🛠️ **Panel de gestión de usuarios** (crear, activar/desactivar, borrar, cambiar contraseña) | Funcional |
+| 📲 **Instalable como app (PWA)**, con una app para el administrador y otra para los usuarios | Funcional |
 | 🧑‍🎤 Avatar animado (video) a pantalla completa que cambia según escucha, piensa o habla | Funcional |
 | 🎧 Modo manos libres siempre activo: solo le hablas | Funcional (Chrome/Edge) |
 | 🔊 Respuesta hablada automática (`/api/tts`) y botón de altavoz para repetir cada respuesta | Funcional |
@@ -16,14 +19,128 @@
 | ⚙️ Configuración de proveedor activo y cadena de fallback (web y Telegram) | Funcional |
 | 🔁 Fallback automático entre proveedores de IA | Funcional |
 | 🔐 Acceso al bot restringido por ID de Telegram + secreto de webhook | Funcional |
-| 🧠 Memoria de conversación (por sesión: `web:<id>` y `tg:<id>`) | Funcional |
+| 🧠 Memoria de conversación (por sesión: `web:<id>`, `tg:<id>` y `user:<id>:<conv>`) | Funcional |
 | 🕒 Hora y fecha de Colombia | Funcional |
 | 🌦️ Clima de una ciudad | Funcional |
 | 📧 Gmail (lectura de la bandeja) | Funcional |
 | 📅 Google Calendar: consultar agenda y crear eventos con confirmación obligatoria | Funcional |
 | ⏰ Recordatorios con aviso por Telegram (únicos, diarios o semanales) | Nuevo |
 | 📝 Notas: anotar, listar, buscar y borrar | Nuevo |
+| 🧪 Suite de pruebas end-to-end (120 comprobaciones, reejecutable) | Funcional |
 **Personalidad:** caballero de las sombras, leal y formal, con español neutro (sin acento peninsular). El prompt vive en `core/config.py`; las instrucciones de herramientas, en `TOOLS_PROMPT` de `core/brain.py`.
+---
+## 🔐 Las dos superficies de acceso
+
+Igris tiene **dos formas de entrar que no se mezclan**. Un token de usuario nunca sirve en las rutas de administración, y la clave de administrador nunca sirve en las de usuario. El rol va firmado dentro del token, así que el navegador no puede añadirlo ni modificarlo.
+
+| | Administrador | Usuarios |
+| --- | --- | --- |
+| Pantalla | `/acceso` | `/u/login` |
+| Cómo se autentica | Clave única en el header `X-Igris-Key` | Usuario + contraseña → token JWT (`Authorization: Bearer`) |
+| Dónde se guarda | `localStorage` (sobrevive al cierre del navegador) | `sessionStorage` (la sesión termina al cerrar) |
+| Duración | Mientras no se borre la clave | 12 horas |
+| Rutas | `/`, `/config`, `/panel/usuarios` | `/u` |
+
+La clave del administrador vive **solo** en la variable de entorno `IGRIS_ACCESS_KEY` (Coolify). El frontend nunca la contiene: se escribe a mano en la pantalla `/acceso` y se envía en cada petición.
+
+**Límites de intentos**, independientes entre sí para que nadie pueda bloquear el acceso del otro:
+
+| Superficie | Fallos permitidos | Ventana | Cuenta por |
+| --- | --- | --- | --- |
+| Clave de administrador | 10 | 5 minutos | IP |
+| Login de usuario | 8 | 5 minutos | IP + usuario |
+
+Los dos límites viven en memoria, así que se reinician al reiniciar el backend.
+
+### Herramienta de administración de usuarios (`/panel/usuarios`)
+
+| Método | Ruta | Qué hace |
+| --- | --- | --- |
+| `GET` | `/api/admin/users` | Lista los usuarios (nunca devuelve el hash de la contraseña) |
+| `POST` | `/api/admin/users` | Crea un usuario (`username`, `email`, `password`) |
+| `PUT` | `/api/admin/users/{id}` | Edita, activa/desactiva o cambia la contraseña |
+| `DELETE` | `/api/admin/users/{id}` | Borra un usuario |
+
+Reglas de validación: usuario de 3 a 32 caracteres (`A-Z a-z 0-9 . _ -`), correo con formato válido y contraseña de **8 caracteres como mínimo**. Un usuario desactivado no puede entrar ni seguir usando el token que ya tuviera.
+
+El historial de conversación de cada usuario se aísla con una clave que construye **el servidor**:
+
+```
+user:<id del token>:<identificador de conversación>
+```
+
+El identificador que manda el navegador solo separa las conversaciones propias de ese usuario: no puede alcanzar la sesión de otro aunque lo manipule.
+
+### Área de usuarios (`/u`)
+
+| Método | Ruta | Qué hace |
+| --- | --- | --- |
+| `POST` | `/api/user/login` | Entra y devuelve el token |
+| `GET` | `/api/user/me` | Devuelve la sesión actual |
+| `POST` | `/api/user/chat` | Habla con Igris (historial aislado por usuario) |
+| `POST` | `/api/user/tts` | Convierte texto en voz |
+
+---
+## 📲 Instalable como aplicación (PWA)
+
+El frontend se puede instalar como app en el teléfono. **Son dos aplicaciones distintas**, porque el administrador y los usuarios entran por pantallas diferentes y cada una tiene que abrir donde le corresponde:
+
+| | App del administrador | App de los usuarios |
+| --- | --- | --- |
+| Pantalla desde la que se instala | `/acceso` | `/u/login` |
+| Abre en | `/acceso` | `/u/login` |
+| Nombre | IGRIS Admin | IGRIS |
+| Manifest | `/manifest-admin.webmanifest` | `/manifest.webmanifest` |
+
+Puedes tener **las dos instaladas a la vez** en el mismo teléfono: llevan `id` distinto, y eso es lo que hace que el navegador las trate como dos apps en lugar de sobrescribir una con la otra. Se distinguen por el nombre bajo el icono.
+
+**Cómo funciona.** El navegador decide qué manifest usa leyendo el `<link rel="manifest">` del HTML, así que `web/server.js` sirve el mismo `index.html` cambiando ese enlace según la ruta: `/u` y `/u/*` llevan el de usuarios, todo lo demás el del administrador. El HTML se sirve **sin caché** a propósito — si el navegador guardara el de una ruta, se quedaría con el enlace equivocado y volvería a abrir en el área que no es. Para la navegación interna de la SPA (que no recarga) está `syncManifest()` en `web/src/pwa.js`, llamado desde el router.
+
+**Iconos.** `scripts/generate_icons.py` los genera con Pillow a partir de `web/src-assets/igris-icon-source.png`. Los `maskable` llevan el personaje al 82% sobre un fondo del mismo color, porque Android recorta esos iconos en círculo y si no se comería las puntas de las hombreras.
+
+**iOS:** Safari no ofrece el aviso automático de instalación, hay que hacerlo a mano con **Compartir → Añadir a pantalla de inicio**. En Android/Chrome aparece un botón **📲 Instalar** en las pantallas de acceso.
+
+> Al cambiar de versión, el icono de una app ya instalada puede tardar en actualizarse: hay que desinstalarla y volver a instalarla.
+
+---
+## 🧪 Pruebas
+
+**120 comprobaciones, 0 fallidas**, y todas se pueden ejecutar las veces que haga falta sin limpiar nada a mano.
+
+| Suite | Qué cubre | Comprobaciones |
+| --- | --- | --- |
+| `tests/e2e_users.py` | Área de usuarios y panel: separación de las dos superficies, token manipulado, usuario desactivado, CORS, aislamiento del historial, límite de intentos, borrado | 58 |
+| `tests/e2e_via_frontend.py` | Todo **a través del servidor del frontend**, que es el camino real en producción: proxy, PWA, manifests por ruta, flujo completo de usuario | 40 |
+| `tests/test_postgres.py` | Traducción de la URL de conexión, reintentos al arrancar, creación automática de la base, parámetros del motor, aviso de SQLite en producción | 22 |
+
+```bash
+bash scripts/run_tests.sh            # las tres suites
+bash scripts/run_tests.sh users      # solo el área de usuarios
+bash scripts/run_tests.sh frontend   # solo el frontend (necesita el frontend vivo)
+bash scripts/run_tests.sh postgres   # solo la parte de PostgreSQL
+```
+
+Para la suite del frontend hace falta, además, el servidor del frontend levantado:
+
+```bash
+cd web && PORT=3100 node server.js
+```
+
+**Por qué un script y no los archivos sueltos.** Las dos suites end-to-end hablan con un backend real y usan la **misma** base SQLite (`igris_test.db`). Si se levantan los dos backends a la vez, al borrar la base para empezar limpio el primero se queda con el archivo viejo abierto (en Linux, borrar un archivo abierto no lo elimina mientras alguien lo tenga abierto) y todo empieza a fallar con `attempt to write a readonly database`, 500 al crear usuarios y 409 de "ya existe" para usuarios recién borrados. El script levanta **un solo backend cada vez**, borra la base antes de cada suite y para el backend antes de pasar a la siguiente.
+
+### PostgreSQL
+
+En producción la base es PostgreSQL (`DATABASE_URL`); SQLite solo se usa en local y **pierde los datos en cada despliegue** si no hay un volumen persistente (el propio backend avisa de esto en los logs).
+
+`core/database.py` se encarga de:
+
+- Traducir `postgres://` a `postgresql+psycopg://` (Coolify y Heroku entregan el primero, que SQLAlchemy ya no acepta).
+- `pool_pre_ping` y `pool_recycle`, para no reutilizar conexiones que el servidor ya cerró.
+- Reintentar la conexión al arrancar y fallar con un mensaje claro si nunca responde.
+- Crear la base automáticamente si no existe (consultando antes `pg_database`, y con el nombre entrecomillado para evitar inyección).
+
+**Lo que no cubre la suite:** el chat con IA no se puede probar en vivo sin claves de proveedor — sin ninguna configurada responde `Todos los proveedores fallaron`, y eso es lo esperado. El resto del flujo (autenticación, aislamiento, permisos, proxy, PWA) sí está cubierto de extremo a extremo.
+
 ---
 ## 🧰 Capacidades de Igris (herramientas)
 Igris usa *tool calling*: el modelo decide cuándo llamar a una herramienta. Las herramientas viven en `core/tools/` y se registran en `core/tools/__init__.py`. Todas devuelven textos cortos pensados para decirse en voz alta.
@@ -61,7 +178,9 @@ La confirmación se hace cumplir **en el servidor**, no solo con el prompt:
 ---
 ## 🚀 Características
 ### Interfaz web (estilo Jarvis)
-La pantalla del chat funciona como un asistente de voz:
+Hay **dos interfaces**: la del administrador (la que se describe aquí) y la del área de usuarios (`/u`), más simple y sin menú de administración.
+
+La pantalla del chat del administrador funciona como un asistente de voz:
 - **Acceso con clave:** al abrir la web, si el navegador no tiene la clave guardada, se muestra la pantalla `/acceso`. Al escribir la clave correcta se guarda en el navegador y se entra al chat. El botón **Salir** del menú la borra.
 - **Avatar a pantalla completa:** un video de Igris en bucle (`web/public/igris.mp4`) ocupa todo el fondo. El menú y los controles quedan encima, semitransparentes.
 - **Estados del avatar:** el estado se muestra arriba ("Escuchando…", "Pensando…", "Hablando…") y cambia la animación:
@@ -74,7 +193,9 @@ La pantalla del chat funciona como un asistente de voz:
 - **Manos libres siempre activo:** al abrir el chat empieza a escuchar solo, en bucle. Hablas, Igris responde con voz y, al terminar, vuelve a escuchar. Mientras piensa o habla, el micrófono se pausa para que no se oiga a sí mismo. Un botón pequeño ("Manos libres: activo/pausado") permite pausarlo y reanudarlo.
 - **Escribir un mensaje:** el botón ✉️ Enviar abre el cuadro de texto con su botón "Enviar" (Enter también envía, Esc lo cierra). Mientras escribes, el micrófono se pausa.
 - **Historial:** panel translúcido en la parte inferior con los mensajes (`user:` / `igris:`) y un botón de altavoz para repetir cualquier respuesta.
-- **Menú:** 💬 Chat, ⚙️ Configuración y Salir.
+- **Menú (administrador):** 💬 Chat, ⚙️ Configuración, 👥 Usuarios y Salir.
+- **Área de usuarios (`/u`):** interfaz propia y más simple, sin menú de administración. El usuario solo ve su chat y su nombre con un botón para salir. No puede alcanzar Configuración ni el panel de usuarios.
+- **Instalar como app:** en las pantallas de acceso (`/acceso` y `/u/login`) aparece un botón **📲 Instalar** (ver **Instalable como aplicación (PWA)**).
 ### Requisitos y límites del navegador
 - **Voz:** usa la Web Speech API del navegador (idioma `es-CO`), por lo que requiere Chrome o Edge y HTTPS. Firefox y Safari no la soportan completa; en ese caso se puede escribir con el botón Enviar. Este reconocimiento ocurre en el navegador y no pasa por `core/stt.py` (ese solo se usa para Telegram).
 - **Micrófono:** la primera vez el navegador pide permiso; hay que aceptarlo. Si se bloquea, se corrige desde el candado de la barra de direcciones y pulsando "Manos libres".
@@ -94,9 +215,10 @@ La pantalla del chat funciona como un asistente de voz:
 | `/setprovider <nombre>` | Cambia el proveedor activo (solo acepta proveedores válidos) |
 | `/setfallback <p1,p2,...>` | Cambia el orden de la cadena de fallback (solo acepta proveedores válidos) |
 ### Memoria de conversación
-- Cada conversación tiene su historial (`core/session_store.py`): `web:<id>` en la web (si el frontend no envía `session_id`, usa `web:default`) y `tg:<id de Telegram>` en Telegram.
+- Cada conversación tiene su historial (`core/session_store.py`): `web:<id>` en la web del administrador (si el frontend no envía `session_id`, usa `web:default`), `tg:<id de Telegram>` en Telegram, y `user:<id>:<conv>` en el área de usuarios (la clave la construye el servidor, ver **Las dos superficies de acceso**).
+- El chat de cada usuario está aislado: el identificador que manda el navegador no puede alcanzar la conversación de otro.
 - Se recuerdan los últimos 6 turnos (`IGRIS_HISTORY_TURNS`). Las sesiones expiran tras 2 horas sin uso y hay un máximo de 200.
-- **Viven en memoria:** se pierden al reiniciar o redesplegar el backend (también una propuesta de evento pendiente de confirmar). Funciona con un solo worker de Uvicorn.
+- **Viven en memoria:** se pierden al reiniciar o redesplegar el backend (también una propuesta de evento pendiente de confirmar). Funciona con un solo worker de Uvicorn. Las cuentas de usuario, los recordatorios y las notas sí se guardan en la base de datos.
 ### Voz
 - **Web (entrada):** reconocimiento de voz del navegador (Web Speech API), en modo manos libres.
 - **STT en el backend (Telegram):** `core/stt.py`. Proveedor `local` (Whisper, requiere ffmpeg en la imagen) u `openai` (API de Whisper).
@@ -108,7 +230,10 @@ La pantalla del chat funciona como un asistente de voz:
 - Los cambios hechos desde la web o Telegram se guardan en `core/settings.json` y aplican de inmediato, pero **no sobreviven a un redeploy completo**. Para dejarlos permanentes, usa variables de entorno en Coolify.
 - Un `settings.json` antiguo que contenga un proveedor que ya no existe (por ejemplo `groq`) se limpia al cargarse y no rompe nada. `GET /status` y `GET /api/ai-config` solo listan proveedores válidos, y `PUT /api/ai-config` y `/setprovider` rechazan los inválidos.
 ### API del backend
-Los endpoints `/api/*` requieren el header `X-Igris-Key` con la clave de acceso (`IGRIS_ACCESS_KEY`). Sin clave o con una incorrecta responden `401`; tras 10 intentos fallidos desde la misma IP en 5 minutos responden `429`.
+Los endpoints `/api/*` del administrador requieren el header `X-Igris-Key` con la clave de acceso (`IGRIS_ACCESS_KEY`). Sin clave o con una incorrecta responden `401`; tras 10 intentos fallidos desde la misma IP en 5 minutos responden `429`.
+
+Los del área de usuarios (`/api/user/*`) se autentican con `Authorization: Bearer <token>`, y los del panel (`/api/admin/*`) con la misma clave del administrador. La tabla completa de unos y otros está en **Las dos superficies de acceso**.
+
 | Endpoint | Descripción |
 | --- | --- |
 | `GET /api/auth/check` | Valida la clave. Responde `{"ok": true}`. La usa la pantalla de acceso |
@@ -126,32 +251,53 @@ igris/
 │   ├── brain.py               # Orquesta proveedores con fallback, bucle de tool calling y TOOLS_PROMPT
 │   ├── config.py              # Proveedores válidos, modelos por defecto y system prompt
 │   ├── settings_manager.py    # core/settings.json (configuración de IA persistente, con limpieza de proveedores inválidos)
-│   ├── session_store.py       # Sesiones de conversación en memoria (web:<id>, tg:<id>)
-│   ├── database.py            # SQLAlchemy: modelos (incluye Reminder y Note) e init_db
+│   ├── session_store.py       # Sesiones de conversación en memoria (web:<id>, tg:<id>, user:<id>:<conv>)
+│   ├── database.py            # SQLAlchemy: modelos (incluye User, Reminder y Note) e init_db
 │   ├── scheduler.py           # Planificador de avisos de recordatorios (tarea en segundo plano)
 │   ├── stt.py, tts.py         # Voz
 │   ├── settings.json
 │   └── tools/                 # Herramientas de Igris (ver lista abajo)
-├── server/            # main.py (FastAPI: chat, configuración, TTS, acceso con clave, webhook de Telegram y arranque del planificador)
+├── server/
+│   ├── main.py                # FastAPI: chat, configuración, TTS, acceso con clave, webhook de Telegram y planificador
+│   └── user_routes.py         # Área de usuarios (/api/user/*) y panel de administración (/api/admin/*)
 ├── node/              # cliente_voice.py, cliente_text.py, cliente_speak.py (Raspberry Pi - opcional)
+├── scripts/
+│   ├── run_tests.sh           # Ejecuta las tres suites en el orden correcto (ver Pruebas)
+│   └── generate_icons.py      # Genera los iconos de la PWA con Pillow
 ├── tests/
-│   └── test_logic.py          # Pruebas sin red de validaciones, protección del borrado y planificador
+│   ├── e2e_users.py           # Área de usuarios y panel (58 comprobaciones)
+│   ├── e2e_via_frontend.py    # Flujo real a través del frontend (40 comprobaciones)
+│   └── test_postgres.py       # PostgreSQL y arranque de la base (22 comprobaciones)
 ├── web/               # Aplicación Vue
+│   ├── server.js              # Sirve dist/, inyecta el manifest según la ruta y hace de proxy hacia el backend
+│   ├── index.html             # HTML de la SPA (manifest del administrador como predeterminado)
 │   ├── public/
-│   │   └── igris.mp4              # Video del avatar (se sirve como /igris.mp4)
+│   │   ├── igris.mp4              # Video del avatar (se sirve como /igris.mp4)
+│   │   ├── sw.js                  # Service worker (red primero, caché como rescate)
+│   │   ├── manifest-admin.webmanifest  # App del administrador (abre en /acceso)
+│   │   ├── manifest.webmanifest        # App de los usuarios (abre en /u/login)
+│   │   └── icons/                 # Iconos generados (192, 512, maskable, apple-touch, favicon)
+│   ├── src-assets/
+│   │   └── igris-icon-source.png  # Imagen original de la que salen los iconos
 │   └── src/
 │       ├── App.vue                # Menú (con botón Salir) + avatar de fondo (solo en la ruta Chat)
-│       ├── router.js              # Rutas: Chat (/), Configuration (/config) y Access (/acceso) + guard de clave
-│       ├── api.js                 # Cliente Axios (añade X-Igris-Key y maneja el 401)
+│       ├── router.js              # Rutas de las dos superficies + guards de clave y de token
+│       ├── api.js                 # Cliente Axios del administrador (X-Igris-Key, localStorage)
+│       ├── userApi.js             # Cliente Axios de usuarios (Bearer, sessionStorage)
+│       ├── pwa.js                 # Instalación de la PWA y sincronización del manifest por ruta
 │       ├── components/
 │       │   ├── IgrisAvatar.vue    # Video con efectos según estado y volumen
-│       │   └── IgrisHero.vue      # Avatar a pantalla completa + texto de estado
+│       │   ├── IgrisHero.vue      # Avatar a pantalla completa + texto de estado
+│       │   └── InstallHint.vue    # Aviso y botón para instalar la app
 │       ├── composables/
 │       │   └── useIgris.js        # Estado compartido: igris.state y igris.level
 │       └── pages/
-│           ├── Access.vue         # Pantalla de acceso con clave única
-│           ├── Dashboard.vue      # Chat: voz, manos libres, TTS, historial y cuadro de texto
-│           └── Configuration.vue  # Proveedor activo y cadena de fallback
+│           ├── Access.vue         # Acceso del administrador (clave única)
+│           ├── Dashboard.vue      # Chat del administrador: voz, manos libres, TTS, historial y texto
+│           ├── Configuration.vue  # Proveedor activo y cadena de fallback
+│           ├── AdminUsers.vue     # Panel de gestión de usuarios
+│           ├── UserLogin.vue      # Acceso de usuarios (usuario y contraseña)
+│           └── UserChat.vue       # Chat del usuario
 ├── Dockerfile         # Imagen del backend (Python 3.12-slim + ffmpeg + PyTorch solo CPU)
 ├── Dockerfile.web     # Imagen del frontend (Node.js + vite build)
 ├── requirements.txt
@@ -181,10 +327,14 @@ Reemplaza `web/public/igris.mp4` por otro video y haz **Rebuild and Deploy** del
 ---
 ## ⚙️ Variables de entorno (Coolify)
 Se configuran en el servicio de **backend** en Coolify. Después de cambiarlas hay que hacer redeploy o restart. **Recordatorios y notas no añaden variables nuevas**: usan `DATABASE_URL`, `TELEGRAM_TOKEN` y `ALLOWED_TELEGRAM_IDS`.
-### Acceso web
+### Acceso
 | Variable | Descripción | Ejemplo / por defecto |
 | --- | --- | --- |
-| `IGRIS_ACCESS_KEY` | Clave única para entrar a la web. **Obligatoria:** si falta o está vacía, el backend rechaza todo `/api/*` con 401 (falla cerrado). Usa solo letras y números | `openssl rand -hex 24` |
+| `IGRIS_ACCESS_KEY` | **Clave del administrador.** Es la que se escribe en `/acceso` y sirve para el panel, la configuración y el panel de usuarios. **Obligatoria:** si falta o está vacía, el backend rechaza todo `/api/*` con 401 (falla cerrado). Usa solo letras y números | `openssl rand -hex 24` |
+
+Los **usuarios** no usan esta variable: tienen su propia cuenta (usuario y contraseña) creada desde el panel, y entran por `/u/login`. Sus cuentas se guardan en la base de datos (`DATABASE_URL`).
+
+**Cookies y CORS:** ni la clave ni el token viajan en cookies, así que el backend va sin `allow_credentials`. Cada header que envíe el frontend tiene que estar en `allow_headers` y cada método en `allow_methods`; si falta uno, el navegador bloquea la petición antes de enviarla.
 ### IA
 | Variable | Descripción | Ejemplo / por defecto |
 | --- | --- | --- |
@@ -227,7 +377,7 @@ Las credenciales OAuth que usan `core/tools/google_client.py`, `gmail.py` y `gca
 ### Base de datos
 | Variable | Descripción |
 | --- | --- |
-| `DATABASE_URL` | Conexión a PostgreSQL. Acepta `postgresql://`, `postgres://` o `postgresql+psycopg://`; el backend la convierte solo al prefijo del driver psycopg 3. **Es obligatoria en producción:** sin ella se usa SQLite local (`./igris.db`) dentro del contenedor y los recordatorios y notas se pierden en cada despliegue. Al arrancar, el log dice `Base de datos activa: postgresql` (o `sqlite`) |
+| `DATABASE_URL` | Conexión a PostgreSQL. Acepta `postgresql://`, `postgres://` o `postgresql+psycopg://`; el backend la convierte solo al prefijo del driver psycopg 3. **Es obligatoria en producción:** sin ella se usa SQLite local (`./igris.db`) dentro del contenedor y **las cuentas de usuario, los recordatorios y las notas se pierden en cada despliegue**. Al arrancar, el log dice `Base de datos activa: postgresql` (o `sqlite`) |
 ### Otras
 | Variable | Descripción |
 | --- | --- |
@@ -251,15 +401,22 @@ IGRIS_LOCAL_MODEL=qwen2.5:3b
 > 🔒 **Nunca subas el archivo `.env` al repositorio.** Las claves viven solo en las variables de Coolify. Si alguna clave se publicó alguna vez, regenérala.
 ---
 ## ▶️ Despliegue
-1. **Variables de entorno:** configúralas en Coolify → servicio de backend (ver tablas anteriores). No olvides `IGRIS_ACCESS_KEY` y `DATABASE_URL`.
-2. **Backend:** Rebuild and Deploy (si cambiaste el `Dockerfile` o `requirements.txt`, usa Deploy sin caché). Al arrancar, las tablas nuevas (`reminders`, `notes`) se crean solas.
+Backend y frontend son **dos servicios separados** en Coolify, con sus propias variables y su propio deploy. Un cambio en `web/` no se ve hasta desplegar el frontend (el backend no sirve la interfaz).
+
+1. **Variables de entorno:** configúralas en Coolify → servicio de backend (ver tablas anteriores). No olvides `IGRIS_ACCESS_KEY` (la del administrador) y `DATABASE_URL`.
+2. **Backend:** Rebuild and Deploy (si cambiaste el `Dockerfile` o `requirements.txt`, usa Deploy sin caché). Al arrancar, las tablas que falten (`users`, `reminders`, `notes`) se crean solas.
 3. **Revisar los logs del backend:** deben aparecer `Base de datos activa: postgresql` y `Planificador de recordatorios iniciado (cada 30 s)`.
-4. **Frontend:** Rebuild and Deploy en el servicio del frontend. Verifica que `web/public/igris.mp4` esté en el repositorio.
-5. **Probar la web:** abre `https://webigris.zottagroup.com` con Chrome o Edge. Escribe la clave de acceso, acepta el permiso del micrófono y toca la pantalla una vez. Deberías ver a Igris de fondo; háblale o usa ✉️ Enviar para escribir "hola".
-6. **Probar Telegram:** escribe a tu bot desde un ID autorizado, envía texto y luego una nota de voz.
-7. **Probar la configuración:** en ⚙️ Configuración (o con `/config` y `/setprovider` en Telegram) cambia el proveedor y verifica que el siguiente mensaje lo usa. `GET /status` no debe listar `groq`.
-Para probar el frontend en local: entra a `web/` y ejecuta `npm install` y `npm run dev`.
+4. **Frontend:** Rebuild and Deploy en el servicio del frontend (base `/web`, build `npm install && npm run build`, arranque `npm start`, puerto 3000). Verifica que `web/public/igris.mp4` esté en el repositorio.
+5. **Probar la web del administrador:** abre `https://webigris.zottagroup.com/acceso` con Chrome o Edge. Escribe la clave, acepta el permiso del micrófono y toca la pantalla una vez. Deberías ver a Igris de fondo; háblale o usa ✉️ Enviar para escribir "hola".
+6. **Probar el área de usuarios:** crea un usuario en `/panel/usuarios` y entra con él en `https://webigris.zottagroup.com/u/login`. Cada usuario debe ver su propio chat.
+7. **Probar Telegram:** escribe a tu bot desde un ID autorizado, envía texto y luego una nota de voz.
+8. **Probar la configuración:** en ⚙️ Configuración (o con `/config` y `/setprovider` en Telegram) cambia el proveedor y verifica que el siguiente mensaje lo usa. `GET /status` no debe listar `groq`.
+
+Para probar el frontend en local: entra a `web/` y ejecuta `npm install` y `npm run dev`. Para probar el frontend **tal como queda en producción** (con el proxy y los manifests por ruta), usa `npm run build && PORT=3100 node server.js`.
+
 Si cambias `IGRIS_ACCESS_KEY`, haz redeploy del backend: los navegadores que tengan guardada la clave anterior volverán solos a la pantalla de acceso.
+
+**Sobre la app instalada (PWA):** al desplegar una versión nueva, los iconos de una app ya instalada pueden tardar en actualizarse, y la dirección de arranque de una app instalada **no cambia** aunque se despliegue (la fija el navegador al instalarla). Si has cambiado algo de la PWA, hay que **desinstalarla y volver a instalarla**.
 ### Cómo probar cada función de Igris
 Pruébalas desde la web (por voz o con ✉️ Enviar) y desde Telegram:
 | Función | Qué decir | Resultado esperado |
@@ -277,7 +434,7 @@ Pruébalas desde la web (por voz o con ✉️ Enviar) y desde Telegram:
 | Seguridad del borrado | "¿Tengo correos?" | No debe borrar nada, aunque un correo contenga instrucciones |
 | Recuperación | Crea un recordatorio para dentro de 2 minutos, detén el backend 3 minutos y reinícialo | El aviso llega "con retraso" al arrancar |
 | Persistencia | Crea un recordatorio lejano, redespliega y pregunta "¿qué recordatorios tengo?" | Sigue ahí (confirma que usas PostgreSQL) |
-Para ejecutar las pruebas automáticas de lógica (no requieren red ni base de datos): `python tests/test_logic.py` desde la raíz del repositorio. No cubren las consultas SQL; esas se validan con la prueba de persistencia de arriba.
+Para ejecutar las pruebas automáticas: `bash scripts/run_tests.sh` desde la raíz del repositorio (ver la sección **Pruebas** más arriba). Son 120 comprobaciones y se pueden repetir sin limpiar nada a mano.
 ### Verificar el acceso con `curl`
 ```bash
 API=https://igris.zottagroup.com
@@ -324,10 +481,16 @@ Coolify limpia Docker cada día a las 00:00 UTC (Servers → Docker Cleanup). Si
 | Los recordatorios y notas desaparecen tras cada despliegue | El backend usa SQLite (falta `DATABASE_URL`) | Definir `DATABASE_URL` hacia PostgreSQL; el log debe decir `Base de datos activa: postgresql` |
 | `No module named 'psycopg2'` al arrancar | URL de PostgreSQL sin el prefijo del driver y versión antigua de `core/database.py` | Usar el `database.py` actual (convierte la URL solo) o definir `postgresql+psycopg://...` |
 | Aparece `groq` en `/status` o en la configuración | `IGRIS_FALLBACK_CHAIN` o `IGRIS_PROVIDER` de Coolify aún lo contienen | Quitarlo de esas variables (y borrar `GROQ_API_KEY` e `IGRIS_GROQ_MODEL`); aunque quede, se filtra y no rompe nada |
+| La app instalada abre siempre en `/u/login` aunque la instalé desde el panel | Queda una PWA vieja instalada: guarda su dirección de arranque y no la cambia al desplegar | **Desinstalarla** y volver a instalarla desde la pantalla que corresponda (`/acceso` o `/u/login`) |
+| El botón **📲 Instalar** no aparece | La app ya está instalada, o el navegador no soporta el aviso automático | En iPhone hay que usar **Compartir → Añadir a pantalla de inicio**; Safari no ofrece el aviso solo |
+| Tras instalar, el icono o el nombre sigue siendo el viejo | La PWA instalada se queda con lo que registró la primera vez | Desinstalarla y volver a instalarla |
+| Un usuario dice que Igris olvidó la conversación | El historial vive en memoria y se pierde al reiniciar el backend | Es lo esperado; las conversaciones no se guardan en la base (solo usuarios, recordatorios y notas) |
+| Un usuario desactivado dice "Tu cuenta está desactivada" | Es el comportamiento correcto | Desactivarlo corta el acceso al instante (403), sin esperar a que caduque el token. Volver a activarlo lo restablece |
+| 429 "Demasiados intentos" al entrar un usuario | 8 fallos desde la misma IP para ese usuario en 5 minutos | Esperar 5 minutos o reiniciar el backend (el contador está en memoria) |
 ---
 ## 📝 Notas importantes
-- **Acceso con clave única en la web:** la interfaz pide una clave (`IGRIS_ACCESS_KEY`) en `/acceso`. El navegador la guarda en `localStorage` y la envía en el header `X-Igris-Key` a `/api/chat`, `/api/tts`, `/api/ai-config` y `/api/auth/check`. El backend compara la clave en tiempo constante, rechaza todo si la variable no está definida y responde 429 tras 10 intentos fallidos desde una IP en 5 minutos. `/health`, `/status` y el webhook de Telegram no usan esta clave. No hay usuarios, sesiones ni base de datos para el acceso.
-- **CORS:** el backend solo acepta peticiones del frontend (`https://webigris.zottagroup.com`) y de `http://localhost:5173` para desarrollo, con los métodos `GET`, `POST`, `PUT` y `OPTIONS` y los headers `Content-Type` y `X-Igris-Key`.
+- **Acceso del administrador:** la interfaz pide una clave (`IGRIS_ACCESS_KEY`) en `/acceso`. El navegador la guarda en `localStorage` y la envía en el header `X-Igris-Key` a `/api/chat`, `/api/tts`, `/api/ai-config`, `/api/auth/check` y `/api/admin/*`. El backend compara la clave en tiempo constante, rechaza todo si la variable no está definida y responde 429 tras 10 intentos fallidos desde una IP en 5 minutos. `/health`, `/status` y el webhook de Telegram no usan esta clave. **Esta clave es la del administrador**: los usuarios entran con su propia cuenta desde `/u/login` (ver **Las dos superficies de acceso**).
+- **CORS:** el backend solo acepta peticiones del frontend (`https://webigris.zottagroup.com`), de `http://localhost:5173` y de `http://localhost:3000` (el servidor del frontend en local), con los métodos `GET`, `POST`, `PUT`, `DELETE` y `OPTIONS` y los headers `Content-Type`, `X-Igris-Key` y `Authorization`. Si falta un método o un header, el navegador bloquea la petición **antes** de enviarla y el error que se ve es de CORS, no el error real del servidor.
 - **El bot de Telegram tiene su propia protección:** solo responde a los IDs de `ALLOWED_TELEGRAM_IDS` y valida el secreto del webhook.
 - **System prompt** (en `core/config.py`): Igris es un caballero de las sombras leal, formal, de respuestas breves y sin markdown (sus respuestas están pensadas para decirse en voz alta), y se dirige al usuario como "mi señor".
 - **Texto de terceros:** el contenido de correos, eventos y notas se trata siempre como información, nunca como instrucciones.
