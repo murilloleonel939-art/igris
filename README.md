@@ -25,8 +25,12 @@
 | 🌦️ Clima de una ciudad | Funcional |
 | 📧 Gmail (lectura de la bandeja) | Funcional |
 | 📅 Google Calendar: consultar agenda y crear eventos con confirmación obligatoria | Funcional |
-| ⏰ Recordatorios con aviso por Telegram (únicos, diarios o semanales) | Nuevo |
-| 📝 Notas: anotar, listar, buscar y borrar | Nuevo |
+| ⏰ Recordatorios con aviso por Telegram (únicos, diarios o semanales) | Funcional |
+| 📝 Notas: anotar, listar, buscar y borrar | Funcional |
+| 🔑 **Permisos por usuario**: el admin activa o desactiva cada función (hora, clima, correo, calendario, notas, recordatorios) por cuenta | Funcional |
+| 🔗 **Google por usuario**: cada cuenta conecta su propio Gmail/Calendar desde `/u` | Funcional |
+| 📲 **Telegram por usuario**: cada cuenta vincula su propio chat con un código de 6 dígitos | Funcional |
+| 🛡️ **Admin puede desvincular Telegram de cualquier usuario** desde el panel | Funcional |
 | 🧪 Suite de pruebas end-to-end (226 comprobaciones, reejecutable) | Funcional |
 **Personalidad:** caballero de las sombras, leal y formal, con español neutro (sin acento peninsular). El prompt vive en `core/config.py`; las instrucciones de herramientas, en `TOOLS_PROMPT` de `core/brain.py`.
 ---
@@ -59,8 +63,9 @@ Los dos límites viven en memoria, así que se reinician al reiniciar el backend
 | --- | --- | --- |
 | `GET` | `/api/admin/users` | Lista los usuarios (nunca devuelve el hash de la contraseña) |
 | `POST` | `/api/admin/users` | Crea un usuario (`username`, `email`, `password`) |
-| `PUT` | `/api/admin/users/{id}` | Edita, activa/desactiva o cambia la contraseña |
+| `PUT` | `/api/admin/users/{id}` | Edita, activa/desactiva, cambia la contraseña o configura el trato personalizado |
 | `DELETE` | `/api/admin/users/{id}` | Borra un usuario |
+| `DELETE` | `/api/admin/users/{id}/telegram` | Desvincula el Telegram de un usuario (el bot deja de atenderle de inmediato) |
 | `GET` | `/api/admin/features` | Catálogo de funciones que se pueden habilitar |
 
 Reglas de validación: usuario de 3 a 32 caracteres (`A-Z a-z 0-9 . _ -`), correo con formato válido y contraseña de **8 caracteres como mínimo**. Un usuario desactivado no puede entrar ni seguir usando el token que ya tuviera.
@@ -283,9 +288,12 @@ igris/
 ├── core/
 │   ├── brain.py               # Orquesta proveedores con fallback, bucle de tool calling y TOOLS_PROMPT
 │   ├── config.py              # Proveedores válidos, modelos por defecto y system prompt
+│   ├── capabilities.py        # Catálogo de funciones por usuario; comprobación de permisos en brain y tools
+│   ├── crypto.py              # Cifrado de secretos (refresh tokens de Google) con Fernet/HKDF-SHA256
+│   ├── telegram_links.py      # Vinculación Telegram↔cuenta con código de un solo uso y 15 min de validez
 │   ├── settings_manager.py    # core/settings.json (configuración de IA persistente, con limpieza de proveedores inválidos)
 │   ├── session_store.py       # Sesiones de conversación en memoria (web:<id>, tg:<id>, user:<id>:<conv>)
-│   ├── database.py            # SQLAlchemy: modelos (incluye User, Reminder y Note) e init_db
+│   ├── database.py            # SQLAlchemy: modelos (User, Reminder, Note, GoogleAccount, TelegramLink) e init_db con migraciones
 │   ├── scheduler.py           # Planificador de avisos de recordatorios (tarea en segundo plano)
 │   ├── stt.py, tts.py         # Voz
 │   ├── settings.json
