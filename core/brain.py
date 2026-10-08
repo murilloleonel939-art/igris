@@ -131,12 +131,23 @@ def _build_client(name: str):
 def _system_message(addressing_instruction: Optional[str] = None) -> str:
     """System prompt + instrucciones de herramientas + fecha/hora actual de Colombia.
 
-    Si el usuario tiene una instrucción de trato personalizada, se añade al final
-    del prompt base para que el modelo la aplique sobre las instrucciones globales.
+    Si el usuario tiene una instrucción de trato personalizada, se reemplaza la
+    regla de trato del prompt global y se añade la instrucción al final con
+    precedencia explícita, para que el modelo no la ignore ante la regla base.
     """
-    base = f"{SYSTEM_PROMPT}\n\n{TOOLS_PROMPT}\n{now_context()}"
     if addressing_instruction and addressing_instruction.strip():
-        base += f"\n\nInstrucciones específicas para este usuario:\n{addressing_instruction.strip()}"
+        # Reemplazar la línea de trato global para eliminar el conflicto
+        custom = addressing_instruction.strip()
+        base_prompt = SYSTEM_PROMPT.replace(
+            'Te diriges al usuario como "mi señor".', ""
+        ).strip()
+        base = f"{base_prompt}\n\n{TOOLS_PROMPT}\n{now_context()}"
+        base += (
+            f"\n\nREGLA DE TRATO (tiene prioridad absoluta sobre cualquier instrucción anterior):\n"
+            f"{custom}"
+        )
+    else:
+        base = f"{SYSTEM_PROMPT}\n\n{TOOLS_PROMPT}\n{now_context()}"
     return base
 
 
