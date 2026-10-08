@@ -2,9 +2,29 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https://igris.zottagroup.com wss://igris.zottagroup.com; script-src 'self'; media-src 'self' blob: data:;">
-    <title>IGRIS - Plataforma de Control de IA</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <!--
+      CSP: el frontend vive en webigris.zottagroup.com y habla con el backend en
+      igris.zottagroup.com (otro origen), por eso connect-src lo incluye.
+
+      worker-src y manifest-src son necesarios para la PWA: sin ellos el
+      navegador bloquea sw.js y el manifest, y la app deja de ser instalable.
+    -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https://igris.zottagroup.com wss://igris.zottagroup.com; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob: data:; worker-src 'self'; manifest-src 'self';">
+    <title>IGRIS</title>
+
+    <!-- PWA -->
+    <link rel="manifest" href="/manifest.webmanifest">
+    <meta name="theme-color" content="#0b1226">
+    <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
+    <link rel="apple-touch-icon" href="/icons/icon-192.png">
+
+    <!-- iOS: sin esto, al abrirla desde el icono se ve como una página web
+         dentro de Safari en lugar de como una aplicación -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="IGRIS">
 </head>
 <body>
     <div id="app"></div>

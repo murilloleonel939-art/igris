@@ -4,7 +4,7 @@
 
 ### Backend ✅
 - **Corriendo**: EC2 Coolify (puerto 8000)
-- **URL**: https://igris.zottaggroup.com/api/...
+- **URL**: https://igris.zottagroup.com/api/...
 - **Status**: Activo
 
 ### Frontend 🔄 (Por deployar)
@@ -18,7 +18,7 @@
 
 ### Paso 1: Preparar Coolify
 
-1. **Acceder a Coolify**: https://coolify.zottaggroup.com (o tu panel)
+1. **Acceder a Coolify**: https://coolify.zottagroup.com (o tu panel)
 2. **Crear nueva aplicación**:
    - Nombre: `IGRIS Frontend`
    - Tipo: Node.js
@@ -42,7 +42,7 @@ npm start
 
 **Environment Variables:**
 ```env
-VITE_API_URL=https://igris.zottaggroup.com
+VITE_API_URL=https://igris.zottagroup.com
 PORT=3000
 NODE_ENV=production
 ```
@@ -53,13 +53,13 @@ Si usas Coolify con nginx/proxy:
 
 **Frontend** → Puerto 3000 (ruta `/`)
 ```
-https://igris.zottaggroup.com/ → Node.js:3000
+https://igris.zottagroup.com/ → Node.js:3000
 ```
 
 **Backend** → Puerto 8000 (ya existente)
 ```
-https://igris.zottaggroup.com/api/* → FastAPI:8000
-https://igris.zottaggroup.com/auth/* → FastAPI:8000
+https://igris.zottagroup.com/api/* → FastAPI:8000
+https://igris.zottagroup.com/auth/* → FastAPI:8000
 ```
 
 > ℹ️ Si ya configuraste el backend en Coolify, solo falta agregar una segunda app o ajustar proxy.
@@ -72,7 +72,7 @@ https://igris.zottaggroup.com/auth/* → FastAPI:8000
 
 ### Paso 5: Verificar
 
-Acceder a: **https://igris.zottaggroup.com/**
+Acceder a: **https://igris.zottagroup.com/**
 
 ✅ Debe cargar la página de Login  
 ✅ Console del navegador sin errores CORS  
@@ -135,8 +135,8 @@ cd /home/dsh/igris/web
 npm install
 npm run build       # Genera /dist/
 npm start           # Sirve desde Node.js:3000
-# Frontend: https://igris.zottaggroup.com/
-# Backend: https://igris.zottaggroup.com/api/ (CORS habilitado)
+# Frontend: https://igris.zottagroup.com/
+# Backend: https://igris.zottagroup.com/api/ (CORS habilitado)
 ```
 
 ---
@@ -147,7 +147,7 @@ npm start           # Sirve desde Node.js:3000
 → Necesita `npm install` en Coolify (debería ser automático)
 
 ### Error: CORS en Login
-→ Verificar que backend tiene CORS habilitado para `https://igris.zottaggroup.com`
+→ Verificar que backend tiene CORS habilitado para `https://igris.zottagroup.com`
 
 Backend (FastAPI - `server/main.py`):
 ```python
@@ -155,7 +155,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://igris.zottaggroup.com", "http://localhost:3000"],
+    allow_origins=["https://igris.zottagroup.com", "http://localhost:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -169,20 +169,20 @@ app.add_middleware(
 ### Error: Variable VITE_API_URL no definida
 → Crear `.env.production` en `/web/` con:
 ```
-VITE_API_URL=https://igris.zottaggroup.com
+VITE_API_URL=https://igris.zottagroup.com
 ```
 
 ---
 
 ## 📦 Checklist Pre-Deploy
 
-- [ ] `.env.production` creado con `VITE_API_URL=https://igris.zottaggroup.com`
+- [ ] `.env.production` creado con `VITE_API_URL=https://igris.zottagroup.com`
 - [ ] `server.js` existe en `/home/dsh/igris/web/`
 - [ ] `package.json` tiene `express` en dependencias
 - [ ] `package.json` tiene scripts `start` y `build`
 - [ ] Backend fastapi corriendo en puerto 8000 ✅
 - [ ] CORS habilitado en FastAPI
-- [ ] Dominio https://igris.zottaggroup.com apunta a Coolify
+- [ ] Dominio https://igris.zottagroup.com apunta a Coolify
 - [ ] Certificado SSL automático ✅
 - [ ] GitHub token valido para pull en Coolify
 
@@ -192,11 +192,11 @@ VITE_API_URL=https://igris.zottaggroup.com
 
 | Recurso | URL |
 |---------|-----|
-| **Frontend Web** | https://igris.zottaggroup.com/ |
+| **Frontend Web** | https://igris.zottagroup.com/ |
 | **Login** | https://igris.zottagroup.com/ |
-| **API Docs** | https://igris.zottaggroup.com/docs |
+| **API Docs** | https://igris.zottagroup.com/docs |
 | **API Status** | https://igris.zottagroup.com/status |
-| **Health Check** | https://igris.zottaggroup.com/health |
+| **Health Check** | https://igris.zottagroup.com/health |
 
 ---
 
@@ -205,7 +205,7 @@ VITE_API_URL=https://igris.zottaggroup.com
 Si algo falla:
 1. Revisar logs de Coolify (panel → aplicación → logs)
 2. Revisar logs de navegador (F12 → Console)
-3. Verificar que backend está vivo: `https://igris.zottaggroup.com/health`
+3. Verificar que backend está vivo: `https://igris.zottagroup.com/health`
 4. Verificar variables de entorno en Coolify
 
 ---

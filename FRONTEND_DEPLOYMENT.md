@@ -21,7 +21,7 @@
 
 ### 🔒 Seguridad & CORS
 - [x] Backend FastAPI con CORS habilitado (`allow_origins=["*"]`)
-- [x] Frontend configurado para conectar a `https://igris.zottaggroup.com`
+- [x] Frontend configurado para conectar a `https://igris.zottagroup.com`
 - [x] SSL/HTTPS automático en Coolify ✅
 
 ---
@@ -58,7 +58,7 @@ npm start
 
 **Environment Variables:**
 ```env
-VITE_API_URL=https://igris.zottaggroup.com
+VITE_API_URL=https://igris.zottagroup.com
 PORT=3000
 NODE_ENV=production
 ```
@@ -66,8 +66,8 @@ NODE_ENV=production
 ### 3. Configurar Dominio
 
 En Coolify, asignar:
-- `https://igris.zottaggroup.com/` → Frontend (puerto 3000)
-- `https://igris.zottaggroup.com/api/*` → Backend (puerto 8000)
+- `https://igris.zottagroup.com/` → Frontend (puerto 3000)
+- `https://igris.zottagroup.com/api/*` → Backend (puerto 8000)
 
 > Si usas un único dominio con reverse proxy:
 > - Frontend en `/` redirige a Node.js:3000
@@ -77,7 +77,7 @@ En Coolify, asignar:
 
 1. Clickear **Deploy** en Coolify
 2. Esperar 2-5 minutos
-3. Acceder a: https://igris.zottaggroup.com/
+3. Acceder a: https://igris.zottagroup.com/
 4. Verificar que carga el Login.vue
 5. Probar login (debe conectar a backend)
 
@@ -111,7 +111,7 @@ Deployment Flow:
                │
                ▼
 ┌─────────────────────────────────┐
-│ https://igris.zottaggroup.com   │
+│ https://igris.zottagroup.com   │
 │  Reverse Proxy / Load Balancer  │
 └─────────────────────────────────┘
 ```
@@ -123,7 +123,7 @@ Deployment Flow:
 | Archivo | Cambio |
 |---------|--------|
 | `web/package.json` | ✨ Agregado `express` + scripts `start`, `prod` |
-| `web/.env.production` | ✨ Nuevo: `VITE_API_URL=https://igris.zottaggroup.com` |
+| `web/.env.production` | ✨ Nuevo: `VITE_API_URL=https://igris.zottagroup.com` |
 | `web/server.js` | ✨ Nuevo: Express server para servir `/dist/` |
 | `web/dist/` | ✨ Generado: Frontend compilado (196 KB) |
 | `Dockerfile.frontend` | ✨ Nuevo: Multi-stage Docker image |
@@ -171,11 +171,11 @@ npm run preview
 
 | Componente | Estado | URL |
 |-----------|--------|-----|
-| Backend FastAPI | ✅ Corriendo | https://igris.zottaggroup.com/api |
+| Backend FastAPI | ✅ Corriendo | https://igris.zottagroup.com/api |
 | Frontend Build | ✅ Completado | `/dist/` listo |
 | SSL/HTTPS | ✅ Automático | Coolify ✅ |
 | CORS | ✅ Habilitado | Backend ✅ |
-| Dominio | ✅ Apuntando | igris.zottaggroup.com |
+| Dominio | ✅ Apuntando | igris.zottagroup.com |
 | Deployment | 🔄 Listo para Coolify | Pendiente push |
 
 ---

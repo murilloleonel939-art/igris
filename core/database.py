@@ -2,14 +2,21 @@
 Base de datos - Modelos de usuarios, perfiles, configuración 2FA, recordatorios y notas
 PostgreSQL para EC2 (Coolify), SQLite para RPi (fallback)
 """
+import logging
 import os
+import time
 from datetime import datetime, timezone
+
 from sqlalchemy import (
     create_engine, Column, String, Integer, BigInteger, Boolean, DateTime, Text,
-    ForeignKey, JSON, Index,
+    ForeignKey, JSON, Index, text,
 )
+from sqlalchemy.engine import make_url
+from sqlalchemy.exc import OperationalError, ProgrammingError
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
+
+logger = logging.getLogger(__name__)
 
 # Detectar si estamos en modo local (RPi/desarrollo) o producción (EC2)
 DATABASE_URL = os.environ.get(
@@ -23,17 +30,82 @@ for _prefix in ("postgres://", "postgresql://"):
         DATABASE_URL = "postgresql+psycopg://" + DATABASE_URL[len(_prefix):]
         break
 
-# Para PostgreSQL en Coolify, espera: postgresql://user:pass@host:5432/db
-if not DATABASE_URL.startswith("sqlite"):
-    # PostgreSQL
-    engine = create_engine(DATABASE_URL, pool_pre_ping=True)
-else:
-    # SQLite
-    engine = create_engine(
+IS_POSTGRES = DATABASE_URL.startswith("postgresql")
+
+
+def _ensure_postgres_database_exists(url: str) -> None:
+    """Crea la base de datos si todavía no existe.
+
+    En Coolify el servicio PostgreSQL arranca con una base ya creada, pero si
+    DATABASE_URL apunta a un nombre distinto (por ejemplo igris), la conexión
+    falla con "database does not exist" y el backend no arranca.
+
+    Se conecta a la base de mantenimiento "postgres" con el mismo usuario y
+    ejecuta CREATE DATABASE. Si el usuario no tiene permiso, se avisa y se
+    sigue: puede que la base ya exista o que la cree el propio Coolify.
+    """
+    try:
+        parsed = make_url(url)
+    except Exception as e:
+        logger.warning("No se pudo interpretar DATABASE_URL: %s", e)
+        return
+
+    target = parsed.database
+    if not target or target == "postgres":
+        return
+
+    # Conexión a la base de mantenimiento del mismo servidor
+    admin_url = parsed.set(database="postgres")
+    try:
+        admin_engine = create_engine(admin_url, isolation_level="AUTOCOMMIT", pool_pre_ping=True)
+        with admin_engine.connect() as conn:
+            exists = conn.execute(
+                text("SELECT 1 FROM pg_database WHERE datname = :name"),
+                {"name": target},
+            ).scalar()
+            if exists:
+                logger.info("Base de datos PostgreSQL '%s' ya existe", target)
+            else:
+                # El nombre no puede ir como parámetro; se cita como identificador
+                safe = target.replace('"', '""')
+                conn.execute(text(f'CREATE DATABASE "{safe}"'))
+                logger.info("Base de datos PostgreSQL '%s' creada", target)
+        admin_engine.dispose()
+    except (OperationalError, ProgrammingError) as e:
+        logger.warning(
+            "No se pudo verificar/crear la base de datos '%s' (%s). "
+            "Si la base ya existe o la crea Coolify, esto es normal.",
+            target, type(e).__name__,
+        )
+    except Exception as e:
+        logger.warning("Aviso al comprobar la base de datos '%s': %s", target, e)
+
+
+def _build_engine():
+    """Crea el motor, validando la conexión y creando la base si hace falta."""
+    if IS_POSTGRES:
+        _ensure_postgres_database_exists(DATABASE_URL)
+
+    if IS_POSTGRES:
+        # pool_pre_ping: descarta conexiones muertas (Coolify reinicia Postgres
+        # sin avisar y, sin esto, la primera petición después falla).
+        # pool_recycle: renueva las conexiones cada 30 min.
+        return create_engine(
+            DATABASE_URL,
+            pool_pre_ping=True,
+            pool_recycle=1800,
+            pool_size=5,
+            max_overflow=10,
+        )
+
+    # SQLite (desarrollo local / RPi)
+    return create_engine(
         DATABASE_URL,
-        connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URL else {}
+        connect_args={"check_same_thread": False} if "sqlite" in DATABASE_URL else {},
     )
 
+
+engine = _build_engine()
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
@@ -155,10 +227,49 @@ class Note(Base):
 
 
 # Crear tablas
-def init_db():
-    """Inicializar base de datos"""
-    Base.metadata.create_all(bind=engine)
-    print("✅ Base de datos inicializada")
+def init_db(retries: int = 10, delay: float = 2.0) -> None:
+    """Crea las tablas que falten y valida la conexión.
+
+    En Coolify el backend y PostgreSQL se despliegan a la vez: es normal que
+    durante los primeros segundos la base todavía no acepte conexiones. Por eso
+    se reintenta con espera creciente en lugar de morir al primer fallo.
+
+    create_all() solo crea lo que falta; no borra ni modifica nada existente.
+    """
+    last_error = None
+    for attempt in range(1, retries + 1):
+        try:
+            Base.metadata.create_all(bind=engine)
+            # Comprobación real de que la base responde, no solo de que el
+            # motor se construyó.
+            with engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
+
+            tables = ", ".join(sorted(Base.metadata.tables))
+            logger.info("Base de datos lista (%s). Tablas: %s", engine.dialect.name, tables)
+            if engine.dialect.name == "sqlite":
+                logger.warning(
+                    "Usando SQLite: los datos se pierden en cada despliegue si no "
+                    "hay un volumen persistente. Define DATABASE_URL para usar PostgreSQL."
+                )
+            return
+        except Exception as e:
+            last_error = e
+            if attempt < retries:
+                logger.warning(
+                    "La base de datos no responde todavía (intento %s/%s): %s. "
+                    "Reintentando en %.0fs…",
+                    attempt, retries, type(e).__name__, delay,
+                )
+                time.sleep(delay)
+
+    logger.error(
+        "No se pudo preparar la base de datos tras %s intentos: %s",
+        retries, last_error,
+    )
+    # Se lanza para que el despliegue falle de forma visible en lugar de
+    # arrancar con una base rota y dar errores raros en cada petición.
+    raise last_error if last_error else RuntimeError("Base de datos no disponible")
 
 
 def get_db():

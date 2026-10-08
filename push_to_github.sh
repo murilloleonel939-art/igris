@@ -6,7 +6,16 @@ set -e
 echo "🚀 Sincronizando con GitHub..."
 
 # Variables
-REPO_URL="https://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@github.com/murilloleonel939-art/igris.git"
+# El token NO va escrito aquí: este archivo se sube al repositorio y cualquiera
+# con acceso al código podría usarlo para escribir en nombre de la cuenta.
+# Se lee de la variable de entorno GITHUB_TOKEN (o GITHUB_PAT).
+PAT="${GITHUB_TOKEN:-${GITHUB_PAT:-}}"
+if [ -z "$PAT" ]; then
+  echo "❌ Falta la variable de entorno GITHUB_TOKEN."
+  echo "   Ejemplo:  GITHUB_TOKEN=github_pat_xxx ./push_to_github.sh"
+  exit 1
+fi
+REPO_URL="https://${PAT}@github.com/murilloleonel939-art/igris.git"
 BRANCH="main"
 
 # Configurar git
@@ -35,6 +44,6 @@ echo "✅ ¡Listo! Los cambios están en GitHub."
 echo "📦 Coolify debería re-descargar y deployar automáticamente."
 echo ""
 echo "Si no re-deploya automáticamente:"
-echo "  1. Abre https://igris.zottaggroup.com (Coolify)"
+echo "  1. Abre https://igris.zottagroup.com (Coolify)"
 echo "  2. Ve a la aplicación IGRIS"
 echo "  3. Haz clic en 'Redeploy' o 'Rebuild'"

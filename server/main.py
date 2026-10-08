@@ -29,11 +29,9 @@ from telegram.ext import Application, ContextTypes
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
 
-# Inicializar BD (crea las tablas que falten: recordatorios y notas incluidas)
+# Inicializar BD: crea la base de datos si falta, espera a PostgreSQL si aún
+# está arrancando y crea las tablas que falten (recordatorios y notas incluidas).
 init_db()
-logger.info(f"Base de datos activa: {engine.dialect.name}")  # solo el tipo, nunca la URL
-if engine.dialect.name == "sqlite":
-    logger.warning("Usando SQLite: los datos se pierden en cada despliegue si no hay volumen persistente")
 
 app = FastAPI(
     title="IGRIS Chat",
@@ -42,19 +40,28 @@ app = FastAPI(
 )
 
 # CORS - solo el frontend (y el servidor de desarrollo local).
-# Sin allow_credentials: la clave viaja en el header X-Igris-Key, no en cookies.
+# Sin allow_credentials: ni la clave ni el token viajan en cookies.
 # El preflight (OPTIONS) lo responde este middleware antes de llegar a las rutas,
 # así que nunca pasa por require_key.
+#
+# IMPORTANTE: todo header que envíe el frontend tiene que estar en allow_headers,
+# y todo método que use tiene que estar en allow_methods. Si falta uno, el
+# navegador bloquea la petición ANTES de enviarla y el error que se ve en
+# pantalla es un fallo de CORS, no el error real del servidor.
+#   - X-Igris-Key  -> pantalla de acceso y panel (una sola clave)
+#   - Authorization -> área de usuarios (/u), token Bearer
+#   - DELETE        -> borrar usuarios desde el panel
 origins = [
     "https://webigris.zottagroup.com",
     "http://localhost:5173",
+    "http://localhost:3000",
 ]
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
-    allow_methods=["GET", "POST", "PUT", "OPTIONS"],
-    allow_headers=["Content-Type", "X-Igris-Key"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "X-Igris-Key", "Authorization"],
 )
 
 # ============= ACCESO CON CLAVE ÚNICA =============
@@ -66,6 +73,15 @@ if not ACCESS_KEY:
     logger.error(
         "IGRIS_ACCESS_KEY no está definida o está vacía: "
         "todas las rutas protegidas rechazarán las peticiones."
+    )
+
+# La SECRET_KEY firma los tokens de los usuarios del área /u. Si no está
+# definida, core/auth.py genera una temporal: el área de usuarios funciona,
+# pero cada reinicio invalida las sesiones abiertas.
+if not os.getenv("SECRET_KEY", "").strip():
+    logger.warning(
+        "SECRET_KEY no está definida: los usuarios tendrán que volver a "
+        "iniciar sesión en cada reinicio del backend. Defínela en Coolify."
     )
 
 # Límite de intentos fallidos por IP (en memoria, se reinicia con el servicio)
@@ -150,6 +166,14 @@ def valid_node_token(token) -> bool:
     if not token or not NODE_TOKEN:
         return False
     return secrets.compare_digest(token, NODE_TOKEN)
+
+# ============= ÁREA DE USUARIOS (/u) =============
+# Rutas de gestión de usuarios y del chat de usuarios. Comparten el mismo Brain
+# y el mismo SessionStore que el panel, y el historial queda aislado por usuario
+# con la clave "user:<id>:<conversación>" que construye user_routes.
+import server.user_routes as user_routes
+user_routes.bind_sessions(sessions)
+app.include_router(user_routes.router)
 
 # ------------------- CONFIGURACIÓN DE TELEGRAM -------------------
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
@@ -699,6 +723,9 @@ async def root():
             "chat": "/api/chat (POST, requiere X-Igris-Key)",
             "ai-config": "/api/ai-config (GET/PUT, requiere X-Igris-Key)",
             "tts": "/api/tts (POST, requiere X-Igris-Key)",
+            "admin-users": "/api/admin/users (GET/POST/PUT/DELETE, requiere X-Igris-Key)",
+            "user-login": "/api/user/login (POST)",
+            "user-chat": "/api/user/chat (POST, requiere Bearer token)",
             "telegram-webhook": "/telegram/webhook (POST)"
         }
     }

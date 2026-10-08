@@ -1,5 +1,8 @@
 # Environment
 .env
+.env.local
+.env.test
+.env.*.local
 
 # Dependencies
 node_modules/
@@ -8,6 +11,27 @@ web/node_modules/
 # Build output
 dist/
 web/dist/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Base de datos local (SQLite)
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# Sesiones locales
+*.ses
+
+# Herramientas del entorno de desarrollo
+.npm-cache/
+.uv-cache/
+.tools/
 
 # Backup files
 *.bak

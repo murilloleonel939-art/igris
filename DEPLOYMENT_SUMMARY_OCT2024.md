@@ -8,7 +8,7 @@
 
 ### Servidor FastAPI
 - **Puerto**: 8000
-- **URL**: https://igris.zottaggroup.com
+- **URL**: https://igris.zottagroup.com
 - **Status**: ✅ Operacional
 - **Endpoints públicos**:
   - `/health` → Health check
@@ -65,17 +65,17 @@
 ## 🔗 CONFIGURACIÓN DE DOMINIO
 
 ### Dominio
-- **Dominio**: igris.zottaggroup.com
+- **Dominio**: igris.zottagroup.com
 - **DNS**: ✅ Apuntando a Coolify
 - **SSL/HTTPS**: ✅ Automático (Let's Encrypt)
 - **Certificado**: ✅ Válido
 
 ### Routing
 ```
-Frontend:  https://igris.zottaggroup.com/         → Node.js:3000
-Backend:   https://igris.zottaggroup.com/api/*    → FastAPI:8000
-           https://igris.zottaggroup.com/auth/*   → FastAPI:8000
-WebSocket: wss://igris.zottaggroup.com/ws         → FastAPI:8000
+Frontend:  https://igris.zottagroup.com/         → Node.js:3000
+Backend:   https://igris.zottagroup.com/api/*    → FastAPI:8000
+           https://igris.zottagroup.com/auth/*   → FastAPI:8000
+WebSocket: wss://igris.zottagroup.com/ws         → FastAPI:8000
 ```
 
 ---
@@ -142,7 +142,7 @@ npm start
 
 **Environment:**
 ```env
-VITE_API_URL=https://igris.zottaggroup.com
+VITE_API_URL=https://igris.zottagroup.com
 PORT=3000
 NODE_ENV=production
 ```
@@ -162,7 +162,7 @@ https://igris.zottagroup.com/api/* → 127.0.0.1:8000 (Backend)
 ### 4. Deploy
 - Click "Deploy" en Coolify
 - Esperar 2-5 minutos
-- Acceder a https://igris.zottaggroup.com/
+- Acceder a https://igris.zottagroup.com/
 
 ### 5. Verificar Funcionamiento
 ```bash

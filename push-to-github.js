@@ -10,13 +10,23 @@ const path = require('path');
 const zlib = require('zlib');
 
 // Configuración
-const GITHUB_TOKEN = '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';
+// El token NO va escrito aquí: este archivo se sube al repositorio y cualquiera
+// con acceso al código podría usarlo para escribir en nombre de la cuenta.
+// Se lee de la variable de entorno GITHUB_TOKEN.
+const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
+if (!GITHUB_TOKEN) {
+  console.error('❌ Falta la variable de entorno GITHUB_TOKEN.');
+  console.error('   Ejemplo:  GITHUB_TOKEN=github_pat_xxx node push-to-github.js');
+  process.exit(1);
+}
 const REPO_OWNER = 'murilloleonel939-art';
 const REPO_NAME = 'igris';
 const BRANCH = 'main';
 const COMMIT_MESSAGE = 'feat: Frontend Vue 3 build + Coolify deployment ready\n\n- Added web/server.js (Express server)\n- Added web/.env.production (production config)\n- Built web/dist/ (production bundle)\n- Added Dockerfile.frontend\n- Added comprehensive deployment documentation\n- All 25+ verification checks passed';
 
-const PROJECT_ROOT = '/home/dsh/igris';
+// Raíz del proyecto. Por defecto, la carpeta donde está este script (así
+// funciona en cualquier máquina); se puede cambiar con PROJECT_ROOT=...
+const PROJECT_ROOT = process.env.PROJECT_ROOT || __dirname;
 
 // Archivos a subir
 const FILES_TO_UPLOAD = [
@@ -172,7 +182,7 @@ async function createCommit(treeSha, parentSha) {
     parents: [parentSha],
     author: {
       name: 'IGRIS Bot',
-      email: 'igris@zottaggroup.com',
+      email: 'igris@zottagroup.com',
       date: new Date().toISOString()
     }
   });

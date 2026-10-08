@@ -1,7 +1,9 @@
 """
 Autenticación - Login, Password hashing, Google Authenticator (2FA)
 """
+import logging
 import os
+import secrets
 from datetime import datetime, timedelta
 from typing import Optional
 from passlib.context import CryptContext
@@ -13,8 +15,24 @@ import base64
 from sqlalchemy.orm import Session
 from core.database import User, TwoFactorAuth
 
+logger = logging.getLogger(__name__)
+
 # Configuración
-SECRET_KEY = os.environ.get("SECRET_KEY", "tu-clave-secreta-cambiar-en-produccion")
+# La clave que firma los tokens. En producción DEBE venir de la variable de
+# entorno SECRET_KEY (Coolify). Si no está definida se genera una aleatoria al
+# arrancar: el servidor funciona igual, pero cada reinicio/redeploy firma con
+# una clave distinta y todas las sesiones abiertas dejan de valer. Por eso, en
+# producción, sin SECRET_KEY los usuarios tienen que volver a entrar cada vez.
+_configured_secret = os.environ.get("SECRET_KEY", "").strip()
+if _configured_secret:
+    SECRET_KEY = _configured_secret
+else:
+    SECRET_KEY = secrets.token_urlsafe(48)
+    logger.warning(
+        "SECRET_KEY no está definida: se ha generado una clave temporal. "
+        "Las sesiones de los usuarios se cerrarán en cada reinicio. "
+        "Define SECRET_KEY en las variables de entorno del backend."
+    )
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 REFRESH_TOKEN_EXPIRE_DAYS = 7
@@ -36,13 +54,27 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 # ============= JWT TOKENS =============
 
-def create_access_token(user_id: int, expires_delta: Optional[timedelta] = None) -> str:
-    """Crear JWT access token"""
+def create_access_token(
+    user_id: int,
+    expires_delta: Optional[timedelta] = None,
+    role: Optional[str] = None,
+) -> str:
+    """Crear JWT access token.
+
+    `role` distingue las dos superficies de la aplicación:
+      - "user": el área /u (chat de usuarios). Lo exige require_user.
+      - None  : token sin rol, rechazado por require_user.
+
+    El rol viaja firmado dentro del token, así que el cliente no puede
+    añadírselo ni cambiarlo.
+    """
     if expires_delta is None:
         expires_delta = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    
+
     expire = datetime.utcnow() + expires_delta
     to_encode = {"user_id": user_id, "exp": expire}
+    if role:
+        to_encode["role"] = role
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
@@ -140,15 +172,15 @@ def get_user_by_id(db: Session, user_id: int) -> Optional[User]:
 
 
 def authenticate_user(db: Session, username: str, password: str) -> Optional[User]:
-    """Autenticar usuario - restaura usuarios existentes a activo"""
+    """Autenticar usuario.
+
+    NO reactiva usuarios desactivados: si un administrador desactiva una cuenta
+    desde el panel, esa cuenta queda fuera hasta que él la vuelva a activar.
+    Reactivarla al iniciar sesión anularía la desactivación.
+    """
     user = get_user_by_username(db, username)
     if not user or not verify_password(password, user.password_hash):
         return None
-    # Restaurar usuarios existentes que quedaron inactivos
-    if user.is_active is False:
-        user.is_active = True
-        db.commit()
-        db.refresh(user)
     return user
 
 

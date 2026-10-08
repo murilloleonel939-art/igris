@@ -1,11 +1,12 @@
 <template>
   <div id="app" class="min-h-screen bg-gradient-to-br from-slate-900 to-slate-800">
-    <!-- Igris a pantalla completa de fondo (solo en el chat) -->
+    <!-- Igris a pantalla completa de fondo (solo en el chat del administrador;
+         el chat de usuarios monta su propio fondo dentro de UserChat) -->
     <IgrisHero v-if="$route.name === 'Chat'" />
 
-    <!-- Navigation Menu (oculto en la pantalla de acceso) -->
+    <!-- Navigation Menu (solo en las rutas del administrador) -->
     <nav
-      v-if="$route.name && $route.name !== 'Access'"
+      v-if="showNav"
       class="border-b border-slate-700"
       style="position: relative; z-index: 10; background: rgba(15, 23, 42, 0.55); backdrop-filter: blur(6px)"
     >
@@ -23,6 +24,13 @@
           class="px-4 py-2 rounded transition-all"
         >
           ⚙️ Configuración
+        </router-link>
+        <router-link 
+          to="/panel/usuarios" 
+          :class="{ 'bg-blue-600 text-white': $route.name === 'AdminUsers', 'bg-slate-600 hover:bg-slate-700 text-slate-300': $route.name !== 'AdminUsers' }"
+          class="px-4 py-2 rounded transition-all"
+        >
+          👥 Usuarios
         </router-link>
         <button
           type="button"
@@ -42,11 +50,19 @@
 </template>
 
 <script setup>
-import { useRouter } from 'vue-router'
+import { computed } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import IgrisHero from './components/IgrisHero.vue'
 import { clearKey } from './api'
 
+const route = useRoute()
 const router = useRouter()
+
+// El menú es solo del administrador. El área de usuarios (/u) tiene su propia
+// barra con su nombre y su botón de salir, y no debe ver ni Configuración ni
+// Usuarios ni la pantalla de la clave.
+const ADMIN_ROUTES = ['Chat', 'Configuration', 'AdminUsers']
+const showNav = computed(() => ADMIN_ROUTES.includes(route.name))
 
 // Borra la clave guardada y vuelve a la pantalla de acceso.
 // Al cambiar de ruta, la página actual se desmonta (Dashboard detiene el micrófono).

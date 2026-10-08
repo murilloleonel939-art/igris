@@ -47,8 +47,11 @@ git push origin main
 3. El token debe tener acceso a: `murilloleonel939-art/igris`
 
 Token actual (en caso de necesidad):
+
 ```
-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
+(el token ya no se guarda aquí: este archivo está en el repositorio y cualquiera
+ con acceso al código podría usarlo. Guárdalo en Coolify → Settings → Git
+ Integration, o en la variable de entorno GITHUB_TOKEN de tu máquina.)
 ```
 
 ---
@@ -87,7 +90,7 @@ npm start
 Clickear **"Add Environment Variable"** y agregar:
 
 ```env
-VITE_API_URL=https://igris.zottaggroup.com
+VITE_API_URL=https://igris.zottagroup.com
 NODE_ENV=production
 PORT=3000
 ```
@@ -170,7 +173,7 @@ En la página de login:
 Desde el navegador, acceder a:
 
 ```
-https://igris.zottaggroup.com/health
+https://igris.zottagroup.com/health
 ```
 Debe retornar:
 ```json
@@ -178,7 +181,7 @@ Debe retornar:
 ```
 
 ```
-https://igris.zottaggroup.com/status
+https://igris.zottagroup.com/status
 ```
 Debe retornar información del sistema.
 

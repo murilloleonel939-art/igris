@@ -27,7 +27,7 @@
 
 ✅ ENVIRONMENT SETUP
    • Created web/.env.production
-   • Configured VITE_API_URL=https://igris.zottaggroup.com
+   • Configured VITE_API_URL=https://igris.zottagroup.com
    • Backend API correctly targeted
    • Variables ready for Coolify
 
@@ -88,7 +88,7 @@ Backend (Already Running)
   • Service: FastAPI (Python)
   • Port: 8000
   • Status: ✅ Operational
-  • URL: https://igris.zottaggroup.com/api/*
+  • URL: https://igris.zottagroup.com/api/*
   • Features: JWT, 2FA, PostgreSQL, 15+ endpoints
   • CORS: ✅ Enabled
 
@@ -96,12 +96,12 @@ Frontend (Ready to Deploy)
   • Service: Vue 3 + Node.js (Express)
   • Port: 3000 (configurable)
   • Status: 🔄 Ready for Coolify
-  • URL: https://igris.zottaggroup.com/
+  • URL: https://igris.zottagroup.com/
   • Build: ✅ Complete
   • Server: ✅ Configured
 
 Infrastructure
-  • Domain: igris.zottaggroup.com
+  • Domain: igris.zottagroup.com
   • SSL/HTTPS: ✅ Automatic (Let's Encrypt)
   • Platform: Coolify (EC2)
   • DNS: ✅ Pointing correctly
@@ -118,7 +118,7 @@ Infrastructure
    git push origin main
 
 2. CREATE APP IN COOLIFY
-   • Navigate: https://coolify.zottaggroup.com
+   • Navigate: https://coolify.zottagroup.com
    • New Application → GitHub
    • Repository: murilloleonel939-art/igris
    • Name: IGRIS Frontend
@@ -130,7 +130,7 @@ Infrastructure
    Start Command: npm start
 
 4. SET ENVIRONMENT
-   VITE_API_URL=https://igris.zottaggroup.com
+   VITE_API_URL=https://igris.zottagroup.com
    NODE_ENV=production
    PORT=3000
 
@@ -190,7 +190,7 @@ DOCUMENTATION                           STATUS
 
 Backend:    ✅ Running on EC2 Coolify (port 8000)
 Frontend:   ✅ Built and configured (ready for Coolify)
-Domainname: ✅ igris.zottaggroup.com
+Domainname: ✅ igris.zottagroup.com
 SSL/HTTPS:  ✅ Automatic (Let's Encrypt)
 GitHub:     ✅ Code synchronized (ready for push)
 Coolify:    ✅ Ready to receive new Frontend app
@@ -207,7 +207,7 @@ For detailed instructions:
   • Deployment checklist:   FRONTEND_DEPLOYMENT.md
 
 Repository:   https://github.com/murilloleonel939-art/igris
-Frontend URL: https://igris.zottaggroup.com/
+Frontend URL: https://igris.zottagroup.com/
 API Docs:     https://igris.zottagroup.com/docs
 Health:       https://igris.zottagroup.com/health
 

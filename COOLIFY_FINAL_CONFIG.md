@@ -38,7 +38,7 @@ En el menú lateral, busca y clickea en **"Build"** o **"Build Pipeline"**.
 Clickea **"Add Environment Variable"** y añade estas 3:
 
 ```
-VITE_API_URL = https://igris.zottaggroup.com
+VITE_API_URL = https://igris.zottagroup.com
 NODE_ENV = production
 PORT = 3000
 ```
@@ -154,7 +154,7 @@ Es tan simple que casi no puede fallar. Funciona porque:
 - [ ] Dockerfile location = /web/Dockerfile
 - [ ] Base directory = /
 - [ ] Port = 3000
-- [ ] VITE_API_URL = https://igris.zottaggroup.com
+- [ ] VITE_API_URL = https://igris.zottagroup.com
 - [ ] NODE_ENV = production
 - [ ] PORT = 3000
 - [ ] Clickee Deploy
