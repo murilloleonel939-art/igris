@@ -131,7 +131,7 @@ def redirect_uri() -> str:
     base = os.environ.get("IGRIS_PUBLIC_URL", "").strip().rstrip("/")
     if base:
         return f"{base}/api/user/google/callback"
-    return "https://webigris.zottagroup.com/api/user/google/callback"
+    return "https://igris.zottagroup.com/api/user/google/callback"
 
 
 def env_credentials() -> Optional[Credentials]:
