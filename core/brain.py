@@ -396,7 +396,7 @@ class BrainSession:
             self.turns = self.turns[-MAX_HISTORY_TURNS:]
             return quick
 
-        messages = [{"role": "system", "content": _system_message()}]
+        messages = [{"role": "system", "content": _system_message(self.addressing_instruction)}]
         for turn in self.turns[-MAX_HISTORY_TURNS:]:
             messages += turn
         messages.append(user_msg)
