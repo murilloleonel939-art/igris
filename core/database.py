@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import (
     create_engine, Column, String, Integer, BigInteger, Boolean, DateTime, Text,
-    ForeignKey, JSON, Index, text,
+    ForeignKey, JSON, Index, UniqueConstraint, text,
 )
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import OperationalError, ProgrammingError
@@ -126,6 +126,20 @@ class User(Base):
     is_admin = Column(Boolean, default=False)
     is_active = Column(Boolean, default=True)
     addressing_instruction = Column(Text, nullable=True)  # Instrucción de trato personalizado para Igris
+
+    # ── Funciones habilitadas (permisos) ────────────────────────────────────
+    # Cada columna abre una función de Igris para ese usuario. Los nombres y los
+    # valores por defecto viven en core/capabilities.py (FEATURES / DEFAULT_FEATURES);
+    # aquí solo se declaran. Hora y clima vienen activos; el resto lo abre el
+    # administrador desde el panel.
+    can_use_time = Column(Boolean, default=True, nullable=False)
+    can_use_weather = Column(Boolean, default=True, nullable=False)
+    can_use_email = Column(Boolean, default=False, nullable=False)
+    can_use_calendar = Column(Boolean, default=False, nullable=False)
+    can_use_calendar_write = Column(Boolean, default=False, nullable=False)
+    can_use_notes = Column(Boolean, default=False, nullable=False)
+    can_use_reminders = Column(Boolean, default=False, nullable=False)
+
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -133,6 +147,8 @@ class User(Base):
     two_fa = relationship("TwoFactorAuth", back_populates="user", uselist=False, cascade="all, delete-orphan")
     profiles = relationship("Profile", back_populates="user", cascade="all, delete-orphan")
     ai_config = relationship("AIConfig", back_populates="user", uselist=False, cascade="all, delete-orphan")
+    google_account = relationship("GoogleAccount", back_populates="user", uselist=False, cascade="all, delete-orphan")
+    telegram_link = relationship("TelegramLink", back_populates="user", uselist=False, cascade="all, delete-orphan")
 
 
 class TwoFactorAuth(Base):
@@ -201,10 +217,15 @@ class Session(Base):
 
 
 class Reminder(Base):
-    """Recordatorio de Igris. due_at se guarda en UTC (sin zona); se muestra en hora de Colombia."""
+    """Recordatorio de Igris. due_at se guarda en UTC (sin zona); se muestra en hora de Colombia.
+
+    Cada recordatorio pertenece a UN usuario (user_id). Las filas anteriores a la
+    separación por usuario se asignan al administrador en la migración.
+    """
     __tablename__ = "reminders"
 
     id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
     text = Column(String(200), nullable=False)
     due_at = Column(DateTime, nullable=False)                    # UTC
     status = Column(String(20), default="pendiente", nullable=False)  # pendiente | enviado | cancelado
@@ -219,41 +240,185 @@ class Reminder(Base):
 
 
 class Note(Base):
-    """Nota de texto libre del usuario"""
+    """Nota de texto libre, siempre de un usuario concreto (user_id)."""
     __tablename__ = "notes"
 
     id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
     text = Column(Text, nullable=False)
     created_at = Column(DateTime, default=utcnow, nullable=False)
 
 
+class GoogleAccount(Base):
+    """Cuenta de Google que un usuario ha autorizado (Gmail y Calendar).
+
+    El refresh token va CIFRADO (core/crypto.py): da acceso al correo y al
+    calendario y no puede quedar en claro en la base. Un usuario tiene como mucho
+    una cuenta; volver a autorizar sustituye la anterior.
+    """
+    __tablename__ = "google_accounts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, unique=True, index=True)
+    email = Column(String(255), nullable=True)              # cuenta de Google autorizada
+    refresh_token_enc = Column(Text, nullable=False)        # cifrado con core.crypto
+    scopes = Column(Text, nullable=True)                    # permisos concedidos, separados por espacios
+    last_error = Column(Text, nullable=True)                # último fallo de Google (token revocado, etc.)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
+
+    user = relationship("User", back_populates="google_account")
+
+
+class TelegramLink(Base):
+    """Vinculación entre un usuario de Igris y su chat de Telegram.
+
+    Se crea en dos pasos: el usuario pide un código en la web y luego envía
+    "/start <código>" al bot. Solo entonces se guarda el chat_id. Así nadie puede
+    hacerse pasar por otro: el código caduca y es de un solo uso.
+
+    chat_id es NULL mientras el código está pendiente; la restricción UNIQUE
+    impide que un mismo chat quede enlazado a dos usuarios.
+    """
+    __tablename__ = "telegram_links"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, unique=True, index=True)
+    chat_id = Column(BigInteger, nullable=True, unique=True, index=True)
+    link_code = Column(String(32), nullable=True)           # código temporal de vinculación
+    code_expires_at = Column(DateTime, nullable=True)
+    username = Column(String(100), nullable=True)           # @usuario de Telegram, informativo
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    linked_at = Column(DateTime, nullable=True)
+
+    user = relationship("User", back_populates="telegram_link")
+
+
 # Crear tablas
+def _table_exists(conn, dialect: str, table: str) -> bool:
+    """¿Existe ya la tabla?
+
+    Hace falta porque init_db() puede llamar a las migraciones en un momento en el
+    que las tablas todavía no están: si create_all() falló y se reintenta, la
+    primera pasada que salga bien crea las tablas, pero mientras tanto no se puede
+    dar por hecho que existen (un ALTER TABLE sobre algo que no está da un error
+    que parece un fallo de la base y no lo es).
+    """
+    if dialect == "sqlite":
+        row = conn.execute(
+            text("SELECT 1 FROM sqlite_master WHERE type='table' AND name = :t"),
+            {"t": table},
+        ).fetchone()
+        return row is not None
+    row = conn.execute(
+        text(
+            "SELECT 1 FROM information_schema.tables "
+            "WHERE table_name = :t AND table_schema = current_schema()"
+        ),
+        {"t": table},
+    ).fetchone()
+    return row is not None
+
+
+def _column_exists(conn, dialect: str, table: str, column: str) -> bool:
+    """¿Existe ya la columna? (create_all no toca tablas que ya existen)."""
+    if dialect == "sqlite":
+        rows = conn.execute(text(f"PRAGMA table_info({table})")).fetchall()
+        return any(row[1] == column for row in rows)
+    row = conn.execute(
+        text(
+            "SELECT 1 FROM information_schema.columns "
+            "WHERE table_name = :t AND column_name = :c"
+        ),
+        {"t": table, "c": column},
+    ).fetchone()
+    return row is not None
+
+
+def _owner_user_id(conn) -> int:
+    """A quién se le asignan los datos anteriores a la separación por usuario.
+
+    Se busca el administrador más antiguo (o, si no hay ninguno marcado como tal,
+    el usuario más antiguo). Todo lo que había antes de este cambio pertenecía al
+    dueño de la instalación, y ese es el administrador.
+    """
+    row = conn.execute(text(
+        "SELECT id FROM users ORDER BY is_admin DESC, id ASC LIMIT 1"
+    )).fetchone()
+    return row[0] if row else 0
+
+
 def _run_migrations(engine) -> None:
     """Aplica migraciones incrementales: añade columnas nuevas a tablas existentes.
 
     create_all() no modifica tablas que ya existen, así que cualquier columna
     añadida al modelo después del primer despliegue debe agregarse aquí.
     El patrón es idempotente: comprueba si la columna existe antes de añadirla.
+
+    Las columnas de permisos se añaden con DEFAULT para que las filas ya
+    existentes queden con un valor válido (en SQLite, añadir una columna NOT NULL
+    sin default falla directamente).
     """
     dialect = engine.dialect.name  # "sqlite" o "postgresql"
 
     with engine.begin() as conn:
+        # Si las tablas todavía no existen (create_all acaba de fallar y se está
+        # reintentando), no hay nada que migrar: se sale sin error. La siguiente
+        # pasada, con las tablas ya creadas, aplicará lo que falte.
+        if not _table_exists(conn, dialect, "users"):
+            logger.info("Migraciones omitidas: la tabla 'users' todavía no existe")
+            return
+
         # ── users.addressing_instruction ────────────────────────────────────
-        if dialect == "sqlite":
-            rows = conn.execute(text("PRAGMA table_info(users)")).fetchall()
-            existing = {row[1] for row in rows}
-            if "addressing_instruction" not in existing:
-                conn.execute(text("ALTER TABLE users ADD COLUMN addressing_instruction TEXT"))
-                logger.info("Migración aplicada: users.addressing_instruction (sqlite)")
-        else:
-            # PostgreSQL: information_schema es fiable en todos los proveedores
-            row = conn.execute(text(
-                "SELECT 1 FROM information_schema.columns "
-                "WHERE table_name='users' AND column_name='addressing_instruction'"
-            )).fetchone()
-            if not row:
-                conn.execute(text("ALTER TABLE users ADD COLUMN addressing_instruction TEXT"))
-                logger.info("Migración aplicada: users.addressing_instruction (postgresql)")
+        if not _column_exists(conn, dialect, "users", "addressing_instruction"):
+            conn.execute(text("ALTER TABLE users ADD COLUMN addressing_instruction TEXT"))
+            logger.info("Migración aplicada: users.addressing_instruction (%s)", dialect)
+
+        # ── users.can_use_* (permisos por función) ──────────────────────────
+        # Los valores por defecto se repiten aquí a propósito: son literales SQL
+        # fijos, no deben depender de lo que diga capabilities.py en el futuro
+        # (si mañana cambia el defecto, las bases ya migradas no deben cambiar).
+        # Hora y clima nacen activos; el resto, apagado.
+        permission_defaults = (
+            ("can_use_time", "TRUE"),
+            ("can_use_weather", "TRUE"),
+            ("can_use_email", "FALSE"),
+            ("can_use_calendar", "FALSE"),
+            ("can_use_calendar_write", "FALSE"),
+            ("can_use_notes", "FALSE"),
+            ("can_use_reminders", "FALSE"),
+        )
+        for column, default in permission_defaults:
+            if _column_exists(conn, dialect, "users", column):
+                continue
+            # TRUE/FALSE los entienden los dos dialectos (en SQLite son 1 y 0).
+            conn.execute(text(
+                f"ALTER TABLE users ADD COLUMN {column} BOOLEAN NOT NULL DEFAULT {default}"
+            ))
+            logger.info("Migración aplicada: users.%s (%s)", column, dialect)
+
+        # ── Separación de datos por usuario (notes, reminders) ──────────────
+        # Se añade la columna y se asignan las filas existentes al dueño de la
+        # instalación. Se queda NULLABLE en la base por compatibilidad (SQLite no
+        # permite añadir NOT NULL sin default), pero el servidor siempre escribe
+        # user_id y filtra por él: ver core/tools/notes.py y reminders.py.
+        for table in ("notes", "reminders"):
+            if not _table_exists(conn, dialect, table):
+                continue
+            if _column_exists(conn, dialect, table, "user_id"):
+                continue
+            conn.execute(text(f"ALTER TABLE {table} ADD COLUMN user_id INTEGER"))
+            logger.info("Migración aplicada: %s.user_id (%s)", table, dialect)
+            owner = _owner_user_id(conn)
+            if owner:
+                result = conn.execute(
+                    text(f"UPDATE {table} SET user_id = :o WHERE user_id IS NULL"),
+                    {"o": owner},
+                )
+                logger.info(
+                    "Datos anteriores de %s asignados al usuario %s (%s filas)",
+                    table, owner, result.rowcount,
+                )
 
 
 def init_db(retries: int = 10, delay: float = 2.0) -> None:

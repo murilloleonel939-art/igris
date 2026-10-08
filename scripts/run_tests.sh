@@ -21,9 +21,10 @@
 # cada suite, y se para el backend antes de pasar a la siguiente.
 #
 # USO
-#   scripts/run_tests.sh            # las tres suites
+#   scripts/run_tests.sh            # las cuatro suites
 #   scripts/run_tests.sh users      # solo el área de usuarios
 #   scripts/run_tests.sh frontend   # solo el frontend (necesita el frontend vivo)
+#   scripts/run_tests.sh telegram   # solo Telegram y recordatorios
 #   scripts/run_tests.sh postgres   # solo la parte de PostgreSQL
 #
 # Para la suite del frontend hace falta, además, el servidor del frontend:
@@ -53,6 +54,7 @@ LOG_DIR="${TMPDIR:-/tmp}"
 resultado_usuarios=SKIP
 resultado_frontend=SKIP
 resultado_postgres=SKIP
+resultado_telegram=SKIP
 
 # ---------------------------------------------------------------- utilidades
 
@@ -132,7 +134,7 @@ resumir() {
 
 suite_usuarios() {
   echo
-  echo "=== 1/3 · Área de usuarios y panel  (puerto 8099) ==="
+  echo "=== 1/4 · Área de usuarios y panel  (puerto 8099) ==="
   limpiar_base
   arrancar_backend 8099 "$LOG_DIR/igris-test-8099.log" || { resultado_usuarios=FALLO; return 1; }
 
@@ -145,7 +147,7 @@ suite_usuarios() {
 
 suite_frontend() {
   echo
-  echo "=== 2/3 · Todo a través del frontend  (frontend 3100 + backend 8000) ==="
+  echo "=== 2/4 · Todo a través del frontend  (frontend 3100 + backend 8000) ==="
 
   if ! curl -s -o /dev/null --max-time 3 http://127.0.0.1:3100/ 2>/dev/null; then
     echo "   El frontend no está corriendo en el 3100."
@@ -166,10 +168,20 @@ suite_frontend() {
 
 suite_postgres() {
   echo
-  echo "=== 3/3 · PostgreSQL y arranque de la base  (sin servidor) ==="
+  echo "=== 4/4 · PostgreSQL y arranque de la base  (sin servidor) ==="
   limpiar_base
   "$PY" tests/test_postgres.py 2>&1 | tee "$LOG_DIR/igris-test-postgres.log" | tail -30
   resultado_postgres="$(resumir "$LOG_DIR/igris-test-postgres.log")"
+}
+
+# Telegram y recordatorios: no necesita servidor (llama a las funciones
+# directamente), pero SÍ que no haya un backend vivo usando la misma base.
+suite_telegram() {
+  echo
+  echo "=== 3/4 · Telegram y recordatorios  (sin servidor) ==="
+  parar_backends
+  "$PY" tests/test_telegram.py 2>&1 | tee "$LOG_DIR/igris-test-telegram.log" | tail -30
+  resultado_telegram="$(resumir "$LOG_DIR/igris-test-telegram.log")"
 }
 
 # ------------------------------------------------------------------- arranque
@@ -177,14 +189,16 @@ suite_postgres() {
 case "${1:-todo}" in
   users)    suite_usuarios ;;
   frontend) suite_frontend ;;
+  telegram) suite_telegram ;;
   postgres) suite_postgres ;;
   todo)
     suite_usuarios
     suite_frontend
+    suite_telegram
     suite_postgres
     ;;
   *)
-    echo "Uso: $0 [todo|users|frontend|postgres]" >&2
+    echo "Uso: $0 [todo|users|frontend|telegram|postgres]" >&2
     exit 2
     ;;
 esac
@@ -194,13 +208,14 @@ echo "============================================================"
 echo "  RESUMEN"
 echo "   · Área de usuarios : $resultado_usuarios"
 echo "   · Frontend         : $resultado_frontend"
+echo "   · Telegram         : $resultado_telegram"
 echo "   · PostgreSQL       : $resultado_postgres"
 echo "============================================================"
 echo
 
 # El script falla si alguna suite que SÍ se ejecutó dejó fallos. Las que no se
 # ejecutaron (SKIP) o no se pudieron ejecutar no cuentan como fallo.
-for r in "$resultado_usuarios" "$resultado_frontend" "$resultado_postgres"; do
+for r in "$resultado_usuarios" "$resultado_frontend" "$resultado_telegram" "$resultado_postgres"; do
   case "$r" in
     *", 0 fallidas"*) : ;;
     SKIP|*"NO EJECUTADA"*) : ;;

@@ -15,6 +15,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 
 from core import Brain, config, stt          # ← añadido stt
+from core import database, telegram_links
+from core.capabilities import admin_capabilities, capabilities_from_user
+from core.database import GoogleAccount
 from core.settings_manager import get_settings
 from core import tts
 from core.database import init_db, engine
@@ -441,12 +444,42 @@ async def process_telegram_update(update_dict: dict):
         return
 
     # ------------------- Autorización -------------------
-    if user.id not in ALLOWED_TELEGRAM_IDS:
-        # Usuario no autorizado: respondemos solo para no dejar colgado al remitente.
+    # Dos formas de estar autorizado:
+    #   a) El chat está VINCULADO a una cuenta de Igris (/start <código> desde /u).
+    #      Entonces se atiende como ESE usuario, con sus permisos y sus datos.
+    #   b) El id está en ALLOWED_TELEGRAM_IDS: la lista de siempre, del dueño de la
+    #      instalación. Se mantiene para no romper el uso personal, y esas sesiones
+    #      conservan todos los permisos.
+    linked_user = await asyncio.to_thread(telegram_links.resolve_user, user.id)
+    is_env_allowed = user.id in ALLOWED_TELEGRAM_IDS
+
+    if linked_user is None and not is_env_allowed:
+        # Antes de rechazar, puede ser alguien intentando vincularse: se mira si
+        # mandó /start con un código válido.
+        message = update.effective_message
+        text = (message.text or "").strip() if message and message.text else ""
+        parts = text.split()
+        if len(parts) >= 2 and parts[0].lower().startswith("/start"):
+            linked_id, respuesta = await asyncio.to_thread(
+                telegram_links.link_chat, parts[1], user.id, user.username
+            )
+            if linked_id is not None:
+                await message.reply_text(
+                    "¡Listo! Tu Telegram quedó vinculado a tu cuenta de Igris. "
+                    "Ya puedes escribirme por aquí y tus recordatorios te llegarán a este chat."
+                )
+                return
+            await message.reply_text(respuesta)
+            return
+
         try:
             await telegram_bot.send_message(
                 chat_id=user.id,
-                text="🚫 Lo siento, mi señor, pero no estás autorizado para usar este bot."
+                text=(
+                    "🚫 No reconozco este chat. Si tienes cuenta en Igris, entra en tu "
+                    "página, abre «Conexiones», pide un código y envíamelo así: "
+                    "/start <código>"
+                ),
             )
         except Exception:
             pass  # No podemos hacer mucho si falla el envío
@@ -492,8 +525,39 @@ async def process_telegram_update(update_dict: dict):
         cmd = parts[0].lower()
 
         if cmd in ("/start", "/help"):
+            if len(parts) >= 2 and cmd == "/start":
+                # Un chat YA autorizado que manda un código nuevo quiere vincularse a
+                # OTRA cuenta (por ejemplo, el dueño prestó el teléfono). Un chat de
+                # ALLOWED_TELEGRAM_IDS no está vinculado a ninguna cuenta, así que
+                # puede vincularse sin más.
+                if linked_user is not None:
+                    nuevo_id, respuesta = await asyncio.to_thread(
+                        telegram_links.link_chat, parts[1], user.id, user.username
+                    )
+                    if nuevo_id is not None:
+                        await message.reply_text(
+                            "Listo: este chat quedó vinculado a la nueva cuenta de Igris."
+                        )
+                    else:
+                        await message.reply_text(respuesta)
+                    return
+                await message.reply_text(
+                    "Este chat ya está autorizado. Envíeme su orden."
+                )
+                return
             await message.reply_text(
                 "¡Saludos, mi señor! Soy Igris. Envíeme su orden."
+            )
+            return
+
+        # Los comandos de configuración cambian los ajustes de TODA la instalación
+        # (qué proveedor de IA se usa). Solo el dueño —los chats de
+        # ALLOWED_TELEGRAM_IDS— puede tocarlos: un usuario vinculado tiene su propio
+        # chat, pero no es el administrador de Igris.
+        if cmd in ("/config", "/setprovider", "/setfallback") and not is_env_allowed:
+            await message.reply_text(
+                "Eso cambia la configuración de Igris para todos, y solo puede hacerlo "
+                "el administrador."
             )
             return
 
@@ -551,7 +615,34 @@ async def _get_igris_reply(text: str, session_key: Optional[str] = None) -> str:
     try:
         session = sessions.get(session_key)
         if session_key and session_key.startswith("tg:"):
-            session.telegram_id = int(session_key[3:])  # los recordatorios avisarán a este chat
+            chat_id = int(session_key[3:])  # los recordatorios avisarán a este chat
+            session.telegram_id = chat_id
+            # Identidad y permisos del chat vinculado. Se resuelven en cada mensaje:
+            # si el usuario se desvincula o el admin le cambia los permisos, el
+            # siguiente mensaje ya lo refleja.
+            linked_user = await asyncio.to_thread(telegram_links.resolve_user, chat_id)
+            if linked_user is not None:
+                session.user_id = linked_user.id
+                session.capabilities = (
+                    admin_capabilities()
+                    if linked_user.is_admin
+                    else capabilities_from_user(linked_user)
+                )
+                session.addressing_instruction = linked_user.addressing_instruction or ""
+                session.telegram_linked = True
+                with database.SessionLocal() as db:
+                    account = db.query(GoogleAccount).filter(
+                        GoogleAccount.user_id == linked_user.id
+                    ).first()
+                    session.google_linked = account.email if account is not None else None
+            else:
+                # Chat autorizado por la lista del entorno (uso personal del dueño):
+                # sin límites, como antes.
+                session.user_id = None
+                session.capabilities = admin_capabilities()
+                session.addressing_instruction = ""
+                session.telegram_linked = True
+                session.google_linked = None
         reply = await session.say(text)
         return reply
     except Exception as e:

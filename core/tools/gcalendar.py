@@ -1,4 +1,8 @@
-"""Herramienta de Google Calendar para IGRIS (solo lectura, hora de Colombia)."""
+"""Herramienta de Google Calendar para IGRIS (solo lectura, hora de Colombia).
+
+Se consulta el calendario de la cuenta de Google del usuario de la conversación
+(_session), no una cuenta compartida.
+"""
 
 import logging
 from datetime import datetime, timedelta
@@ -7,7 +11,8 @@ from zoneinfo import ZoneInfo
 
 import httpx
 
-from core.tools.google_client import google_get
+from core.tools._common import google_credentials, google_error_message
+from core.tools.google_client import GoogleNotConfigured, GoogleReauthNeeded, google_get
 from core.tools.time_tools import DEFAULT_TZ, _format
 
 logger = logging.getLogger(__name__)
@@ -20,7 +25,7 @@ def _parse_dt(value: str, tz: ZoneInfo) -> datetime:
     return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(tz)
 
 
-async def list_events(date: Optional[str] = None, days: int = 1) -> dict:
+async def list_events(date: Optional[str] = None, days: int = 1, _session=None) -> dict:
     """Eventos del calendario principal desde `date` (YYYY-MM-DD, por defecto hoy) durante `days` días."""
     tz = ZoneInfo(DEFAULT_TZ)
     days = max(1, min(int(days or 1), 14))
@@ -34,18 +39,29 @@ async def list_events(date: Optional[str] = None, days: int = 1) -> dict:
         start = datetime.now(tz).replace(hour=0, minute=0, second=0, microsecond=0)
     end = start + timedelta(days=days)
 
-    async with httpx.AsyncClient(timeout=15) as client:
-        data = await google_get(
-            client,
-            EVENTS_URL,
-            {
-                "timeMin": start.isoformat(),
-                "timeMax": end.isoformat(),
-                "singleEvents": "true",
-                "orderBy": "startTime",
-                "maxResults": MAX_EVENTS,
-            },
-        )
+    creds, error = await google_credentials(_session)
+    if error:
+        return error
+
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            data = await google_get(
+                client,
+                creds,
+                EVENTS_URL,
+                {
+                    "timeMin": start.isoformat(),
+                    "timeMax": end.isoformat(),
+                    "singleEvents": "true",
+                    "orderBy": "startTime",
+                    "maxResults": MAX_EVENTS,
+                },
+            )
+    except (GoogleNotConfigured, GoogleReauthNeeded) as e:
+        return google_error_message(e)
+    except httpx.HTTPStatusError as e:
+        logger.error("Calendar devolvió %s al listar eventos", e.response.status_code)
+        return google_error_message(e)
 
     events = []
     for ev in data.get("items", []):

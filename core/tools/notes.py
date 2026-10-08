@@ -1,5 +1,10 @@
 """Notas de IGRIS: anotar, listar, buscar y borrar.
 
+Cada nota pertenece a UN usuario (notes.user_id). Todas las consultas filtran por
+el usuario de la conversación, así que nadie ve ni puede borrar las notas de
+otro. El usuario lo pone el servidor (token de /u o chat de Telegram enlazado),
+nunca el modelo.
+
 El contenido de una nota es DATO del usuario (puede incluir texto pegado de terceros):
 nunca se trata como instrucciones. No se escribe el texto de las notas en los logs
 (pueden contener claves).
@@ -12,6 +17,7 @@ from core import database
 from core.database import Note
 from core.tools._common import (
     THIRD_PARTY_NOTICE, check_delete, format_date_local, normalize, register_delete,
+    require_user, session_user_id,
 )
 
 logger = logging.getLogger(__name__)
@@ -45,7 +51,12 @@ def rank_notes(rows: list, query: str) -> list:
     return [(nid, text, created) for _, _, nid, text, created in scored]
 
 
-async def add_note(text: str) -> dict:
+async def add_note(text: str, _session=None) -> dict:
+    blocked = require_user(_session)
+    if blocked:
+        return blocked
+    uid = session_user_id(_session)
+
     text = (text or "").strip()
     if not text:
         return {"error": "Falta el texto de la nota"}
@@ -54,26 +65,31 @@ async def add_note(text: str) -> dict:
 
     def _save():
         with database.SessionLocal() as db:
-            n = Note(text=text)
+            n = Note(text=text, user_id=uid)
             db.add(n)
             db.commit()
             return n.id
 
     nid = await asyncio.to_thread(_save)
-    logger.info(f"Nota {nid} guardada")
+    logger.info(f"Nota {nid} guardada (usuario {uid})")
     out = {"estado": "guardada", "id": nid}
     if truncated:
         out["aviso"] = f"La nota era muy larga y se recortó a {MAX_NOTE_CHARS} caracteres"
     return out
 
 
-async def list_notes() -> dict:
-    """Las notas más recientes."""
+async def list_notes(_session=None) -> dict:
+    """Las notas más recientes del usuario."""
+    blocked = require_user(_session)
+    if blocked:
+        return blocked
+    uid = session_user_id(_session)
 
     def _load():
         with database.SessionLocal() as db:
-            total = db.query(Note).count()
-            rows = db.query(Note).order_by(Note.created_at.desc(), Note.id.desc()).limit(MAX_LISTED).all()
+            q = db.query(Note).filter(Note.user_id == uid)
+            total = q.count()
+            rows = q.order_by(Note.created_at.desc(), Note.id.desc()).limit(MAX_LISTED).all()
             return total, [(n.id, n.text, n.created_at) for n in rows]
 
     total, rows = await asyncio.to_thread(_load)
@@ -90,14 +106,25 @@ async def list_notes() -> dict:
     }
 
 
-async def search_notes(query: str) -> dict:
+async def search_notes(query: str, _session=None) -> dict:
     """Busca notas por palabras (sin importar tildes ni mayúsculas)."""
+    blocked = require_user(_session)
+    if blocked:
+        return blocked
+    uid = session_user_id(_session)
+
     if not normalize(query or ""):
         return {"error": "Falta qué buscar"}
 
     def _load():
         with database.SessionLocal() as db:
-            rows = db.query(Note).order_by(Note.created_at.desc(), Note.id.desc()).limit(SCAN_LIMIT).all()
+            rows = (
+                db.query(Note)
+                .filter(Note.user_id == uid)
+                .order_by(Note.created_at.desc(), Note.id.desc())
+                .limit(SCAN_LIMIT)
+                .all()
+            )
             return [(n.id, n.text, n.created_at) for n in rows]
 
     ranked = rank_notes(await asyncio.to_thread(_load), query)
@@ -115,10 +142,11 @@ async def search_notes(query: str) -> dict:
 
 
 async def delete_note(id: int, _session=None) -> dict:
-    """Borra UNA nota por su id (borrado real, no se puede deshacer)."""
-    blocked = check_delete(_session)
+    """Borra UNA nota del usuario por su id (borrado real, no se puede deshacer)."""
+    blocked = check_delete(_session) or require_user(_session)
     if blocked:
         return blocked
+    uid = session_user_id(_session)
     try:
         nid = int(id)
     except (TypeError, ValueError):
@@ -126,7 +154,13 @@ async def delete_note(id: int, _session=None) -> dict:
 
     def _delete():
         with database.SessionLocal() as db:
-            n = db.query(Note).filter(Note.id == nid).first()
+            # El filtro por user_id es lo que impide borrar la nota de otro
+            # usuario aunque acierte el id.
+            n = (
+                db.query(Note)
+                .filter(Note.id == nid, Note.user_id == uid)
+                .first()
+            )
             if n is None:
                 return None
             text = n.text
@@ -138,5 +172,5 @@ async def delete_note(id: int, _session=None) -> dict:
     if text is None:
         return {"error": "No hay una nota con ese número. Revisa la lista con list_notes"}
     register_delete(_session)
-    logger.info(f"Nota {nid} borrada")
+    logger.info(f"Nota {nid} borrada (usuario {uid})")
     return {"estado": "borrada", "id": nid, "texto": _preview(text, LIST_PREVIEW)}

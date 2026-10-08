@@ -20,14 +20,16 @@ de ese usuario; no puede alcanzar la sesión de otro.
 from __future__ import annotations
 
 import hmac
+import logging
 import re
 import secrets
 import time
 from collections import deque
-from datetime import timedelta
+from datetime import datetime, timedelta
 from threading import Lock
 from typing import Any, Optional
 
+import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from jose import JWTError, jwt
 from pydantic import BaseModel, field_validator
@@ -41,9 +43,18 @@ from core.auth import (
     hash_password,
     verify_password,
 )
-from core.database import User, get_db
+from core.capabilities import (
+    FEATURES,
+    FEATURE_ORDER,
+    DEFAULT_FEATURES,
+    admin_capabilities,
+    capabilities_from_user,
+)
+from core.database import GoogleAccount, TelegramLink, User, get_db
 
 router = APIRouter()
+
+logger = logging.getLogger(__name__)
 
 # ============= CONFIGURACIÓN =============
 
@@ -209,6 +220,14 @@ class UserCreateIn(BaseModel):
     email: str
     password: str
     is_admin: bool = False
+    # Funciones habilitadas de salida. Si no se envían, se aplican los valores por
+    # defecto de core/capabilities.py (hora y clima activos).
+    features: Optional[list[str]] = None
+
+    @field_validator("features")
+    @classmethod
+    def _v_features(cls, v):
+        return _validate_features(v)
 
     @field_validator("username")
     @classmethod
@@ -245,6 +264,12 @@ class UserUpdateIn(BaseModel):
     is_active: Optional[bool] = None
     is_admin: Optional[bool] = None
     addressing_instruction: Optional[str] = None  # Instrucción de trato personalizado
+    features: Optional[list[str]] = None          # Funciones habilitadas (reemplaza el conjunto)
+
+    @field_validator("features")
+    @classmethod
+    def _v_features(cls, v):
+        return _validate_features(v)
 
     @field_validator("email")
     @classmethod
@@ -268,6 +293,24 @@ class UserUpdateIn(BaseModel):
         return v
 
 
+def _validate_features(value):
+    """Comprueba que las funciones enviadas existen. None respeta el valor actual."""
+    if value is None:
+        return value
+    unknown = [f for f in value if f not in FEATURES]
+    if unknown:
+        raise ValueError("Función desconocida: " + ", ".join(unknown))
+    # Se guarda sin repetidos y en el orden canónico.
+    return [f for f in FEATURE_ORDER if f in set(value)]
+
+
+def _set_features(user: User, features) -> None:
+    """Escribe en el usuario las columnas de permisos según la lista de funciones."""
+    wanted = set(features or ())
+    for key, feat in FEATURES.items():
+        setattr(user, feat.column, key in wanted)
+
+
 class ChatIn(BaseModel):
     text: str
     session_id: Optional[str] = None
@@ -277,8 +320,28 @@ class TtsIn(BaseModel):
     text: str
 
 
-def _public_user(u: User) -> dict[str, Any]:
-    """Serializa un usuario SIN exponer nunca el hash de la contraseña."""
+def _public_user(u: User, db: Session = None) -> dict[str, Any]:
+    """Serializa un usuario SIN exponer nunca el hash de la contraseña.
+
+    Añade el estado de sus conexiones (Google y Telegram) para que el panel pueda
+    mostrarlo de un vistazo, sin dar ningún dato del token.
+    """
+    features = sorted(
+        (key for key, feat in FEATURES.items() if bool(getattr(u, feat.column, False))),
+        key=FEATURE_ORDER.index,
+    )
+
+    connection = {"google": None, "google_error": None, "telegram": None, "telegram_linked": False}
+    if db is not None:
+        account = db.query(GoogleAccount).filter(GoogleAccount.user_id == u.id).first()
+        if account is not None:
+            connection["google"] = account.email
+            connection["google_error"] = account.last_error
+        link = db.query(TelegramLink).filter(TelegramLink.user_id == u.id).first()
+        if link is not None:
+            connection["telegram_linked"] = bool(link.chat_id)
+            connection["telegram"] = link.username
+
     return {
         "id": u.id,
         "username": u.username,
@@ -286,11 +349,34 @@ def _public_user(u: User) -> dict[str, Any]:
         "is_admin": bool(u.is_admin),
         "is_active": bool(u.is_active),
         "addressing_instruction": u.addressing_instruction or "",
+        "features": features,
+        "connections": connection,
         "created_at": u.created_at.isoformat() if u.created_at else None,
     }
 
 
 # ============= ADMINISTRACIÓN DE USUARIOS =============
+
+@router.get("/api/admin/features")
+def list_features(_: None = Depends(require_admin_key)):
+    """Catálogo de funciones para el panel: qué existe, qué hace y qué necesita.
+
+    El panel se construye a partir de esto, así que añadir una función en
+    core/capabilities.py la hace aparecer sola en la interfaz.
+    """
+    return {
+        "features": [
+            {
+                "key": key,
+                "label": FEATURES[key].label,
+                "description": FEATURES[key].description,
+                "requires_google": FEATURES[key].requires_google,
+                "default": key in DEFAULT_FEATURES,
+            }
+            for key in FEATURE_ORDER
+        ]
+    }
+
 
 @router.get("/api/admin/users")
 def list_users(
@@ -298,7 +384,7 @@ def list_users(
     db: Session = Depends(get_db),
 ):
     users = db.query(User).order_by(User.id.asc()).all()
-    return {"users": [_public_user(u) for u in users]}
+    return {"users": [_public_user(u, db) for u in users]}
 
 
 @router.post("/api/admin/users", status_code=status.HTTP_201_CREATED)
@@ -326,10 +412,18 @@ def create_user(
         # El administrador crea la cuenta ya activa: puede entrar de inmediato.
         is_active=True,
     )
+    # Funciones: las que envíe el panel o, si no envía ninguna lista, las de fábrica.
+    # Ojo: una lista VACÍA es una elección válida (usuario sin ninguna función), así
+    # que se distingue de None.
+    if payload.features is None:
+        _set_features(user, DEFAULT_FEATURES)
+    else:
+        _set_features(user, payload.features)
+
     db.add(user)
     db.commit()
     db.refresh(user)
-    return _public_user(user)
+    return _public_user(user, db)
 
 
 @router.put("/api/admin/users/{user_id}")
@@ -361,10 +455,12 @@ def update_user(
         user.is_admin = payload.is_admin
     if payload.addressing_instruction is not None:
         user.addressing_instruction = payload.addressing_instruction.strip() or None
+    if payload.features is not None:
+        _set_features(user, payload.features)
 
     db.commit()
     db.refresh(user)
-    return _public_user(user)
+    return _public_user(user, db)
 
 
 @router.delete("/api/admin/users/{user_id}")
@@ -429,14 +525,14 @@ def user_login(
     return {
         "access_token": token,
         "token_type": "bearer",
-        "user": _public_user(user),
+        "user": _public_user(user, db),
     }
 
 
 @router.get("/api/user/me")
-def user_me(user: User = Depends(require_user)):
+def user_me(user: User = Depends(require_user), db: Session = Depends(get_db)):
     """Comprueba que la sesión sigue viva y devuelve los datos del usuario."""
-    return _public_user(user)
+    return _public_user(user, db)
 
 
 # ============= CHAT Y VOZ DEL USUARIO =============
@@ -452,8 +548,35 @@ def _session_key(user_id: int, client_sub: Optional[str]) -> str:
     return f"user:{user_id}:{sub or 'default'}"
 
 
+def _bind_identity(session, user: User, db: Session) -> None:
+    """Fija en la sesión QUIÉN es el usuario y QUÉ puede hacer.
+
+    Se hace en cada mensaje, no solo al crear la sesión: si el administrador
+    cambia los permisos o el usuario conecta su Google, el siguiente mensaje ya lo
+    nota, sin tener que esperar a que caduque la sesión (que dura 2 horas).
+
+    La sesión es la única fuente que ven las herramientas, y las herramientas no
+    la reciben del modelo: por eso un usuario no puede actuar como otro.
+    """
+    session.user_id = user.id
+    session.capabilities = (
+        admin_capabilities() if user.is_admin else capabilities_from_user(user)
+    )
+    session.addressing_instruction = user.addressing_instruction or ""
+
+    account = db.query(GoogleAccount).filter(GoogleAccount.user_id == user.id).first()
+    session.google_linked = account.email if account is not None else None
+
+    link = db.query(TelegramLink).filter(TelegramLink.user_id == user.id).first()
+    session.telegram_linked = bool(link and link.chat_id)
+
+
 @router.post("/api/user/chat")
-async def user_chat(payload: ChatIn, user: User = Depends(require_user)):
+async def user_chat(
+    payload: ChatIn,
+    user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+):
     text = (payload.text or "").strip()
     if not text:
         raise HTTPException(
@@ -470,9 +593,9 @@ async def user_chat(payload: ChatIn, user: User = Depends(require_user)):
     # El Brain se comparte con el resto del servidor, pero el historial queda
     # aislado por usuario gracias a la clave anterior.
     session = _sessions.get(_session_key(user.id, payload.session_id))
-    # Actualizar la instrucción de trato cada vez: si el admin la cambió
-    # en caliente, el próximo mensaje ya refleja el nuevo trato.
-    session.addressing_instruction = user.addressing_instruction or ""
+    # Identidad y permisos SIEMPRE frescos, y la instrucción de trato: si el admin
+    # la cambió en caliente, el próximo mensaje ya refleja el nuevo trato.
+    _bind_identity(session, user, db)
     try:
         reply = await session.say(text)
         return {"status": "ok", "reply": reply}
@@ -507,6 +630,341 @@ async def user_tts(payload: TtsIn, user: User = Depends(require_user)):
         media_type="audio/mpeg",
         headers={"Content-Disposition": "inline; filename=igris_response.mp3"},
     )
+
+
+# ============= CONEXIONES DEL USUARIO (Google y Telegram) =============
+
+# El estado del flujo OAuth vive en memoria y caduca: es una defensa contra CSRF
+# (que alguien fuerce la conexión de SU cuenta de Google en la sesión de otro).
+# Diez minutos son de sobra para completar el consentimiento de Google.
+OAUTH_STATE_TTL = 600
+
+_oauth_states: dict[str, tuple] = {}
+_oauth_lock = Lock()
+
+TELEGRAM_CODE_TTL = 900  # 15 minutos para usar el código de vinculación
+
+
+def _prune_oauth_states() -> None:
+    now = time.time()
+    for state, (_, created) in list(_oauth_states.items()):
+        if now - created > OAUTH_STATE_TTL:
+            _oauth_states.pop(state, None)
+
+
+def _issue_oauth_state(user_id: int) -> str:
+    state = secrets.token_urlsafe(32)
+    with _oauth_lock:
+        _prune_oauth_states()
+        _oauth_states[state] = (user_id, time.time())
+    return state
+
+
+def _consume_oauth_state(state: str) -> Optional[int]:
+    """Devuelve el user_id dueño del estado y lo borra (un solo uso)."""
+    with _oauth_lock:
+        _prune_oauth_states()
+        entry = _oauth_states.pop(state or "", None)
+    if entry is None:
+        return None
+    user_id, created = entry
+    if time.time() - created > OAUTH_STATE_TTL:
+        return None
+    return user_id
+
+
+def _google_status(user: User, db: Session) -> dict:
+    """Estado de la conexión de Google del usuario (sin exponer ningún token)."""
+    from core.tools import google_client
+
+    account = db.query(GoogleAccount).filter(GoogleAccount.user_id == user.id).first()
+    caps = admin_capabilities() if user.is_admin else capabilities_from_user(user)
+    needed = google_client.scopes_for(caps.features)
+    return {
+        "app_configured": google_client.oauth_configured(),
+        "connected": account is not None,
+        "email": account.email if account is not None else None,
+        "error": account.last_error if account is not None else None,
+        "needs_google": any(caps.has(f) for f in ("email", "calendar", "calendar_write")),
+        "scopes": needed,
+        "redirect_uri": google_client.redirect_uri(),
+    }
+
+
+@router.get("/api/user/connections")
+def user_connections(
+    user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+):
+    """Qué tiene conectado el usuario y qué le falta.
+
+    Es lo que alimenta la sección «Conexiones» de /u.
+    """
+    caps = admin_capabilities() if user.is_admin else capabilities_from_user(user)
+    link = db.query(TelegramLink).filter(TelegramLink.user_id == user.id).first()
+
+    return {
+        "features": sorted(caps.features, key=FEATURE_ORDER.index),
+        "google": _google_status(user, db),
+        "telegram": {
+            "linked": bool(link and link.chat_id),
+            "username": link.username if link else None,
+            "bot_url": None,  # lo rellena el frontend con la variable de build
+        },
+    }
+
+
+@router.get("/api/user/google/start")
+def google_start(user: User = Depends(require_user), db: Session = Depends(get_db)):
+    """Devuelve la URL de consentimiento de Google.
+
+    Se devuelve para que el frontend navegue él mismo, en lugar de redirigir
+    desde aquí: así el navegador manda el token de sesión (que no viaja en
+    cookies) y no hay que confiar en el estado de una redirección.
+    """
+    from urllib.parse import urlencode
+
+    from core.tools import google_client
+
+    client_id, _ = google_client.client_config()
+    if not (client_id and google_client.oauth_configured()):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "Google no está configurado en el servidor "
+                "(faltan GOOGLE_CLIENT_ID y GOOGLE_CLIENT_SECRET)."
+            ),
+        )
+
+    caps = admin_capabilities() if user.is_admin else capabilities_from_user(user)
+    scopes = google_client.scopes_for(caps.features)
+    if not any(caps.has(f) for f in ("email", "calendar", "calendar_write")):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "No tienes ninguna función de Google habilitada. "
+                "Pídele al administrador que te active el correo o el calendario."
+            ),
+        )
+
+    params = {
+        "client_id": client_id,
+        "redirect_uri": google_client.redirect_uri(),
+        "response_type": "code",
+        "scope": " ".join(scopes),
+        # access_type=offline + prompt=consent son lo que hace que Google entregue
+        # un refresh token (y uno nuevo aunque ya hubiera autorizado antes).
+        "access_type": "offline",
+        "prompt": "consent",
+        "include_granted_scopes": "true",
+        "state": _issue_oauth_state(user.id),
+    }
+    return {"auth_url": f"{google_client.AUTH_URL}?{urlencode(params)}"}
+
+
+@router.get("/api/user/google/callback")
+async def google_callback(
+    code: Optional[str] = None,
+    state: Optional[str] = None,
+    error: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    """Recibe el código de Google y guarda el refresh token del usuario.
+
+    OJO: esta URL la abre el NAVEGADOR (redirección de Google), así que no lleva
+    el token de sesión y no se puede exigir require_user. La identidad se
+    comprueba con el 'state', que este servidor emitió para un usuario concreto
+    hace menos de diez minutos y que solo sirve una vez. Sin eso, cualquiera
+    podría intentar conectar una cuenta ajena.
+
+    Devuelve una página HTML mínima que se cierra sola.
+    """
+    from core.tools import google_client
+    from core import crypto
+    from fastapi.responses import HTMLResponse
+    from html import escape
+
+    def _page(title: str, detail: str, ok: bool) -> HTMLResponse:
+        # Todo lo que se pinta aquí puede venir de fuera (el parámetro `error` lo
+        # pone Google, y una excepción puede arrastrar texto de una respuesta
+        # ajena). Se escapa siempre: sin esto, un mensaje de error que traiga
+        # etiquetas HTML se ejecutaría en el navegador del usuario.
+        color = "#10b981" if ok else "#ef4444"
+        return HTMLResponse(f"""<!doctype html>
+<html lang="es"><head><meta charset="utf-8">
+<title>Igris</title></head>
+<body style="margin:0;font-family:system-ui,sans-serif;background:#0f172a;color:#e2e8f0;
+             display:flex;align-items:center;justify-content:center;height:100vh">
+  <div style="text-align:center;max-width:32rem;padding:2rem">
+    <h1 style="color:{color};font-size:1.25rem;margin:0 0 .75rem">{escape(title)}</h1>
+    <p style="color:#94a3b8;line-height:1.6;margin:0">{escape(detail)}</p>
+    <p style="color:#64748b;font-size:.875rem;margin-top:1.5rem">
+      Puedes cerrar esta pestaña y volver a Igris.</p>
+  </div>
+</body></html>""")
+
+    if error:
+        return _page("No se conectó la cuenta", f"Google respondió: {error}", False)
+
+    if not code or not state:
+        return _page("Faltan datos", "Google no envió el código de autorización.", False)
+
+    user_id = _consume_oauth_state(state)
+    if user_id is None:
+        return _page(
+            "La solicitud caducó",
+            "Vuelve a intentarlo desde la sección «Conexiones». Por seguridad, "
+            "cada intento dura diez minutos y solo sirve una vez.",
+            False,
+        )
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if user is None or not user.is_active:
+        return _page("Cuenta no válida", "Tu usuario ya no está disponible.", False)
+
+    client_id, client_secret = google_client.client_config()
+
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            r = await client.post(
+                google_client.TOKEN_URL,
+                data={
+                    "code": code,
+                    "client_id": client_id,
+                    "client_secret": client_secret,
+                    "redirect_uri": google_client.redirect_uri(),
+                    "grant_type": "authorization_code",
+                },
+            )
+            payload = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
+            if r.status_code != 200:
+                reason = payload.get("error_description") or payload.get("error") or r.status_code
+                logger.error("Google rechazó el código de autorización: %s", reason)
+                return _page("Google rechazó la autorización", str(reason), False)
+    except Exception as e:
+        logger.exception("Fallo al canjear el código de Google")
+        return _page("No hubo conexión con Google", str(e), False)
+
+    refresh_token = payload.get("refresh_token")
+    if not refresh_token:
+        # Pasa cuando Google considera que ya había consentimiento. Con
+        # prompt=consent no debería ocurrir; si ocurre, se le dice qué hacer.
+        return _page(
+            "Sin permiso permanente",
+            "Google no entregó un permiso de larga duración. Entra en "
+            "myaccount.google.com/permissions, retira el acceso de Igris y "
+            "vuelve a intentarlo.",
+            False,
+        )
+
+    granted = payload.get("scope", "")
+    email = None
+
+    # El token se cifra ANTES de tocar la base. crypto.encrypt() puede fallar
+    # (falta la dependencia 'cryptography'), y en ese caso NO se guarda nada: es
+    # preferible pedirle al usuario que lo intente más tarde que dejar su refresh
+    # token en claro en la tabla.
+    try:
+        token_cifrado = crypto.encrypt(refresh_token)
+    except Exception as e:
+        logger.error("No se pudo cifrar el refresh token de Google: %s", e)
+        return _page(
+            "No se pudo guardar la conexión",
+            "El servidor no pudo guardar tu permiso de forma segura, así que no se "
+            "guardó nada. Avisa al administrador de Igris e inténtalo de nuevo.",
+            False,
+        )
+
+    # Se guarda ya el token para poder preguntarle a Google de qué cuenta es.
+    account = db.query(GoogleAccount).filter(GoogleAccount.user_id == user.id).first()
+    if account is None:
+        account = GoogleAccount(user_id=user.id, refresh_token_enc=token_cifrado)
+        db.add(account)
+    else:
+        account.refresh_token_enc = token_cifrado
+        account.last_error = None
+    account.scopes = granted
+    db.commit()
+
+    try:
+        creds = google_client.Credentials(
+            client_id=client_id,
+            client_secret=client_secret,
+            refresh_token=refresh_token,
+            user_id=user.id,
+        )
+        google_client.forget_token(user.id)
+        async with httpx.AsyncClient(timeout=15) as client:
+            info = await google_client.google_get(
+                client, creds, "https://openidconnect.googleapis.com/v1/userinfo"
+            )
+        email = info.get("email")
+    except Exception as e:
+        # No es grave: la cuenta funciona, solo no se pudo leer su correo.
+        logger.warning("No se pudo leer el correo de la cuenta conectada: %s", e)
+
+    if email:
+        account.email = email
+        db.commit()
+
+    logger.info("Cuenta de Google conectada para el usuario %s (%s)", user.id, email or "sin correo")
+
+    # Las herramientas leen la cuenta de la base en cada llamada, pero el access
+    # token cacheado de la cuenta anterior podría seguir vivo: se descarta.
+    google_client.forget_token(user.id)
+    return _page("Cuenta conectada", f"Ya puedes pedirle a Igris tu correo y tu calendario.", True)
+
+
+@router.delete("/api/user/google")
+def google_disconnect(user: User = Depends(require_user), db: Session = Depends(get_db)):
+    """Desconecta la cuenta de Google: borra el refresh token guardado."""
+    from core.tools import google_client
+
+    account = db.query(GoogleAccount).filter(GoogleAccount.user_id == user.id).first()
+    if account is not None:
+        db.delete(account)
+        db.commit()
+    google_client.forget_token(user.id)
+    logger.info("Cuenta de Google desconectada por el usuario %s", user.id)
+    return {"success": True, "message": "Cuenta de Google desconectada"}
+
+
+@router.post("/api/user/telegram/code")
+def telegram_code(user: User = Depends(require_user), db: Session = Depends(get_db)):
+    """Genera un código para vincular el Telegram del usuario.
+
+    El usuario lo envía al bot con /start <código>. Solo entonces se guarda su
+    chat_id: así nadie puede decir "soy laura" y recibir sus recordatorios.
+    """
+    code = f"{secrets.randbelow(10**6):06d}"
+
+    link = db.query(TelegramLink).filter(TelegramLink.user_id == user.id).first()
+    if link is None:
+        link = TelegramLink(user_id=user.id)
+        db.add(link)
+    link.link_code = code
+    link.code_expires_at = datetime.utcnow() + timedelta(seconds=TELEGRAM_CODE_TTL)
+    db.commit()
+
+    return {
+        "code": code,
+        "expires_in_minutes": TELEGRAM_CODE_TTL // 60,
+        "instructions": f"Envía este mensaje al bot de Igris en Telegram: /start {code}",
+    }
+
+
+@router.delete("/api/user/telegram")
+def telegram_unlink(user: User = Depends(require_user), db: Session = Depends(get_db)):
+    """Desvincula el Telegram del usuario (dejará de recibir sus recordatorios)."""
+    link = db.query(TelegramLink).filter(TelegramLink.user_id == user.id).first()
+    if link is not None:
+        # Se conserva el código si lo hubiera; se suelta el chat.
+        link.chat_id = None
+        link.username = None
+        link.linked_at = None
+        db.commit()
+        logger.info("Telegram desvinculado por el usuario %s", user.id)
+    return {"success": True, "message": "Telegram desvinculado"}
 
 
 # ============= UTILIDAD =============

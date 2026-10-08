@@ -1,4 +1,9 @@
-"""Herramientas de Gmail para IGRIS (solo lectura)."""
+"""Herramientas de Gmail para IGRIS (solo lectura).
+
+Se leen SIEMPRE con la cuenta de Google del usuario de la conversación
+(_session -> tabla google_accounts). No hay forma de leer el correo de otro
+usuario: la cuenta la elige el servidor, no el modelo.
+"""
 
 import asyncio
 import base64
@@ -11,7 +16,8 @@ from zoneinfo import ZoneInfo
 
 import httpx
 
-from core.tools.google_client import google_get
+from core.tools._common import google_credentials, google_error_message
+from core.tools.google_client import GoogleNotConfigured, GoogleReauthNeeded, google_get
 from core.tools.time_tools import DEFAULT_TZ, _format
 
 logger = logging.getLogger(__name__)
@@ -74,6 +80,7 @@ async def list_emails(
     query: Optional[str] = None,
     unread_only: bool = True,
     max_results: int = 5,
+    _session=None,
 ) -> dict:
     """Lista correos de la bandeja de entrada (remitente, asunto, fecha y vista previa)."""
     max_results = max(1, min(int(max_results or 5), 10))
@@ -83,30 +90,41 @@ async def list_emails(
     if query and query.strip():
         q += " " + query.strip()
 
-    async with httpx.AsyncClient(timeout=15) as client:
-        listing = await google_get(client, f"{BASE}/messages", {"q": q, "maxResults": max_results})
-        refs = listing.get("messages") or []
+    creds, error = await google_credentials(_session)
+    if error:
+        return error
 
-        async def fetch(ref):
-            return await google_get(
-                client,
-                f"{BASE}/messages/{ref['id']}",
-                [
-                    ("format", "metadata"),
-                    ("metadataHeaders", "From"),
-                    ("metadataHeaders", "Subject"),
-                    ("metadataHeaders", "Date"),
-                ],
-            )
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            listing = await google_get(client, creds, f"{BASE}/messages", {"q": q, "maxResults": max_results})
+            refs = listing.get("messages") or []
 
-        messages = await asyncio.gather(*(fetch(r) for r in refs))
+            async def fetch(ref):
+                return await google_get(
+                    client,
+                    creds,
+                    f"{BASE}/messages/{ref['id']}",
+                    [
+                        ("format", "metadata"),
+                        ("metadataHeaders", "From"),
+                        ("metadataHeaders", "Subject"),
+                        ("metadataHeaders", "Date"),
+                    ],
+                )
 
-        total_unread = None
-        try:
-            label = await google_get(client, f"{BASE}/labels/INBOX")
-            total_unread = label.get("messagesUnread")
-        except Exception as e:
-            logger.warning(f"No se pudo leer el conteo de no leídos: {e}")
+            messages = await asyncio.gather(*(fetch(r) for r in refs))
+
+            total_unread = None
+            try:
+                label = await google_get(client, creds, f"{BASE}/labels/INBOX")
+                total_unread = label.get("messagesUnread")
+            except Exception as e:
+                logger.warning(f"No se pudo leer el conteo de no leídos: {e}")
+    except (GoogleNotConfigured, GoogleReauthNeeded) as e:
+        return google_error_message(e)
+    except httpx.HTTPStatusError as e:
+        logger.error("Gmail devolvió %s al listar correos", e.response.status_code)
+        return google_error_message(e)
 
     emails = []
     for m in messages:
@@ -128,13 +146,23 @@ async def list_emails(
     }
 
 
-async def read_email(message_id: str) -> dict:
+async def read_email(message_id: str, _session=None) -> dict:
     """Lee el contenido de un correo (texto recortado). Solo lectura."""
     if not message_id:
         return {"error": "Falta el id del correo"}
 
-    async with httpx.AsyncClient(timeout=15) as client:
-        m = await google_get(client, f"{BASE}/messages/{message_id}", {"format": "full"})
+    creds, error = await google_credentials(_session)
+    if error:
+        return error
+
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            m = await google_get(client, creds, f"{BASE}/messages/{message_id}", {"format": "full"})
+    except (GoogleNotConfigured, GoogleReauthNeeded) as e:
+        return google_error_message(e)
+    except httpx.HTTPStatusError as e:
+        logger.error("Gmail devolvió %s al leer un correo", e.response.status_code)
+        return google_error_message(e)
 
     payload = m.get("payload", {})
     headers = payload.get("headers", [])

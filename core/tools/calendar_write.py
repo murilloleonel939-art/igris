@@ -10,7 +10,9 @@ Seguridad (se hace cumplir en el servidor, no solo con el prompt):
      porque no puede fabricar un mensaje del usuario.
   3. No se invita a nadie (no se envían correos a terceros).
 
-Requiere el permiso OAuth https://www.googleapis.com/auth/calendar.events
+Requiere el permiso OAuth https://www.googleapis.com/auth/calendar.events, que
+el usuario concede al conectar su cuenta de Google con la función «Agendar
+eventos» habilitada.
 """
 
 import logging
@@ -23,8 +25,11 @@ from zoneinfo import ZoneInfo
 
 import httpx
 
+from core.tools._common import google_credentials, google_error_message
 from core.tools.gcalendar import EVENTS_URL
-from core.tools.google_client import google_get, google_post
+from core.tools.google_client import (
+    GoogleNotConfigured, GoogleReauthNeeded, google_get, google_post,
+)
 from core.tools.time_tools import DEFAULT_TZ, _format
 
 logger = logging.getLogger(__name__)
@@ -91,12 +96,17 @@ async def propose_event(
     if start_dt < datetime.now(tz) - timedelta(minutes=5):
         return {"error": "Esa fecha y hora ya pasaron"}
 
-    # Choques con eventos existentes (solo lectura)
+    # Choques con eventos existentes (solo lectura, en el calendario del usuario)
+    creds, error = await google_credentials(_session)
+    if error:
+        return error
+
     conflicts = []
     try:
         async with httpx.AsyncClient(timeout=15) as client:
             data = await google_get(
                 client,
+                creds,
                 EVENTS_URL,
                 {
                     "timeMin": start_dt.isoformat(),
@@ -166,17 +176,25 @@ async def confirm_event(_session=None) -> dict:
 
     body = pending["body"]
     _session.pending_event = None  # un solo uso, pase lo que pase
+
+    creds, error = await google_credentials(_session)
+    if error:
+        return error
+
     try:
         async with httpx.AsyncClient(timeout=15) as client:
-            created = await google_post(client, EVENTS_URL, body, params={"sendUpdates": "none"})
+            created = await google_post(client, creds, EVENTS_URL, body, params={"sendUpdates": "none"})
+    except (GoogleNotConfigured, GoogleReauthNeeded) as e:
+        return google_error_message(e)
     except httpx.HTTPStatusError as e:
         code = e.response.status_code
         logger.error(f"Google Calendar rechazó la creación del evento: {code}")
         if code in (401, 403):
             return {
                 "error": (
-                    "Google no permitió crear el evento: falta el permiso de escritura del calendario "
-                    "(calendar.events). Hay que generar un refresh token nuevo con ese permiso."
+                    "Google no permitió crear el evento: falta el permiso de escritura del calendario. "
+                    "El usuario tiene que volver a conectar su cuenta de Google desde la sección "
+                    "«Conexiones» para concederlo."
                 )
             }
         return {"error": f"Google no pudo crear el evento (código {code})"}

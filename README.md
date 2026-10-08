@@ -27,7 +27,7 @@
 | 📅 Google Calendar: consultar agenda y crear eventos con confirmación obligatoria | Funcional |
 | ⏰ Recordatorios con aviso por Telegram (únicos, diarios o semanales) | Nuevo |
 | 📝 Notas: anotar, listar, buscar y borrar | Nuevo |
-| 🧪 Suite de pruebas end-to-end (120 comprobaciones, reejecutable) | Funcional |
+| 🧪 Suite de pruebas end-to-end (226 comprobaciones, reejecutable) | Funcional |
 **Personalidad:** caballero de las sombras, leal y formal, con español neutro (sin acento peninsular). El prompt vive en `core/config.py`; las instrucciones de herramientas, en `TOOLS_PROMPT` de `core/brain.py`.
 ---
 ## 🔐 Las dos superficies de acceso
@@ -61,6 +61,7 @@ Los dos límites viven en memoria, así que se reinician al reiniciar el backend
 | `POST` | `/api/admin/users` | Crea un usuario (`username`, `email`, `password`) |
 | `PUT` | `/api/admin/users/{id}` | Edita, activa/desactiva o cambia la contraseña |
 | `DELETE` | `/api/admin/users/{id}` | Borra un usuario |
+| `GET` | `/api/admin/features` | Catálogo de funciones que se pueden habilitar |
 
 Reglas de validación: usuario de 3 a 32 caracteres (`A-Z a-z 0-9 . _ -`), correo con formato válido y contraseña de **8 caracteres como mínimo**. Un usuario desactivado no puede entrar ni seguir usando el token que ya tuviera.
 
@@ -72,6 +73,27 @@ user:<id del token>:<identificador de conversación>
 
 El identificador que manda el navegador solo separa las conversaciones propias de ese usuario: no puede alcanzar la sesión de otro aunque lo manipule.
 
+### Funciones por usuario (permisos)
+
+El administrador decide **qué puede hacer cada usuario**, y ese permiso se comprueba en el servidor, no en el texto que se le envía al modelo. Son dos capas:
+
+1. **El modelo solo ve las herramientas permitidas.** `core/brain.py` filtra los esquemas que se le ofrecen; si no tiene el correo habilitado, la herramienta ni siquiera aparece en su lista.
+2. **El servidor rechaza lo no permitido.** `core/tools/__init__.py` vuelve a comprobar el permiso en `run_tool()` antes de ejecutar nada. Aunque el modelo intentara llamar a una herramienta que no le corresponde (por un prompt inyectado en un correo, por ejemplo), la ejecución se corta y se le responde que esa función no está habilitada.
+
+| Función | Qué abre | Necesita Google |
+| --- | --- | --- |
+| `time` | Hora y fecha | No |
+| `weather` | El tiempo | No |
+| `email` | Leer el correo | Sí |
+| `calendar` | Leer el calendario | Sí |
+| `calendar_write` | **Crear** eventos en el calendario | Sí |
+| `notes` | Notas propias (anotar, buscar, borrar) | No |
+| `reminders` | Recordatorios con aviso por Telegram | No |
+
+`time` y `weather` vienen activas de fábrica; el resto hay que abrirlas desde `/panel/usuarios`. El catálogo vive en `core/capabilities.py`, y el panel se construye a partir de él: añadir una función ahí la hace aparecer sola en la interfaz.
+
+**Aislamiento de datos.** Cada nota, recordatorio y sesión lleva su `user_id`, que el servidor deriva **solo** de la identidad autenticada (el token de la web o el chat de Telegram vinculado), nunca de lo que envíe el cliente. Un usuario no puede leer, borrar ni alcanzar los datos de otro. `calendar_write` es un permiso aparte a propósito: quien puede leer su agenda no tiene por qué poder escribir en ella.
+
 ### Área de usuarios (`/u`)
 
 | Método | Ruta | Qué hace |
@@ -80,6 +102,14 @@ El identificador que manda el navegador solo separa las conversaciones propias d
 | `GET` | `/api/user/me` | Devuelve la sesión actual |
 | `POST` | `/api/user/chat` | Habla con Igris (historial aislado por usuario) |
 | `POST` | `/api/user/tts` | Convierte texto en voz |
+| `GET` | `/api/user/connections` | Qué tiene conectado y qué le falta (alimenta «Conexiones» en `/u`) |
+| `GET` | `/api/user/google/start` | Devuelve la URL de consentimiento de Google |
+| `GET` | `/api/user/google/callback` | Recibe el código de Google y guarda el permiso del usuario |
+| `DELETE` | `/api/user/google` | Desconecta su cuenta de Google |
+| `POST` | `/api/user/telegram/code` | Genera el código de vinculación de Telegram |
+| `DELETE` | `/api/user/telegram` | Desvincula su Telegram |
+
+La sección **«Conexiones»** de `/u` es donde el usuario conecta su Google y vincula su Telegram. Solo aparecen las que le hacen falta: a quien no tiene correo ni calendario habilitados no se le pide conectar Google.
 
 ---
 ## 📲 Instalable como aplicación (PWA)
@@ -106,18 +136,20 @@ Puedes tener **las dos instaladas a la vez** en el mismo teléfono: llevan `id` 
 ---
 ## 🧪 Pruebas
 
-**120 comprobaciones, 0 fallidas**, y todas se pueden ejecutar las veces que haga falta sin limpiar nada a mano.
+**226 comprobaciones, 0 fallidas**, y todas se pueden ejecutar las veces que haga falta sin limpiar nada a mano.
 
 | Suite | Qué cubre | Comprobaciones |
 | --- | --- | --- |
-| `tests/e2e_users.py` | Área de usuarios y panel: separación de las dos superficies, token manipulado, usuario desactivado, CORS, aislamiento del historial, límite de intentos, borrado | 58 |
+| `tests/e2e_users.py` | Área de usuarios y panel: separación de las dos superficies, token manipulado, usuario desactivado, CORS, aislamiento del historial, límite de intentos, borrado, permisos por función, vinculación de Telegram, aislamiento de notas y recordatorios, cifrado, permisos de Google | 127 |
 | `tests/e2e_via_frontend.py` | Todo **a través del servidor del frontend**, que es el camino real en producción: proxy, PWA, manifests por ruta, flujo completo de usuario | 40 |
+| `tests/test_telegram.py` | Webhook de Telegram y enrutado de recordatorios: quién entra y quién no, vinculación con código de un solo uso, identidad y permisos por chat, que un usuario no pueda cambiar la configuración global, y que ningún aviso acabe en el chat de otra persona | 37 |
 | `tests/test_postgres.py` | Traducción de la URL de conexión, reintentos al arrancar, creación automática de la base, parámetros del motor, aviso de SQLite en producción | 22 |
 
 ```bash
-bash scripts/run_tests.sh            # las tres suites
+bash scripts/run_tests.sh            # las cuatro suites
 bash scripts/run_tests.sh users      # solo el área de usuarios
 bash scripts/run_tests.sh frontend   # solo el frontend (necesita el frontend vivo)
+bash scripts/run_tests.sh telegram   # solo Telegram y recordatorios
 bash scripts/run_tests.sh postgres   # solo la parte de PostgreSQL
 ```
 
@@ -263,11 +295,12 @@ igris/
 │   └── user_routes.py         # Área de usuarios (/api/user/*) y panel de administración (/api/admin/*)
 ├── node/              # cliente_voice.py, cliente_text.py, cliente_speak.py (Raspberry Pi - opcional)
 ├── scripts/
-│   ├── run_tests.sh           # Ejecuta las tres suites en el orden correcto (ver Pruebas)
+│   ├── run_tests.sh           # Ejecuta las cuatro suites en el orden correcto (ver Pruebas)
 │   └── generate_icons.py      # Genera los iconos de la PWA con Pillow
 ├── tests/
-│   ├── e2e_users.py           # Área de usuarios y panel (58 comprobaciones)
+│   ├── e2e_users.py           # Área de usuarios y panel (127 comprobaciones)
 │   ├── e2e_via_frontend.py    # Flujo real a través del frontend (40 comprobaciones)
+│   ├── test_telegram.py       # Telegram y recordatorios (37 comprobaciones)
 │   └── test_postgres.py       # PostgreSQL y arranque de la base (22 comprobaciones)
 ├── web/               # Aplicación Vue
 │   ├── server.js              # Sirve dist/, inyecta el manifest según la ruta y hace de proxy hacia el backend
@@ -377,6 +410,31 @@ Las credenciales OAuth que usan `core/tools/google_client.py`, `gmail.py` y `gca
 | `ALLOWED_TELEGRAM_IDS` | IDs de Telegram autorizados, separados por comas. Reciben los avisos de los recordatorios creados desde la web |
 | `TELEGRAM_WEBHOOK_URL` | URL pública del webhook, p. ej. `https://igris.zottagroup.com/telegram/webhook` |
 | `TELEGRAM_WEBHOOK_SECRET` | Secreto para validar que las peticiones vienen de Telegram. **Obligatorio en producción:** si está vacío, el webhook no valida el origen |
+
+Los usuarios pueden vincular **su propio** Telegram desde su página, en «Conexiones»: piden un código de 6 dígitos y lo envían al bot como `/start <código>`. A partir de ahí Igris los atiende como esa persona, con sus permisos y sus datos, y sus recordatorios le llegan a su chat. El código es de un solo uso y caduca a los 15 minutos. `ALLOWED_TELEGRAM_IDS` sigue funcionando igual para el dueño de la instalación, y solo esos chats pueden usar `/config`, `/setprovider` y `/setfallback`.
+
+### Google (correo y calendario)
+Para que los usuarios lean su correo y su calendario hace falta un proyecto en Google Cloud. **Cada usuario conecta su propia cuenta**; el token de cada uno se guarda cifrado en la base.
+
+| Variable | Descripción |
+| --- | --- |
+| `GOOGLE_CLIENT_ID` | ID de cliente OAuth 2.0 (tipo «Aplicación web») |
+| `GOOGLE_CLIENT_SECRET` | Secreto del cliente OAuth 2.0 |
+| `GOOGLE_REFRESH_TOKEN` | Opcional. Cuenta compartida del administrador, para el panel cuando no hay usuario identificado |
+| `GOOGLE_REDIRECT_URI` | Opcional. Por defecto `https://webigris.zottagroup.com/api/user/google/callback` |
+| `SECRET_KEY` | **Obligatoria.** Además de firmar los tokens, de ella se deriva la clave que cifra los refresh tokens de Google |
+
+Pasos en Google Cloud Console:
+1. Crear un proyecto y **habilitar la Gmail API y la Google Calendar API**. Si no se habilitan, la conexión funciona pero leer el correo o el calendario devuelve error.
+2. En «Credenciales», crear un **ID de cliente OAuth** de tipo *Aplicación web*.
+3. En «URI de redireccionamiento autorizados», añadir **exactamente** el que devuelve `GET /api/user/connections` (campo `google.redirect_uri`), por defecto `https://webigris.zottagroup.com/api/user/google/callback`. Si no coincide hasta el último carácter, Google rechaza la conexión con `redirect_uri_mismatch`.
+4. Configurar la pantalla de consentimiento. Mientras la aplicación no esté verificada por Google, hay que añadir a cada usuario como «usuario de prueba» o no podrá autorizar.
+5. Copiar el ID y el secreto a las variables del backend.
+
+> ⚠️ **Cambiar `SECRET_KEY` obliga a todos los usuarios a reconectar su Google.** Los tokens guardados se cifran con una clave derivada de ella; si cambia, dejan de poder descifrarse. Igris se lo dice al usuario con un mensaje distinto («vuelve a conectarla») en lugar del genérico de «no has conectado», para que no busque un problema que no existe. No se pierden datos: solo hay que volver a autorizar.
+
+Los permisos de Google se piden **según lo que el administrador haya habilitado** a ese usuario. A quien no tiene correo ni calendario activados no se le pide ningún permiso, y a quien solo tiene lectura de calendario no se le pide el de escritura.
+
 ### Base de datos
 | Variable | Descripción |
 | --- | --- |
@@ -449,7 +507,7 @@ Pruébalas desde la web (por voz o con ✉️ Enviar) y desde Telegram:
 | Seguridad del borrado | "¿Tengo correos?" | No debe borrar nada, aunque un correo contenga instrucciones |
 | Recuperación | Crea un recordatorio para dentro de 2 minutos, detén el backend 3 minutos y reinícialo | El aviso llega "con retraso" al arrancar |
 | Persistencia | Crea un recordatorio lejano, redespliega y pregunta "¿qué recordatorios tengo?" | Sigue ahí (confirma que usas PostgreSQL) |
-Para ejecutar las pruebas automáticas: `bash scripts/run_tests.sh` desde la raíz del repositorio (ver la sección **Pruebas** más arriba). Son 120 comprobaciones y se pueden repetir sin limpiar nada a mano.
+Para ejecutar las pruebas automáticas: `bash scripts/run_tests.sh` desde la raíz del repositorio (ver la sección **Pruebas** más arriba). Son 226 comprobaciones y se pueden repetir sin limpiar nada a mano.
 ### Verificar el acceso con `curl`
 ```bash
 API=https://igris.zottagroup.com

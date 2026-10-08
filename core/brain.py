@@ -13,6 +13,7 @@ try:
 except Exception:  # pragma: no cover
     AsyncAnthropic = None  # type: ignore
 
+from core.capabilities import tools_for
 from core.config import SYSTEM_PROMPT
 from core.settings_manager import get_settings
 from core.tools import TOOLS, run_tool, calendar_write
@@ -36,6 +37,10 @@ TOOLS_PROMPT = (
     "Dispones de herramientas para consultar la hora, el clima, el correo de Gmail y el "
     "calendario del usuario. Úsalas siempre que la pregunta dependa de datos en tiempo real "
     "o personales; no inventes datos. "
+    "Solo tienes las herramientas que se te han dado: si alguna no está en tu lista, el "
+    "usuario no la tiene habilitada, y se lo dices con naturalidad en lugar de intentar "
+    "otra cosa o inventar el dato. Nunca digas que un fallo es técnico cuando en realidad "
+    "es una función sin habilitar. "
     "Di la hora en palabras naturales, por ejemplo 'las dos y quince de la tarde'. "
     "Al hablar de correos o eventos, resume en pocas frases: nombra a lo sumo tres y ofrece "
     "leer más si hay más. "
@@ -128,7 +133,63 @@ def _build_client(name: str):
     return AsyncOpenAI(api_key=api_key, base_url=base, timeout=spec["timeout"]), model
 
 
-def _system_message(addressing_instruction: Optional[str] = None) -> str:
+def _capabilities_of(session):
+    """Capacidades de la sesión, o None si no hay (se permiten todas las herramientas).
+
+    None es el caso del panel del administrador, que no pasa por un usuario: mantiene
+    el comportamiento anterior. Una sesión de usuario SIEMPRE lleva sus capacidades
+    puestas por el servidor al crearla.
+    """
+    return getattr(session, "capabilities", None)
+
+
+def _facts_block(session) -> str:
+    """Línea que le dice al modelo QUIÉN es el usuario, para que pueda explicarle
+    por qué no puede hacer algo y qué le falta conectar.
+
+    No revela nada que el usuario no sepa de sí mismo, y evita que Igris prometa
+    funciones que no tiene: si no puede leer el correo, lo dice en lugar de
+    intentarlo y fallar.
+    """
+    caps = _capabilities_of(session)
+    if caps is None or caps.user_id is None:
+        return ""
+
+    from core.capabilities import FEATURES
+
+    enabled = [FEATURES[k].label for k in FEATURES if caps.has(k)]
+    linked = getattr(session, "google_linked", None)
+
+    lines = ["CONTEXTO DE ESTE USUARIO (no lo menciones salvo que venga al caso):"]
+    lines.append(
+        "Funciones habilitadas: " + (", ".join(enabled) if enabled else "ninguna")
+    )
+    if not enabled:
+        lines.append(
+            "No tiene ninguna función de datos habilitada: si pide correo, calendario, "
+            "notas o recordatorios, dile que se lo pida al administrador. No intentes "
+            "resolverlo de otra forma."
+        )
+    if any(caps.has(f) for f in ("email", "calendar", "calendar_write")):
+        if linked:
+            lines.append(f"Su cuenta de Google ya está conectada ({linked}).")
+        else:
+            lines.append(
+                "Todavía NO ha conectado su cuenta de Google: si pide correo o calendario, "
+                "pídele que la conecte en la sección «Conexiones» de su página de Igris."
+            )
+    if caps.has("reminders"):
+        if getattr(session, "telegram_linked", False):
+            lines.append("Tiene Telegram vinculado: los recordatorios le llegan por ahí.")
+        else:
+            lines.append(
+                "No ha vinculado su Telegram: los recordatorios se crearán, pero no le "
+                "llegarán hasta que lo vincule en la sección «Conexiones»."
+            )
+    return "\n".join(lines)
+
+
+def _system_message(addressing_instruction: Optional[str] = None, session=None) -> str:
     """System prompt + instrucciones de herramientas + fecha/hora actual de Colombia.
 
     Si el usuario tiene una instrucción de trato personalizada, se reemplaza la
@@ -148,6 +209,11 @@ def _system_message(addressing_instruction: Optional[str] = None) -> str:
         )
     else:
         base = f"{SYSTEM_PROMPT}\n\n{TOOLS_PROMPT}\n{now_context()}"
+    # Se le dice al modelo qué tiene habilitado y conectado este usuario, para que
+    # explique lo que falta en lugar de intentar y fallar.
+    facts = _facts_block(session)
+    if facts:
+        base = f"{base}\n\n{facts}"
     return base
 
 
@@ -159,6 +225,8 @@ async def _complete_with_tools(client, model: str, messages: List[dict], session
     """
     work = list(messages)  # copia: el bucle añade mensajes de herramientas
     base_len = len(work)
+    # Solo se ofrecen las herramientas que el usuario tiene permitidas.
+    tools = tools_for(_capabilities_of(session))
 
     for round_no in range(MAX_TOOL_ROUNDS + 1):
         kwargs = dict(
@@ -168,8 +236,8 @@ async def _complete_with_tools(client, model: str, messages: List[dict], session
             max_tokens=MAX_TOKENS,
         )
         # En la última ronda no se ofrecen herramientas: fuerza una respuesta final.
-        if round_no < MAX_TOOL_ROUNDS:
-            kwargs["tools"] = TOOLS
+        if round_no < MAX_TOOL_ROUNDS and tools:
+            kwargs["tools"] = tools
 
         resp = await client.chat.completions.create(**kwargs)
         choice = resp.choices[0]
@@ -208,10 +276,11 @@ async def _complete_with_tools(client, model: str, messages: List[dict], session
     raise ValueError("demasiadas rondas de herramientas sin respuesta final")
 
 
-def _tools_for_anthropic() -> List[dict]:
-    """Convierte TOOLS (formato OpenAI) al formato de herramientas de Anthropic.
+def _tools_for_anthropic(session=None) -> List[dict]:
+    """Convierte las herramientas visibles para esta sesión al formato de Anthropic.
 
     Solo cambia el envoltorio: el esquema de 'parameters' es idéntico a 'input_schema'.
+    Se filtran igual que en el camino de OpenAI, para no ofrecer de más.
     """
     return [
         {
@@ -219,7 +288,7 @@ def _tools_for_anthropic() -> List[dict]:
             "description": t["function"].get("description", ""),
             "input_schema": t["function"]["parameters"],
         }
-        for t in TOOLS
+        for t in tools_for(_capabilities_of(session))
     ]
 
 
@@ -292,7 +361,7 @@ async def _complete_with_anthropic(client, model: str, messages: List[dict], ses
     """
     work = list(messages)
     base_len = len(work)
-    tools = _tools_for_anthropic()
+    tools = _tools_for_anthropic(session)
 
     for round_no in range(MAX_TOOL_ROUNDS + 1):
         system, conv = _anthropic_payload(work)
@@ -367,6 +436,15 @@ class BrainSession:
         self.telegram_id: Optional[int] = None  # lo fija main.py en sesiones de Telegram
         self.addressing_instruction: str = ""   # instrucción de trato personalizado (la fija user_routes)
 
+        # ── Identidad y permisos (los fija SIEMPRE el servidor, nunca el modelo) ──
+        # user_id: de quién son las notas, recordatorios y cuenta de Google.
+        self.user_id: Optional[int] = None
+        # capabilities: qué funciones tiene habilitadas. None = todas (administrador).
+        self.capabilities = None
+        # Datos informativos para el prompt: qué tiene conectado ya.
+        self.google_linked: Optional[str] = None   # correo de Google conectado
+        self.telegram_linked: bool = False
+
     async def _try_quick_confirm(self, text: str) -> Optional[str]:
         """Si hay una propuesta pendiente y el usuario acaba de confirmarla, la crea
         directamente, sin depender de que el modelo llame a confirm_event.
@@ -407,7 +485,7 @@ class BrainSession:
             self.turns = self.turns[-MAX_HISTORY_TURNS:]
             return quick
 
-        messages = [{"role": "system", "content": _system_message(self.addressing_instruction)}]
+        messages = [{"role": "system", "content": _system_message(self.addressing_instruction, self)}]
         for turn in self.turns[-MAX_HISTORY_TURNS:]:
             messages += turn
         messages.append(user_msg)

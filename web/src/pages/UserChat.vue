@@ -21,7 +21,98 @@
     <!-- Barra superior: usuario y salir -->
     <div class="topbar">
       <span class="who">👤 {{ username }}</span>
+      <button type="button" class="out" @click="openConnections">Conexiones</button>
       <button type="button" class="out" @click="logout">Salir</button>
+    </div>
+
+    <!-- Panel de conexiones: qué funciones tienes y qué te falta conectar -->
+    <div v-if="conn.open" class="conn-backdrop" @click.self="conn.open = false">
+      <div class="conn">
+        <h2>Conexiones</h2>
+
+        <p v-if="conn.loading" class="conn-note">Cargando…</p>
+        <p v-else-if="conn.error" class="conn-error">{{ conn.error }}</p>
+
+        <template v-else>
+          <section>
+            <h3>Lo que puedes pedirme</h3>
+            <div class="chips">
+              <span v-for="f in conn.features" :key="f" class="chip">{{ featureLabel(f) }}</span>
+              <span v-if="!conn.features.length" class="conn-note">
+                Todavía no tienes ninguna función. Pídeselas al administrador.
+              </span>
+            </div>
+          </section>
+
+          <section v-if="conn.google && conn.google.needs_google">
+            <h3>Tu cuenta de Google</h3>
+            <p v-if="conn.google.connected" class="conn-ok">
+              Conectada: {{ conn.google.email || 'cuenta de Google' }}
+            </p>
+            <p v-if="conn.google.error" class="conn-error">
+              Google dio un error con tu cuenta: {{ conn.google.error }}. Vuelve a conectarla.
+            </p>
+            <p v-if="!conn.google.app_configured" class="conn-note">
+              El administrador todavía no ha configurado el acceso a Google en el servidor.
+            </p>
+            <template v-else>
+              <p class="conn-note">
+                Igris leerá tu correo y tu calendario con TU cuenta, no con la de nadie más.
+                Nadie más ve tus datos.
+              </p>
+              <div class="conn-actions">
+                <button class="btn primary" @click="connectGoogle">
+                  {{ conn.google.connected ? 'Volver a conectar' : 'Conectar mi Google' }}
+                </button>
+                <button v-if="conn.google.connected" class="btn ghost" @click="disconnectGoogle">
+                  Desconectar
+                </button>
+              </div>
+            </template>
+          </section>
+
+          <section v-if="conn.features.includes('reminders')">
+            <h3>Tu Telegram</h3>
+            <p v-if="conn.telegram.linked" class="conn-ok">
+              Vinculado{{ conn.telegram.username ? ` (@${conn.telegram.username})` : '' }}.
+              Tus recordatorios te llegan por ahí.
+            </p>
+            <template v-else>
+              <p class="conn-note">
+                Para recibir recordatorios hay que vincular tu Telegram: pide el código aquí y
+                envíaselo al bot.
+              </p>
+              <div v-if="conn.telegramCode" class="conn-code">
+                <p>Envía este mensaje al bot de Igris en Telegram:</p>
+                <code>/start {{ conn.telegramCode }}</code>
+                <p class="conn-note">
+                  Caduca en {{ conn.telegramCodeMinutes }} minutos. Cuando lo envíes, pulsa
+                  «Ya lo envié».
+                </p>
+              </div>
+              <div class="conn-actions">
+                <button class="btn primary" @click="requestTelegramCode">
+                  {{ conn.telegramCode ? 'Generar otro código' : 'Vincular mi Telegram' }}
+                </button>
+                <button v-if="conn.telegramCode" class="btn ghost" @click="refreshConnections">
+                  Ya lo envié
+                </button>
+              </div>
+            </template>
+            <button v-if="conn.telegram.linked" class="btn ghost" @click="unlinkTelegram">
+              Desvincular
+            </button>
+          </section>
+
+          <p class="conn-note">
+            Los permisos los cambia el administrador; aquí solo conectas tus propias cuentas.
+          </p>
+        </template>
+
+        <div class="conn-foot">
+          <button class="btn ghost" @click="conn.open = false">Cerrar</button>
+        </div>
+      </div>
     </div>
 
     <div class="bottom">
@@ -80,7 +171,7 @@
 <script setup>
 import { ref, computed, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
-import userApi, { getUser, clearSession } from '../userApi'
+import userApi, { getUser, clearSession, errorMessage } from '../userApi'
 import { igris, setIgrisState } from '../composables/useIgris'
 import IgrisHero from '../components/IgrisHero.vue'
 import InstallHint from '../components/InstallHint.vue'
@@ -391,6 +482,104 @@ function logout() {
   router.replace('/u/login')
 }
 
+/* ───────────── Conexiones (Google y Telegram) ─────────────
+   Todo lo que aparece aquí lo decide el servidor: esta pantalla solo muestra
+   qué funciones tiene el usuario y le deja conectar SUS cuentas. Los permisos
+   no se pueden tocar desde aquí. */
+
+const conn = ref({
+  open: false,
+  loading: false,
+  error: '',
+  features: [],
+  google: null,
+  telegram: { linked: false, username: null },
+  telegramCode: '',
+  telegramCodeMinutes: 15,
+})
+
+function featureLabel(key) {
+  const nombres = {
+    time: 'Hora y fecha',
+    weather: 'Clima',
+    email: 'Leer correo',
+    calendar: 'Ver calendario',
+    calendar_write: 'Agendar eventos',
+    notes: 'Notas',
+    reminders: 'Recordatorios',
+  }
+  return nombres[key] || key
+}
+
+async function refreshConnections() {
+  conn.value.loading = true
+  conn.value.error = ''
+  try {
+    const res = await userApi.get('/api/user/connections')
+    conn.value.features = res.data?.features || []
+    conn.value.google = res.data?.google || null
+    conn.value.telegram = res.data?.telegram || { linked: false, username: null }
+    // El código caduca: si el usuario ya se vinculó, se deja de mostrar.
+    if (conn.value.telegram.linked) conn.value.telegramCode = ''
+  } catch (e) {
+    conn.value.error = errorMessage(e, 'No se pudo consultar tus conexiones')
+  } finally {
+    conn.value.loading = false
+  }
+}
+
+function openConnections() {
+  conn.value.open = true
+  // Solo se pide al servidor la primera vez; después se refresca desde los
+  // botones de dentro, para no repetir la llamada en cada apertura.
+  if (!conn.value.features.length && !conn.value.google) refreshConnections()
+}
+
+// Google: el servidor devuelve la URL de consentimiento y la abre el navegador.
+// Se pide en el momento (no al abrir el panel) porque el 'state' caduca.
+async function connectGoogle() {
+  conn.value.error = ''
+  try {
+    const res = await userApi.get('/api/user/google/start')
+    const url = res.data?.auth_url
+    if (!url) throw new Error('El servidor no devolvió la dirección de Google')
+    window.location.href = url
+  } catch (e) {
+    conn.value.error = errorMessage(e, 'No se pudo iniciar la conexión con Google')
+  }
+}
+
+async function disconnectGoogle() {
+  if (!window.confirm('¿Desconectar tu cuenta de Google? Igris dejará de ver tu correo y tu calendario.')) return
+  try {
+    await userApi.delete('/api/user/google')
+    await refreshConnections()
+  } catch (e) {
+    conn.value.error = errorMessage(e, 'No se pudo desconectar la cuenta')
+  }
+}
+
+async function requestTelegramCode() {
+  try {
+    const res = await userApi.post('/api/user/telegram/code')
+    conn.value.telegramCode = res.data?.code || ''
+    conn.value.telegramCodeMinutes = res.data?.expires_in_minutes || 15
+  } catch (e) {
+    conn.value.error = errorMessage(e, 'No se pudo generar el código')
+  }
+}
+
+async function unlinkTelegram() {
+  if (!window.confirm('¿Desvincular tu Telegram? Dejarás de recibir los recordatorios.')) return
+  try {
+    await userApi.delete('/api/user/telegram')
+    conn.value.telegramCode = ''
+    await refreshConnections()
+  } catch (e) {
+    conn.value.error = errorMessage(e, 'No se pudo desvincular el Telegram')
+  }
+}
+
 /* ───────────── Ciclo de vida ───────────── */
 const unlock = () => {
   needsTap.value = false
@@ -416,6 +605,110 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+/* ── Panel de conexiones ── */
+.conn-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(2, 6, 23, 0.78);
+}
+.conn {
+  width: 100%;
+  max-width: 34rem;
+  max-height: 85vh;
+  overflow-y: auto;
+  padding: 1.5rem;
+  border: 1px solid #334155;
+  border-radius: 14px;
+  background: #0f172a;
+  color: #e2e8f0;
+}
+.conn h2 {
+  margin: 0 0 1rem;
+  font-size: 1.15rem;
+  font-weight: 600;
+  color: #fff;
+}
+.conn section {
+  margin-bottom: 1.25rem;
+}
+.conn h3 {
+  margin: 0 0 0.5rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #94a3b8;
+}
+.conn-note {
+  margin: 0.35rem 0;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  color: #94a3b8;
+}
+.conn-ok {
+  margin: 0.35rem 0;
+  font-size: 0.85rem;
+  color: #34d399;
+}
+.conn-error {
+  margin: 0.5rem 0;
+  padding: 0.6rem 0.75rem;
+  border-radius: 8px;
+  background: rgba(127, 29, 29, 0.45);
+  font-size: 0.82rem;
+  color: #fecaca;
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.chip {
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(51, 65, 85, 0.8);
+  font-size: 0.75rem;
+  color: #cbd5e1;
+}
+.conn-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.6rem;
+}
+.conn-code {
+  margin: 0.6rem 0;
+  padding: 0.75rem;
+  border: 1px solid #334155;
+  border-radius: 10px;
+  background: rgba(30, 41, 59, 0.7);
+}
+.conn-code p {
+  margin: 0 0 0.4rem;
+  font-size: 0.82rem;
+  color: #94a3b8;
+}
+.conn-code code {
+  display: block;
+  margin-bottom: 0.4rem;
+  font-size: 1.15rem;
+  letter-spacing: 0.12em;
+  color: #fff;
+}
+.conn code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.conn-foot {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 0.5rem;
+}
+
 .topbar {
   position: fixed;
   top: 0;

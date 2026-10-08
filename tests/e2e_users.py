@@ -382,6 +382,350 @@ check("ya no puede entrar -> 401", s == 401, f"(status {s})")
 s, d = req("DELETE", "/api/admin/users/999999", headers={"X-Igris-Key": ADMIN_KEY})
 check("eliminar uno que no existe -> 404", s == 404, f"(status {s})")
 
+# ------------------------------------------- 13. PERMISOS POR FUNCIÓN
+# Lo que de verdad importa de esta parte: que las herramientas NO se puedan usar
+# aunque el modelo las llame. La comprobación tiene que ser del servidor.
+print("\n14) Permisos por función (lo comprueba el SERVIDOR, no el prompt)")
+import os as _os
+import sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+
+s, d = req("GET", "/api/admin/features", headers={"X-Igris-Key": ADMIN_KEY})
+check("catálogo de funciones -> 200", s == 200, f"(status {s})")
+claves = {f["key"] for f in (d.get("features") or [])}
+check("el catálogo trae las siete funciones",
+      {"time", "weather", "email", "calendar", "calendar_write", "notes", "reminders"} <= claves,
+      f"({sorted(claves)})")
+
+# Usuario nuevo: por defecto solo hora y clima
+s, d = req(
+    "POST",
+    "/api/admin/users",
+    {"username": "limitado", "email": "limitado@zottagroup.com", "password": "claveSegura123"},
+    {"X-Igris-Key": ADMIN_KEY},
+)
+check("crear usuario con permisos por defecto -> 201", s == 201, f"(status {s} {d})")
+limitado_id = d.get("id") if isinstance(d, dict) else None
+check("por defecto solo hora y clima",
+      set(d.get("features") or []) == {"time", "weather"}, f"({d.get('features')})")
+
+s, d = req(
+    "POST",
+    "/api/admin/users",
+    {"username": "sinFunciones", "email": "sinfunciones@zottagroup.com",
+     "password": "claveSegura123", "features": []},
+    {"X-Igris-Key": ADMIN_KEY},
+)
+check("se puede crear un usuario sin ninguna función -> 201", s == 201, f"(status {s} {d})")
+sin_funciones_id = d.get("id") if isinstance(d, dict) else None
+check("la lista vacía se respeta (no se rellena con las de fábrica)",
+      (d.get("features") or []) == [], f"({d.get('features')})")
+
+s, d = req(
+    "POST",
+    "/api/admin/users",
+    {"username": "malaFuncion", "email": "mala@zottagroup.com",
+     "password": "claveSegura123", "features": ["telepatia"]},
+    {"X-Igris-Key": ADMIN_KEY},
+)
+check("una función desconocida se rechaza -> 422", s == 422, f"(status {s})")
+
+# El catálogo de capacidades en Python tiene que coincidir con lo que ve el panel
+from core.capabilities import (            # noqa: E402
+    FEATURES, TOOL_FEATURES, Capabilities, admin_capabilities, denial_message, tools_for,
+)
+from core.tools import TOOLS               # noqa: E402
+
+nombres_esquema = {t["function"]["name"] for t in TOOLS}
+check("toda herramienta del esquema tiene función asignada",
+      nombres_esquema <= set(TOOL_FEATURES), f"(faltan {nombres_esquema - set(TOOL_FEATURES)})")
+check("cada función del mapa existe en FEATURES",
+      set(TOOL_FEATURES.values()) <= set(FEATURES),
+      f"({set(TOOL_FEATURES.values()) - set(FEATURES)})")
+
+# --- La comprobación que de verdad protege ---
+import asyncio         # noqa: E402
+from core.tools import run_tool   # noqa: E402
+
+caps_limitado = Capabilities(user_id=1, features=frozenset({"time", "weather"}))
+
+
+class _Sesion:
+    """Sesión mínima para probar run_tool (no hace falta base de datos)."""
+    user_id = 1
+    capabilities = caps_limitado
+    turn_no = 1
+    last_user_text = ""
+
+
+async def _intentos():
+    resultados = {}
+    for herramienta, argumentos in [
+        ("add_note", '{"text": "una nota"}'),
+        ("list_notes", "{}"),
+        ("delete_note", '{"id": 1}'),
+        ("create_reminder", '{"text": "x", "when": "2030-01-01T10:00"}'),
+        ("list_reminders", "{}"),
+        ("list_emails", "{}"),
+        ("read_email", '{"message_id": "abc"}'),
+        ("list_events", "{}"),
+        ("propose_event", '{"title": "x", "start": "2030-01-01T10:00"}'),
+        ("confirm_event", "{}"),
+    ]:
+        resultados[herramienta] = await run_tool(herramienta, argumentos, _Sesion())
+    return resultados
+
+
+bloqueos = asyncio.run(_intentos())
+for herramienta, salida in bloqueos.items():
+    check(f"'{herramienta}' queda bloqueada por permisos",
+          "no tiene habilitada" in salida or "no está disponible" in salida,
+          f"({salida[:90]})")
+
+check("las herramientas permitidas NO se bloquean por permisos",
+      "no tiene habilitada" not in asyncio.run(run_tool("get_time", "{}", _Sesion())))
+
+# Sin sesión (panel del administrador) todo sigue permitido
+check("sin sesión no se bloquea nada (panel del admin)",
+      "no tiene habilitada" not in asyncio.run(run_tool("list_notes", "{}", None)))
+
+# El filtrado de herramientas que ve el modelo
+todas = {t["function"]["name"] for t in tools_for(None)}
+solo_basicas = {t["function"]["name"] for t in tools_for(caps_limitado)}
+check("sin capacidades el modelo ve todas las herramientas",
+      todas == nombres_esquema, f"({len(todas)} vs {len(nombres_esquema)})")
+check("con permisos limitados el modelo solo ve hora y clima",
+      solo_basicas == {"get_time", "get_weather"}, f"({sorted(solo_basicas)})")
+check("el administrador tiene todas las funciones",
+      admin_capabilities().features == frozenset(FEATURES))
+check("el mensaje de denegación nombra la función",
+      "Notas" in denial_message("add_note", caps_limitado))
+
+# Ninguna herramienta visible cuando no hay funciones
+vacio = Capabilities(user_id=1, features=frozenset())
+check("con cero funciones no queda ninguna herramienta visible",
+      tools_for(vacio) == [], f"({[t['function']['name'] for t in tools_for(vacio)]})")
+
+# --- El administrador puede cambiar los permisos de un usuario existente ---
+s, d = req(
+    "PUT",
+    f"/api/admin/users/{limitado_id}",
+    {"features": ["time", "weather", "notes", "reminders"]},
+    {"X-Igris-Key": ADMIN_KEY},
+)
+check("cambiar funciones -> 200", s == 200, f"(status {s} {d})")
+check("las funciones nuevas se guardan",
+      set(d.get("features") or []) == {"time", "weather", "notes", "reminders"},
+      f"({d.get('features')})")
+
+# El login tiene que devolver las funciones: el frontend las usa
+s, d = req("POST", "/api/user/login", {"username": "limitado", "password": "claveSegura123"})
+token_limitado = d.get("access_token") if isinstance(d, dict) else None
+check("el login devuelve las funciones del usuario",
+      set((d.get("user") or {}).get("features") or []) ==
+      {"time", "weather", "notes", "reminders"}, f"({(d.get('user') or {}).get('features')})")
+
+s, d = req("GET", "/api/user/connections", headers={"Authorization": f"Bearer {token_limitado}"})
+check("el usuario consulta sus conexiones -> 200", s == 200, f"(status {s})")
+check("las conexiones no exponen ningún token",
+      "refresh_token" not in json.dumps(d) and "token_enc" not in json.dumps(d))
+check("las conexiones dicen qué funciones tiene",
+      set(d.get("features") or []) == {"time", "weather", "notes", "reminders"}, f"({d.get('features')})")
+check("Google sale como no conectado", d.get("google", {}).get("connected") is False)
+check("Telegram sale como no vinculado", d.get("telegram", {}).get("linked") is False)
+
+# ------------------------------------------- 14. VINCULACIÓN DE TELEGRAM
+print("\n15) Vinculación de Telegram")
+s, d = req("POST", "/api/user/telegram/code", headers={"Authorization": f"Bearer {token_limitado}"})
+check("pedir código de vinculación -> 200", s == 200, f"(status {s} {d})")
+codigo = d.get("code") if isinstance(d, dict) else None
+check("el código tiene seis dígitos", bool(codigo) and len(codigo) == 6 and codigo.isdigit(), f"({codigo})")
+
+from core import telegram_links     # noqa: E402
+
+uid, msg = telegram_links.link_chat(codigo, 555001, "limitado_tg")
+check("vincular el chat con el código -> funciona", uid is not None, f"({msg})")
+check("el chat queda resuelto a ese usuario",
+      (telegram_links.resolve_user(555001) or None) is not None)
+check("un chat sin vincular no resuelve a nadie", telegram_links.resolve_user(999999) is None)
+
+uid2, msg2 = telegram_links.link_chat(codigo, 555002, "otro")
+check("el código es de un solo uso", uid2 is None, f"({msg2})")
+
+uid3, msg3 = telegram_links.link_chat("000000", 555003, "intruso")
+check("un código inventado no vincula a nadie", uid3 is None, f"({msg3})")
+
+s, d = req("GET", "/api/user/connections", headers={"Authorization": f"Bearer {token_limitado}"})
+check("las conexiones ya muestran el Telegram vinculado",
+      d.get("telegram", {}).get("linked") is True, f"({d.get('telegram')})")
+
+# El chat pasa a resolver con los permisos y los datos de SU usuario
+from core.capabilities import capabilities_from_user   # noqa: E402
+from core.database import User as _User, SessionLocal as _SL   # noqa: E402
+with _SL() as _db:
+    _u = _db.query(_User).filter(_User.username == "limitado").first()
+    _caps_usuario = capabilities_from_user(_u)
+check("las capacidades del chat vinculado son las del usuario",
+      _caps_usuario.features == frozenset({"time", "weather", "notes", "reminders"}),
+      f"({_caps_usuario.features})")
+check("el chat vinculado identifica al usuario correcto", _caps_usuario.user_id == limitado_id)
+
+s, d = req("DELETE", "/api/user/telegram", headers={"Authorization": f"Bearer {token_limitado}"})
+check("desvincular Telegram -> 200", s == 200, f"(status {s})")
+check("el chat ya no resuelve a nadie", telegram_links.resolve_user(555001) is None)
+
+# ------------------------------------------- 15. AISLAMIENTO DE DATOS
+print("\n16) Las notas y los recordatorios son de cada usuario")
+from core.tools import notes as _notes, reminders as _rem    # noqa: E402
+
+
+class _SesionUsuario:
+    def __init__(self, user_id, caps):
+        self.user_id = user_id
+        self.capabilities = caps
+        self.turn_no = 1
+        self.last_user_text = "borra la nota"
+        self.telegram_id = None
+
+
+async def _datos():
+    caps_a = Capabilities(user_id=limitado_id, features=frozenset({"notes", "reminders"}))
+    caps_b = Capabilities(user_id=_caps_usuario.user_id, features=frozenset({"notes", "reminders"}))
+    a = _SesionUsuario(limitado_id, caps_a)
+    b = _SesionUsuario(sin_funciones_id, caps_b)
+
+    ra = await _notes.add_note("secreto de limitado", a)
+    rb = await _notes.add_note("secreto de sinFunciones", b)
+
+    lista_a = await _notes.list_notes(a)
+    lista_b = await _notes.list_notes(b)
+
+    # A intenta borrar la nota de B usando su id
+    robo = await _notes.delete_note(rb["id"], a)
+
+    # Recordatorios
+    rr_a = await _rem.create_reminder("aviso de limitado", "2030-06-01T09:00", None, a)
+    lista_ra = await _rem.list_reminders(a)
+    lista_rb = await _rem.list_reminders(b)
+    robo_r = await _rem.delete_reminder(rr_a["id"], b) if rr_a.get("id") else {"error": "sin id"}
+    return ra, rb, lista_a, lista_b, robo, rr_a, lista_ra, lista_rb, robo_r
+
+
+ra, rb, lista_a, lista_b, robo, rr_a, lista_ra, lista_rb, robo_r = asyncio.run(_datos())
+
+check("cada usuario ve SOLO sus notas",
+      all(n["id"] != rb["id"] for n in lista_a["notas"]) and
+      all(n["id"] != ra["id"] for n in lista_b["notas"]),
+      f"(A ve {[n['id'] for n in lista_a['notas']]}, B ve {[n['id'] for n in lista_b['notas']]})")
+check("un usuario NO puede borrar la nota de otro",
+      "error" in robo and robo.get("id") != rb["id"], f"({robo})")
+check("la nota del otro sigue existiendo tras el intento",
+      asyncio.run(_notes.list_notes(_SesionUsuario(
+          sin_funciones_id, Capabilities(user_id=sin_funciones_id, features=frozenset({"notes"}))
+      )))["total"] >= 1)
+check("cada usuario ve SOLO sus recordatorios",
+      all(r["id"] != rr_a["id"] for r in lista_rb.get("recordatorios", [])) or
+      lista_rb.get("total", 0) == 0, f"({lista_rb})")
+check("un usuario NO puede cancelar el recordatorio de otro", "error" in robo_r, f"({robo_r})")
+
+# Sin usuario no se escribe nada (no se puede saber de quién sería el dato)
+sin_usuario = _SesionUsuario(None, None)
+r_sin = asyncio.run(_notes.add_note("no debería guardarse", sin_usuario))
+check("sin usuario identificado no se guarda una nota", "error" in r_sin, f"({r_sin})")
+r_sin2 = asyncio.run(_rem.create_reminder("x", "2030-01-01T10:00", None, sin_usuario))
+check("sin usuario identificado no se crea un recordatorio", "error" in r_sin2, f"({r_sin2})")
+
+# ------------------------------------------- 16. CIFRADO
+print("\n17) Cifrado del refresh token de Google")
+from core import crypto    # noqa: E402
+
+original = "1//0abcdefghijklmnop-refresh-token-de-prueba"
+cifrado = crypto.encrypt(original)
+check("el token cifrado no contiene el original", original not in cifrado)
+check("el token se descifra igual", crypto.decrypt(cifrado) == original)
+check("dos cifrados del mismo token son distintos (llevan nonce)",
+      crypto.encrypt(original) != cifrado)
+check("cifrar None no revienta", crypto.encrypt(None) is None)
+check("descifrar basura devuelve None (no lanza)",
+      crypto.decrypt("esto-no-es-un-token-valido") is None)
+
+# ------------------------------------------- 17. GOOGLE
+print("\n18) Google: cada usuario necesita SU cuenta")
+from core.tools import google_client as _gc    # noqa: E402
+
+check("los permisos de Google se piden solo para lo habilitado",
+      _gc.scopes_for({"time"}) == [_gc.SCOPE_IDENTITY], f"({_gc.scopes_for({'time'})})")
+check("'email' añade el permiso de Gmail",
+      _gc.SCOPE_EMAIL in _gc.scopes_for({"email"}))
+check("'calendar' añade el de lectura de calendario",
+      _gc.SCOPE_CALENDAR_READ in _gc.scopes_for({"calendar"}))
+check("'calendar_write' añade el de escritura",
+      _gc.SCOPE_CALENDAR_WRITE in _gc.scopes_for({"calendar_write"}))
+check("a quien no tiene escritura NO se le pide ese permiso",
+      _gc.SCOPE_CALENDAR_WRITE not in _gc.scopes_for({"calendar"}))
+
+# Un usuario normal sin cuenta conectada recibe un error claro, no el correo de otro.
+# Se simula que el servidor SÍ tiene sus credenciales de aplicación (como en el
+# despliegue real): así lo que se prueba es el caso del usuario, no el del servidor.
+_gc.client_config_original = _gc.client_config
+_gc.client_config = lambda: ("id-de-prueba.apps.googleusercontent.com", "secreto-de-prueba")
+try:
+    _gc.resolve_credentials(limitado_id)
+    check("un usuario sin cuenta conectada no obtiene credenciales", False, "(no lanzó)")
+except _gc.GoogleNotConfigured as e:
+    # El aviso tiene que decirle al usuario QUÉ hacer; si no, se queda sin correo
+    # ni calendario y sin saber por qué.
+    check("un usuario sin cuenta conectada recibe un aviso claro",
+          "conectado" in str(e) and "Conexiones" in str(e), f"({e})")
+
+# Si el servidor no tiene las credenciales de aplicación, el problema NO es del
+# usuario: decirle "no has conectado" le haría buscar algo que nunca podrá hacer.
+_gc.client_config = lambda: (None, None)
+try:
+    _gc.resolve_credentials(limitado_id)
+    check("sin configurar en el servidor no se culpa al usuario", False, "(no lanzó)")
+except _gc.GoogleNotConfigured as e:
+    check("sin configurar en el servidor se avisa de la configuración",
+          "servidor" in str(e) and "GOOGLE_CLIENT_ID" in str(e), f"({e})")
+
+# Con la cuenta guardada pero ILEGIBLE (cambió SECRET_KEY), el mensaje debe decir
+# que vuelva a conectarla, no que nunca la conectó.
+from core.database import GoogleAccount as _GA, SessionLocal as _SL    # noqa: E402
+_gc.client_config = _gc.client_config_original
+_gc.client_config = lambda: ("id-de-prueba.apps.googleusercontent.com", "secreto-de-prueba")
+with _SL() as _db:
+    _db.query(_GA).filter(_GA.user_id == limitado_id).delete(synchronize_session=False)
+    _db.add(_GA(user_id=limitado_id, refresh_token_enc="token-que-no-se-puede-descifrar"))
+    _db.commit()
+try:
+    _gc.resolve_credentials(limitado_id)
+    check("con cuenta ilegible no se obtienen credenciales", False, "(no lanzó)")
+except _gc.GoogleNotConfigured as e:
+    check("con cuenta ilegible se pide reconectar (no se dice que nunca conectó)",
+          "vuelve a conectarla" in str(e) and "No has conectado" not in str(e), f"({e})")
+finally:
+    _gc.client_config = _gc.client_config_original
+with _SL() as _db:
+    _db.query(_GA).filter(_GA.user_id == limitado_id).delete(synchronize_session=False)
+    _db.commit()
+
+# ------------------------------------------- 18. AVISOS EN HTML
+print("\n19) El aviso que Google devuelve no puede inyectar HTML")
+import re as _re    # noqa: E402
+
+_fuente = open(os.path.join(os.path.dirname(__file__), "..", "server", "user_routes.py"),
+               encoding="utf-8").read()
+_cb = _fuente[_fuente.index("def google_callback"):]
+_cb = _cb[:_cb.index("\ndef ", 10)] if "\ndef " in _cb[10:] else _cb
+check("el título se escapa", "escape(title)" in _cb)
+check("el detalle se escapa", "escape(detail)" in _cb)
+check("se importa 'escape'", "from html import escape" in _cb)
+
+# ------------------------------------------- 20. LIMPIEZA FINAL
+for uid_borrar in (limitado_id, sin_funciones_id):
+    if uid_borrar:
+        req("DELETE", f"/api/admin/users/{uid_borrar}", headers={"X-Igris-Key": ADMIN_KEY})
+
 # ---------------------------------------------------------------- RESUMEN
 print(f"\n{'='*58}")
 print(f"  RESULTADO: {passed} pruebas superadas, {len(failed)} fallidas")

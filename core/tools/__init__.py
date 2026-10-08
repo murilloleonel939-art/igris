@@ -4,11 +4,14 @@ Para añadir una herramienta nueva:
   1. Crea su función async en un módulo de esta carpeta (devuelve un dict).
   2. Agrega su esquema a TOOLS.
   3. Regístrala en _HANDLERS.
+  4. Asígnale su función (permiso) en core/capabilities.py (TOOL_FEATURES). Si no
+     se asigna, la herramienta queda permitida para todos los usuarios.
 """
 
 import json
 import logging
 
+from core.capabilities import denial_message
 from core.tools import calendar_write, gcalendar, gmail, notes, reminders, time_tools, weather
 
 logger = logging.getLogger(__name__)
@@ -310,8 +313,16 @@ _HANDLERS = {
     "delete_note": notes.delete_note,
 }
 
-# Herramientas que necesitan la sesión de conversación (estado, origen y confirmación del usuario)
-_SESSION_TOOLS = {"propose_event", "confirm_event", "create_reminder", "delete_reminder", "delete_note"}
+# Herramientas que necesitan la sesión de conversación: para el estado de la charla
+# (propuestas pendientes, turno actual), para saber DE QUÉ USUARIO son los datos y
+# para resolver con qué cuenta de Google se consulta. El modelo no puede aportar
+# nada de esto: lo inyecta el servidor y descarta cualquier "_session" que envíe.
+_SESSION_TOOLS = {
+    "propose_event", "confirm_event",
+    "create_reminder", "list_reminders", "delete_reminder",
+    "add_note", "list_notes", "search_notes", "delete_note",
+    "list_emails", "read_email", "list_events",
+}
 
 
 async def run_tool(name: str, arguments: str, session=None) -> str:
@@ -319,10 +330,22 @@ async def run_tool(name: str, arguments: str, session=None) -> str:
 
     Nunca lanza excepciones: los errores se devuelven como {"error": ...}
     para que el modelo pueda explicarlos con naturalidad.
+
+    Los permisos se comprueban AQUÍ, no solo al ofrecer las herramientas al
+    modelo. Es la comprobación que de verdad protege: aunque el modelo llame a
+    una herramienta que no le tocaba (o un correo intente provocarlo), no se
+    ejecuta.
     """
     handler = _HANDLERS.get(name)
     if handler is None:
         return json.dumps({"error": f"Herramienta desconocida: {name}"}, ensure_ascii=False)
+
+    caps = getattr(session, "capabilities", None)
+    # Sin sesión no hay usuario del que dudar: son llamadas internas del servidor
+    # (por ejemplo la confirmación directa de un evento), y se permiten.
+    if session is not None and caps is not None and not caps.allows_tool(name):
+        logger.warning("Herramienta '%s' bloqueada por permisos del usuario %s", name, caps.user_id)
+        return json.dumps({"error": denial_message(name, caps)}, ensure_ascii=False)
 
     try:
         args = json.loads(arguments) if arguments else {}
