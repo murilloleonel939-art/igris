@@ -32,7 +32,7 @@
 | ⏰ Recordatorios con aviso por Telegram (únicos, diarios o semanales) | Funcional |
 | 📝 Notas: anotar, listar, buscar y borrar | Funcional |
 | 🔑 **Permisos por usuario**: el admin activa o desactiva cada función (hora, clima, correo, enviar/eliminar correos, calendario, agendar/mover/eliminar eventos, notas, recordatorios) por cuenta | Funcional |
-| 🔗 **Google por usuario**: cada cuenta conecta su propio Gmail/Calendar desde `/u` | Funcional |
+| 🔗 **Google por usuario**: cada cuenta conecta su propio Gmail/Calendar desde `/u`; al terminar, el callback del backend redirige automáticamente al chat | Funcional |
 | 📲 **Telegram por usuario**: cada cuenta vincula su propio chat con un código de 6 dígitos | Funcional |
 | 🛡️ **Admin puede desvincular Telegram de cualquier usuario** desde el panel | Funcional |
 | 🧪 Suite de pruebas end-to-end (226 comprobaciones, reejecutable) | Funcional |
@@ -46,8 +46,8 @@ Igris tiene **dos formas de entrar que no se mezclan**. Un token de usuario nunc
 | --- | --- | --- |
 | Pantalla | `/acceso` | `/u/login` |
 | Cómo se autentica | Clave única en el header `X-Igris-Key` | Usuario + contraseña → token JWT (`Authorization: Bearer`) |
-| Dónde se guarda | `localStorage` (sobrevive al cierre del navegador) | `sessionStorage` (la sesión termina al cerrar) |
-| Duración | Mientras no se borre la clave | 12 horas |
+| Dónde se guarda | `localStorage` (sobrevive al cierre del navegador) | `localStorage` con expiración (la sesión dura 7 días) |
+| Duración | Mientras no se borre la clave | 7 días (o hasta que el JWT del servidor caduque) |
 | Rutas | `/`, `/config`, `/panel/usuarios` | `/u` |
 
 La clave del administrador vive **solo** en la variable de entorno `IGRIS_ACCESS_KEY` (Coolify). El frontend nunca la contiene: se escribe a mano en la pantalla `/acceso` y se envía en cada petición.
