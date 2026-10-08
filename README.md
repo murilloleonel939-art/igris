@@ -9,6 +9,7 @@
 | 🔑 Acceso a la web con clave única (`IGRIS_ACCESS_KEY`) | Funcional |
 | 👥 **Área de usuarios**: cuentas con usuario y contraseña, chat propio | Funcional |
 | 🛠️ **Panel de gestión de usuarios** (crear, activar/desactivar, borrar, cambiar contraseña) | Funcional |
+| 🗣️ **Trato personalizado por usuario**: el administrador configura cómo se dirige Igris a cada cuenta | Funcional |
 | 📲 **Instalable como app (PWA)**, con una app para el administrador y otra para los usuarios | Funcional |
 | 🧑‍🎤 Avatar animado (video) a pantalla completa que cambia según escucha, piensa o habla | Funcional |
 | 🎧 Modo manos libres siempre activo: solo le hablas | Funcional (Chrome/Edge) |
@@ -463,8 +464,6 @@ curl -i -X OPTIONS $API/api/chat \
 La primera nota de voz tras un despliegue descarga el modelo de Whisper (unos 140 MB para `base`). Para no repetirlo en cada redeploy, monta un volumen persistente en `/root/.cache/whisper` (Coolify → backend → Storages).
 ### PyTorch solo CPU
 El servidor no tiene GPU, así que el `Dockerfile` instala `torch==2.3.0` desde el índice de CPU de PyTorch **antes** de `requirements.txt`. Así `openai-whisper` encuentra `torch` ya instalado y no descarga la versión con CUDA (varios GB). La versión del `Dockerfile` debe coincidir con la de `requirements.txt`. Para comprobarlo dentro del contenedor del backend: `pip list | grep -i -E "^(torch|nvidia)"` debe mostrar solo `torch 2.3.0+cpu`.
-### Mantenimiento del disco
-Coolify limpia Docker cada día a las 00:00 UTC (Servers → Docker Cleanup). Si varios builds seguidos llenan el disco antes de esa hora, o un deploy se cuelga sin avisar, mira `df -h /` y `docker system df`, y libera con `docker builder prune -f` y `docker image prune -a -f`. **No uses `--volumes`**: ahí vive PostgreSQL.
 ---
 ## 🩺 Solución de problemas
 | Síntoma | Causa probable | Solución |
@@ -491,7 +490,7 @@ Coolify limpia Docker cada día a las 00:00 UTC (Servers → Docker Cleanup). Si
 | Telegram: audio lento la primera vez | Descarga del modelo de Whisper | Montar volumen en `/root/.cache/whisper` |
 | `422 Unprocessable Entity` en `/api/chat` | El body del frontend no coincide con el modelo (`{"text": "..."}`) | Revisar el `detail` de la respuesta en la pestaña Network |
 | Telegram responde 403 en el webhook | El secreto no coincide | Verificar `TELEGRAM_WEBHOOK_SECRET` y redeploy (se vuelve a registrar al iniciar) |
-| El deploy del backend se cuelga o el disco se llena | Caché de build e imágenes viejas acumuladas, o `torch` con CUDA en la imagen | Ver "Mantenimiento del disco" y "PyTorch solo CPU" en la sección de despliegue |
+| El deploy del backend se cuelga o el disco se llena | Caché de build e imágenes viejas acumuladas, o `torch` con CUDA en la imagen | Ver "PyTorch solo CPU" en la sección de despliegue |
 | Igris pregunta "¿en qué desea confirmar?" al decir "sí" | La conversación no llega con historial (sesión nueva) o se redesplegó entre el mensaje y el "sí" | Repetir la orden. Revisar en los logs la línea `say: ... historial=N pendiente=...` |
 | Igris dice que falta el permiso de escritura del calendario | El refresh token de Google no incluye `calendar.events` | Generar un refresh token nuevo con ese permiso |
 | Los recordatorios no llegan | Falta `TELEGRAM_TOKEN`, `ALLOWED_TELEGRAM_IDS` vacío (si se crearon desde la web), o el planificador no arrancó | Ver en los logs `Planificador de recordatorios iniciado`; si aparece `TELEGRAM_TOKEN no definido` o `no hay a quién avisar`, definir las variables y redesplegar |
