@@ -38,3 +38,7 @@ venv/
 *.bak2
 *.bak3
 *.before_cors_fix
+
+# Respaldos generados para no perder el trabajo si falla el push
+*.bundle
+igris-cambios.patch
