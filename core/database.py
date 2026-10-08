@@ -228,6 +228,34 @@ class Note(Base):
 
 
 # Crear tablas
+def _run_migrations(engine) -> None:
+    """Aplica migraciones incrementales: añade columnas nuevas a tablas existentes.
+
+    create_all() no modifica tablas que ya existen, así que cualquier columna
+    añadida al modelo después del primer despliegue debe agregarse aquí.
+    El patrón es idempotente: comprueba si la columna existe antes de añadirla.
+    """
+    dialect = engine.dialect.name  # "sqlite" o "postgresql"
+
+    with engine.begin() as conn:
+        # ── users.addressing_instruction ────────────────────────────────────
+        if dialect == "sqlite":
+            rows = conn.execute(text("PRAGMA table_info(users)")).fetchall()
+            existing = {row[1] for row in rows}
+            if "addressing_instruction" not in existing:
+                conn.execute(text("ALTER TABLE users ADD COLUMN addressing_instruction TEXT"))
+                logger.info("Migración aplicada: users.addressing_instruction (sqlite)")
+        else:
+            # PostgreSQL: information_schema es fiable en todos los proveedores
+            row = conn.execute(text(
+                "SELECT 1 FROM information_schema.columns "
+                "WHERE table_name='users' AND column_name='addressing_instruction'"
+            )).fetchone()
+            if not row:
+                conn.execute(text("ALTER TABLE users ADD COLUMN addressing_instruction TEXT"))
+                logger.info("Migración aplicada: users.addressing_instruction (postgresql)")
+
+
 def init_db(retries: int = 10, delay: float = 2.0) -> None:
     """Crea las tablas que falten y valida la conexión.
 
@@ -245,6 +273,10 @@ def init_db(retries: int = 10, delay: float = 2.0) -> None:
             # motor se construyó.
             with engine.connect() as conn:
                 conn.execute(text("SELECT 1"))
+
+            # Migraciones incrementales: añade columnas nuevas a tablas existentes
+            # que create_all() no toca porque la tabla ya existe.
+            _run_migrations(engine)
 
             tables = ", ".join(sorted(Base.metadata.tables))
             logger.info("Base de datos lista (%s). Tablas: %s", engine.dialect.name, tables)
