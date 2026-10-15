@@ -615,7 +615,7 @@ async function recordVoiceSample() {
   recorder.ondataavailable = (event) => event.data.size && chunks.push(event.data)
   const finished = new Promise((resolve) => { recorder.onstop = resolve })
   recorder.start()
-  await new Promise((resolve) => setTimeout(resolve, 4500))
+  await new Promise((resolve) => setTimeout(resolve, 3000))
   recorder.stop()
   await finished
   stream.getTracks().forEach((track) => track.stop())
@@ -637,12 +637,12 @@ async function registerVoice() {
     ]
     for (let index = 0; index < steps.length; index += 1) {
       voiceStepLabel.value = `${steps[index]} Preparando grabación…`
-      await sleep(1800)
+      await sleep(800)
       voiceStepLabel.value = `${steps[index]} Grabando ahora…`
       samples.push(await recordVoiceSample())
       if (index < steps.length - 1) {
         voiceStepLabel.value = `Muestra ${index + 1} completada. ${steps[index + 1]}`
-        await sleep(1800)
+        await sleep(800)
       }
     }
     voiceStepLabel.value = 'Procesando tus cuatro muestras…'
