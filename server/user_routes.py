@@ -3,14 +3,12 @@ IGRIS — Área de usuarios (/u) y panel de administración de usuarios.
 
 Dos superficies de autenticación que NO se mezclan:
 
-  /api/admin/*  ->  header X-Igris-Key, exactamente el mismo mecanismo que la
-                    pantalla /acceso (se reutiliza require_key de main.py, con
-                    su comparación en tiempo constante y su límite de intentos).
+  /api/admin/*  ->  header X-Igris-Key o JWT Bearer de un usuario con
+                    is_admin=True. Ambos se validan en el backend.
   /api/user/*   ->  header Authorization: Bearer <JWT> con role="user".
 
-Un token de usuario NUNCA sirve en /api/admin, y la clave de admin NUNCA sirve
-en /api/user. El rol va firmado dentro del token, así que el navegador no puede
-añadirlo ni modificarlo.
+La clave de admin NUNCA sirve en /api/user. Un JWT solo sirve en /api/admin si
+pertenece a una cuenta activa marcada como administradora en la base de datos.
 
 El chat de cada usuario se aísla por una clave construida en el servidor:
     user:<id del token>:<identificador de conversación>
@@ -145,17 +143,16 @@ def _clear_fails(key: str) -> None:
 async def require_admin_key(
     request: Request,
     x_igris_key: Optional[str] = Header(default=None),
+    authorization: Optional[str] = Header(default=None),
 ) -> None:
-    """Exige la clave única de la pantalla /acceso.
+    """Exige la clave única o un token Bearer de usuario administrador.
 
-    Reutiliza require_key de main.py para que el mecanismo sea idéntico al que
-    ya funciona: misma comparación en tiempo constante, mismo límite de
-    intentos por IP y mismo mensaje de error. La importación es local para
-    evitar una dependencia circular (main.py importa este módulo).
+    Reutiliza require_key de main.py para mantener el mismo límite de intentos y
+    para que /api/admin acepte el mismo acceso que el resto del panel.
     """
     from server.main import require_key
 
-    await require_key(request, x_igris_key)
+    await require_key(request, x_igris_key, authorization)
 
 
 def require_user(

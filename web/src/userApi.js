@@ -77,6 +77,10 @@ export function isLoggedIn() {
   return !!getToken()
 }
 
+export function isAdminUser() {
+  return !!getToken() && !!getUser()?.is_admin
+}
+
 const userApi = axios.create({
   baseURL: API_URL,
   headers: {

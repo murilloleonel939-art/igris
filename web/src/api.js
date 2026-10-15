@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { clearSession, getToken } from './userApi'
 
 // URL del backend (dominio distinto al del frontend: el backend habilita CORS
 // para https://webigris.zottagroup.com y http://localhost:5173)
@@ -39,13 +40,19 @@ const api = axios.create({
   }
 })
 
-// Interceptor de petición: añade la clave guardada.
-// Si la petición ya trae su propio X-Igris-Key (pantalla de acceso), se respeta.
+// Interceptor de petición: añade la clave guardada o, si no hay clave,
+// el token de un usuario administrador. El backend valida is_admin igualmente.
 api.interceptors.request.use((config) => {
   if (!config.headers['X-Igris-Key']) {
     const key = getKey()
     if (key) {
       config.headers['X-Igris-Key'] = key
+    }
+  }
+  if (!config.headers['Authorization']) {
+    const token = getToken()
+    if (token) {
+      config.headers['Authorization'] = `Bearer ${token}`
     }
   }
   return config
@@ -59,8 +66,10 @@ api.interceptors.response.use(
   (error) => {
     const onAccessScreen = window.location.pathname === ACCESS_PATH
     if (error.response?.status === 401 && !onAccessScreen) {
+      const hadKey = !!getKey()
       clearKey()
-      window.dispatchEvent(new CustomEvent('igris:unauthorized'))
+      clearSession()
+      window.dispatchEvent(new CustomEvent(hadKey ? 'igris:unauthorized' : 'igris:user-unauthorized'))
     }
     return Promise.reject(error)
   }

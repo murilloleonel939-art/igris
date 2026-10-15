@@ -10,7 +10,7 @@
       class="border-b border-slate-700"
       style="position: relative; z-index: 10; background: rgba(15, 23, 42, 0.55); backdrop-filter: blur(6px)"
     >
-      <div class="max-w-2xl mx-auto px-6 py-3 flex justify-center items-center space-x-4">
+      <div class="max-w-4xl mx-auto px-6 py-3 flex flex-wrap justify-center items-center gap-3">
         <router-link 
           to="/" 
           :class="{ 'bg-blue-600 text-white': $route.name === 'Chat', 'bg-slate-600 hover:bg-slate-700 text-slate-300': $route.name !== 'Chat' }"
@@ -24,6 +24,13 @@
           class="px-4 py-2 rounded transition-all"
         >
           ⚙️ Configuración
+        </router-link>
+        <router-link
+          v-if="adminUserLoggedIn"
+          to="/u"
+          class="px-4 py-2 rounded transition-all bg-slate-600 hover:bg-slate-700 text-slate-300"
+        >
+          🔗 Conexiones
         </router-link>
         <router-link 
           to="/panel/usuarios" 
@@ -54,6 +61,7 @@ import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import IgrisHero from './components/IgrisHero.vue'
 import { clearKey } from './api'
+import { clearSession, isAdminUser } from './userApi'
 
 const route = useRoute()
 const router = useRouter()
@@ -63,12 +71,15 @@ const router = useRouter()
 // Usuarios ni la pantalla de la clave.
 const ADMIN_ROUTES = ['Chat', 'Configuration', 'AdminUsers']
 const showNav = computed(() => ADMIN_ROUTES.includes(route.name))
+const adminUserLoggedIn = computed(() => isAdminUser())
 
 // Borra la clave guardada y vuelve a la pantalla de acceso.
 // Al cambiar de ruta, la página actual se desmonta (Dashboard detiene el micrófono).
 function logout() {
+  const wasAdminUser = isAdminUser()
   clearKey()
-  router.replace({ name: 'Access' })
+  clearSession()
+  router.replace(wasAdminUser ? { name: 'UserLogin' } : { name: 'Access' })
 }
 </script>
 

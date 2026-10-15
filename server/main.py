@@ -13,12 +13,13 @@ from typing import Optional
 from fastapi import FastAPI, Request, Header, HTTPException, BackgroundTasks, Depends, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
+from jose import JWTError, jwt
 
 from core import Brain, config, stt          # ← añadido stt
 from core import database, telegram_links
 from core.capabilities import admin_capabilities, capabilities_from_user
 from core.database import GoogleAccount, Profile, User
-from core.auth import hash_password
+from core.auth import ALGORITHM, SECRET_KEY, hash_password
 from core.settings_manager import get_settings
 from core import tts, voice
 from core.database import init_db, engine
@@ -172,16 +173,35 @@ def _register_failure(ip: str, now: float) -> None:
     _failures.setdefault(ip, deque()).append(now)
 
 
-async def require_key(request: Request, x_igris_key: Optional[str] = Header(default=None)):
-    """Dependencia: exige el header X-Igris-Key válido.
+def _valid_admin_bearer(authorization: Optional[str]) -> bool:
+    """Acepta un JWT de usuario solo si pertenece a una cuenta admin activa."""
+    if not isinstance(authorization, str) or not authorization.lower().startswith("bearer "):
+        return False
+    token = authorization.split(" ", 1)[1].strip()
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+    except JWTError:
+        return False
+    if payload.get("role") != "user":
+        return False
+    user_id = payload.get("user_id")
+    if not isinstance(user_id, int):
+        return False
+    with database.SessionLocal() as db:
+        user = db.query(User).filter(User.id == user_id).first()
+        return bool(user and user.is_active and user.is_admin)
 
-    Es async a propósito: así corre en el event loop (un solo hilo) y el
-    diccionario de intentos no necesita locks.
-    """
+
+async def require_key(
+    request: Request,
+    x_igris_key: Optional[str] = Header(default=None),
+    authorization: Optional[str] = Header(default=None),
+):
+    """Dependencia: exige la clave X-Igris-Key o un JWT de usuario admin."""
     now = time.monotonic()
     ip = _client_ip(request)
 
-    # 1) ¿IP bloqueada por demasiados fallos?
+    # 1) ¿IP bloqueada por demasiados fallos de acceso admin?
     attempts = _recent_failures(ip, now)
     if attempts is not None and len(attempts) >= FAIL_LIMIT:
         retry_after = max(1, int(FAIL_WINDOW - (now - attempts[0])) + 1)
@@ -191,16 +211,20 @@ async def require_key(request: Request, x_igris_key: Optional[str] = Header(defa
             headers={"Retry-After": str(retry_after)},
         )
 
-    # 2) Comparación en tiempo constante y en bytes.
-    #    `not expected` => fail closed (sin clave configurada nunca se entra).
+    # 2) Clave histórica del panel. `not expected` => fail closed para la clave.
     expected = ACCESS_KEY.encode("utf-8")
-    provided = (x_igris_key or "").encode("utf-8")
-    if not expected or not secrets.compare_digest(provided, expected):
-        _register_failure(ip, now)
-        raise HTTPException(status_code=401, detail="Clave de acceso inválida")
+    provided = (x_igris_key if isinstance(x_igris_key, str) else "").encode("utf-8")
+    if expected and secrets.compare_digest(provided, expected):
+        _failures.pop(ip, None)
+        return
 
-    # 3) Clave correcta: se limpian los fallos de esa IP
-    _failures.pop(ip, None)
+    # 3) Alternativa segura: usuario logueado y marcado como administrador.
+    if _valid_admin_bearer(authorization):
+        _failures.pop(ip, None)
+        return
+
+    _register_failure(ip, now)
+    raise HTTPException(status_code=401, detail="Acceso de administrador inválido")
 
 # Instancia global del cerebro y almacén de sesiones (historial por conversación)
 brain = Brain()

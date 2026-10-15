@@ -21,6 +21,7 @@
     <!-- Barra superior: usuario y salir -->
     <div class="topbar">
       <span class="who">👤 {{ username }}</span>
+      <button v-if="adminUser" type="button" class="out" @click="openAdminPanel">Panel admin</button>
       <button type="button" class="out" @click="openConnections">Conexiones</button>
       <button type="button" class="out" @click="logout">Salir</button>
     </div>
@@ -197,6 +198,7 @@ import InstallHint from '../components/InstallHint.vue'
 const router = useRouter()
 
 const username = computed(() => getUser()?.username || 'usuario')
+const adminUser = computed(() => !!getUser()?.is_admin)
 
 const chatInput = ref('')
 const chatMessages = ref([])
@@ -557,6 +559,10 @@ const toggleHandsFree = () => {
   setNotice('')
   handsFree.value = true
   runHandsFree()
+}
+
+function openAdminPanel() {
+  router.replace('/')
 }
 
 /* ───────────── Salir ───────────── */

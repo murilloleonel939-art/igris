@@ -6,7 +6,7 @@ import AdminUsers from './pages/AdminUsers.vue'
 import UserLogin from './pages/UserLogin.vue'
 import UserChat from './pages/UserChat.vue'
 import { getKey } from './api'
-import { isLoggedIn } from './userApi'
+import { isLoggedIn, isAdminUser } from './userApi'
 import { syncManifest } from './pwa'
 
 // Las dos superficies de la aplicación, separadas:
@@ -16,11 +16,11 @@ import { syncManifest } from './pwa'
 //                  /panel/usuarios
 //                  /acceso       -> pantalla de la clave
 //
-//   Usuarios       /u           -> chat (token Bearer, en sessionStorage)
+//   Usuarios       /u           -> chat/conexiones (token Bearer)
 //                  /u/login     -> pantalla de usuario y contraseña
 //
-// Nadie con solo la clave de admin cae en /u, y ningún usuario puede llegar a
-// las pantallas de administración.
+// Un usuario normal queda en /u. Un usuario con is_admin=true también puede
+// abrir el panel del administrador; el backend vuelve a validar ese permiso.
 const USER_ROUTE_NAMES = ['UserLogin', 'UserChat']
 
 const routes = [
@@ -84,14 +84,13 @@ router.beforeEach((to) => {
     return true
   }
 
-  // --- Área del administrador (comportamiento de siempre) ---
-  // Sin clave guardada solo se puede ver la pantalla de acceso;
-  // con clave guardada, la pantalla de acceso no tiene sentido.
-  const hasKey = !!getKey()
-  if (!hasKey && to.name !== 'Access') {
+  // --- Área del administrador ---
+  // Se permite la clave histórica o un usuario logueado con is_admin=true.
+  const hasAdminAccess = !!getKey() || isAdminUser()
+  if (!hasAdminAccess && to.name !== 'Access') {
     return { name: 'Access' }
   }
-  if (hasKey && to.name === 'Access') {
+  if (hasAdminAccess && to.name === 'Access') {
     return { path: '/' }
   }
 })

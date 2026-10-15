@@ -102,7 +102,7 @@ async function submit() {
     if (!token) throw new Error('Respuesta inesperada')
 
     setSession(token, res.data.user)
-    await router.replace('/u')
+    await router.replace(res.data.user?.is_admin ? '/' : '/u')
   } catch (e) {
     const status = e.response?.status
     if (status === 401) {
