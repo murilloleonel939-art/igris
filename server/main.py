@@ -18,6 +18,7 @@ from core import Brain, config, stt          # ← añadido stt
 from core import database, telegram_links
 from core.capabilities import admin_capabilities, capabilities_from_user
 from core.database import GoogleAccount, Profile, User
+from core.auth import hash_password
 from core.settings_manager import get_settings
 from core import tts, voice
 from core.database import init_db, engine
@@ -35,6 +36,48 @@ logger = logging.getLogger(__name__)
 # Inicializar BD: crea la base de datos si falta, espera a PostgreSQL si aún
 # está arrancando y crea las tablas que falten (recordatorios y notas incluidas).
 init_db()
+
+
+def _ensure_bootstrap_admin() -> None:
+    """Crea el primer administrador si Coolify proporciona sus credenciales."""
+    username = os.getenv("IGRIS_ADMIN_USERNAME", "").strip()
+    email = os.getenv("IGRIS_ADMIN_EMAIL", "").strip()
+    password = os.getenv("IGRIS_ADMIN_PASSWORD", "")
+    if not username or not email or not password:
+        logger.info(
+            "No se creó administrador inicial: define IGRIS_ADMIN_USERNAME, "
+            "IGRIS_ADMIN_EMAIL e IGRIS_ADMIN_PASSWORD si la base está vacía."
+        )
+        return
+
+    db = database.SessionLocal()
+    try:
+        if db.query(User).filter(User.is_admin.is_(True)).first():
+            return
+        existing = db.query(User).filter(
+            (User.username == username) | (User.email == email)
+        ).first()
+        if existing:
+            existing.is_admin = True
+            existing.is_active = True
+            db.commit()
+            logger.info("Usuario existente promovido a administrador: %s", existing.username)
+            return
+        admin = User(
+            username=username,
+            email=email,
+            password_hash=hash_password(password),
+            is_admin=True,
+            is_active=True,
+        )
+        db.add(admin)
+        db.commit()
+        logger.info("Administrador inicial creado: %s", username)
+    finally:
+        db.close()
+
+
+_ensure_bootstrap_admin()
 
 app = FastAPI(
     title="IGRIS Chat",
