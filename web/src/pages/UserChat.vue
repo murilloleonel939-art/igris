@@ -389,7 +389,6 @@ let recognition = null
 
 function listenOnce() {
   return new Promise(async (resolve) => {
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition
     if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
       resolve({ text: '', audio: null, error: 'unsupported' })
       return
@@ -449,24 +448,8 @@ function listenOnce() {
       resolve({ text, audio: heardSpeech ? audio : null, error })
     }
 
-    // SpeechRecognition is only a visual aid. It never decides when to stop
-    // recording, because Chrome often ends it before the speaker finishes.
-    if (SR) {
-      rec = new SR()
-      recognition = rec
-      rec.lang = 'es-CO'
-      rec.interimResults = false
-      rec.maxAlternatives = 1
-      rec.onresult = (event) => {
-        const parts = []
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          if (event.results[i].isFinal) parts.push(event.results[i][0].transcript)
-        }
-        if (parts.length) text = (text + ' ' + parts.join(' ')).trim()
-      }
-      rec.onerror = (event) => { if (event.error !== 'no-speech') error = event.error }
-      try { rec.start() } catch (err) { rec = null }
-    }
+    // Whisper del backend es la única fuente de transcripción. Chrome no
+    // participa en el texto porque puede inventar palabras o cortar frases.
     isListening.value = true
     setIgrisState('listening')
     setTimeout(() => {
