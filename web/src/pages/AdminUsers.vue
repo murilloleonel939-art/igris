@@ -23,6 +23,7 @@
     <!-- Alta de usuario -->
     <form class="mt-6 grid gap-3 rounded-xl border border-slate-700 bg-slate-800/60 p-5 sm:grid-cols-2" @submit.prevent="createUser">
       <h2 class="sm:col-span-2 text-lg font-medium text-white">Crear usuario</h2>
+      <p class="sm:col-span-2 text-xs text-slate-500">Los administradores pueden entrar al panel y gestionar usuarios.</p>
 
       <label class="block text-sm">
         <span class="text-slate-300">Usuario</span>
@@ -44,6 +45,11 @@
           placeholder="laura@zottagroup.com"
           class="mt-1 w-full rounded-lg border border-slate-600 bg-slate-900 px-3 py-2 text-white focus:border-blue-500 focus:outline-none"
         />
+      </label>
+
+      <label class="flex items-center gap-2 text-sm sm:col-span-2">
+        <input v-model="form.is_admin" type="checkbox" class="accent-blue-500" />
+        <span class="text-slate-300">Crear como administrador</span>
       </label>
 
       <label class="block text-sm sm:col-span-2">
@@ -291,7 +297,7 @@ const features = ref([])
 // Valores por defecto de una cuenta nueva (los que marque el backend como tales).
 const defaultFeatures = () => features.value.filter((f) => f.default).map((f) => f.key)
 
-const form = ref({ username: '', email: '', password: '', features: [] })
+const form = ref({ username: '', email: '', password: '', is_admin: false, features: [] })
 
 // Modal de permisos
 const permisosModal = ref({ open: false, id: null, username: '', features: [], connection: null })
@@ -373,9 +379,10 @@ async function createUser() {
       username: created,
       email: form.value.email.trim(),
       password: form.value.password,
+      is_admin: form.value.is_admin,
       features: form.value.features
     })
-    form.value = { username: '', email: '', password: '', features: defaultFeatures() }
+    form.value = { username: '', email: '', password: '', is_admin: false, features: defaultFeatures() }
     await load()
     showFlash(`Usuario '${created}' creado. Ya puede entrar en /u`)
   } catch (e) {
