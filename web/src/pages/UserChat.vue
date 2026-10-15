@@ -388,7 +388,7 @@ let recognition = null
 function listenOnce() {
   return new Promise(async (resolve) => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition
-    if (!SR || !navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+    if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
       resolve({ text: '', audio: null, error: 'unsupported' })
       return
     }
@@ -405,29 +405,58 @@ function listenOnce() {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       // El medidor evita depender únicamente de SpeechRecognition: si hay voz
       // pero el navegador no devuelve texto, Whisper recibe igualmente el audio.
-      meterContext = new (window.AudioContext || window.webkitAudioContext)()
-      meterSource = meterContext.createMediaStreamSource(stream)
-      meterAnalyser = meterContext.createAnalyser()
-      meterAnalyser.fftSize = 512
-      meterSource.connect(meterAnalyser)
-      const samples = new Uint8Array(meterAnalyser.fftSize)
-      const sample = () => {
-        meterAnalyser.getByteTimeDomainData(samples)
-        let sum = 0
-        for (const value of samples) {
-          const normalized = (value - 128) / 128
-          sum += normalized * normalized
-        }
-        // RMS aproximado de -39 dBFS; el ruido ambiente queda por debajo.
-        if (Math.sqrt(sum / samples.length) > 0.011) heardSpeech = true
-        meterFrame = requestAnimationFrame(sample)
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext
+      if (AudioContextClass) {
+        meterContext = new AudioContextClass()
+        if (meterContext.state === 'suspended') await meterContext.resume()
       }
-      sample()
-      recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' })
+      if (meterContext) {
+        try {
+          meterSource = meterContext.createMediaStreamSource(stream)
+          meterAnalyser = meterContext.createAnalyser()
+          meterAnalyser.fftSize = 512
+          meterSource.connect(meterAnalyser)
+          const samples = new Uint8Array(meterAnalyser.fftSize)
+          const sample = () => {
+            meterAnalyser.getByteTimeDomainData(samples)
+            let sum = 0
+            for (const value of samples) {
+              const normalized = (value - 128) / 128
+              sum += normalized * normalized
+            }
+            // RMS aproximado de -39 dBFS; el ruido ambiente queda por debajo.
+            if (Math.sqrt(sum / samples.length) > 0.011) heardSpeech = true
+            meterFrame = requestAnimationFrame(sample)
+          }
+          sample()
+        } catch (meterError) {
+          console.warn('Medidor de audio no disponible:', meterError)
+        }
+      }
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? 'audio/webm;codecs=opus' : undefined
+      recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream)
       recorder.ondataavailable = (event) => event.data.size && chunks.push(event.data)
       recorder.start()
     } catch (err) {
       resolve({ text: '', audio: null, error: 'not-allowed' })
+      return
+    }
+
+    if (!SR) {
+      // Chrome móvil puede exponer MediaRecorder sin SpeechRecognition.
+      // Se cierra la captura mediante un silencio temporal y Whisper transcribe.
+      setTimeout(() => {
+        if (recorder.state !== 'inactive') recorder.stop()
+      }, 5000)
+      recorder.addEventListener('stop', () => {
+        if (!isListening.value) return
+        isListening.value = false
+        stream.getTracks().forEach((track) => track.stop())
+        resolve({ text: '', audio: heardSpeech ? new Blob(chunks, { type: recorder.mimeType }) : null, error: null })
+      }, { once: true })
+      isListening.value = true
+      setIgrisState('listening')
       return
     }
 
@@ -521,7 +550,7 @@ const runHandsFree = async () => {
         handsFree.value = false
         break
       }
-      if (text && audio) {
+      if (audio) {
         const form = new FormData()
         form.append('audio', audio, 'voice.webm')
         form.append('session_id', sessionId)
