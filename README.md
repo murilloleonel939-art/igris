@@ -6,17 +6,17 @@
 | Capacidad | Estado |
 | --- | --- |
 | 💬 Chat web con Igris | Funcional |
-| 🔑 Acceso a la web con clave única (`IGRIS_ACCESS_KEY`) | Funcional |
+| 🔑 Acceso admin con clave (`IGRIS_ACCESS_KEY`) o usuario con `is_admin=true` | Funcional |
 | 👥 **Área de usuarios**: cuentas con usuario y contraseña, chat propio | Funcional |
 | 🛠️ **Panel de gestión de usuarios** (crear, activar/desactivar, borrar, cambiar contraseña) | Funcional |
 | 🗣️ **Trato personalizado por usuario**: el administrador configura cómo se dirige Igris a cada cuenta | Funcional |
 | 📲 **Instalable como app (PWA)**, con una app para el administrador y otra para los usuarios | Funcional |
 | 🧑‍🎤 Avatar animado (video) a pantalla completa que cambia según escucha, piensa o habla | Funcional |
-| 🎧 Modo manos libres siempre activo: solo le hablas | Funcional (Chrome/Edge) |
+| 🎧 Modo manos libres con corte automático por silencio: solo le hablas | Funcional (Chrome/Edge) |
 | 🔊 Respuesta hablada automática (`/api/tts`) y botón de altavoz para repetir cada respuesta | Funcional |
 | ⌨️ Botón Enviar que abre un cuadro de texto para escribir | Funcional |
 | 🤖 Bot de Telegram (texto) | Funcional |
-| 🎤 Notas de voz y audios por Telegram (transcripción con Whisper) | Funcional |
+| 🎤 Notas de voz, audios y comandos por voz con verificación de hablante + Whisper | Funcional |
 | ⚙️ Configuración de proveedor activo y cadena de fallback (web y Telegram) | Funcional |
 | 🔁 Fallback automático entre proveedores de IA | Funcional |
 | 🔐 Acceso al bot restringido por ID de Telegram + secreto de webhook | Funcional |
@@ -35,22 +35,23 @@
 | 🔗 **Google por usuario**: cada cuenta conecta su propio Gmail/Calendar desde `/u`; al terminar, el callback del backend redirige automáticamente al chat | Funcional |
 | 📲 **Telegram por usuario**: cada cuenta vincula su propio chat con un código de 6 dígitos | Funcional |
 | 🛡️ **Admin puede desvincular Telegram de cualquier usuario** desde el panel | Funcional |
+| 🧬 **Perfil de voz por usuario**: registro guiado con varias muestras, validación antes de transcribir y opción de borrar grabaciones | Funcional |
 | 🧪 Suite de pruebas end-to-end (226 comprobaciones, reejecutable) | Funcional |
 **Personalidad:** caballero de las sombras, leal y formal, con español neutro (sin acento peninsular). El prompt vive en `core/config.py`; las instrucciones de herramientas, en `TOOLS_PROMPT` de `core/brain.py`.
 ---
 ## 🔐 Las dos superficies de acceso
 
-Igris tiene **dos formas de entrar que no se mezclan**. Un token de usuario nunca sirve en las rutas de administración, y la clave de administrador nunca sirve en las de usuario. El rol va firmado dentro del token, así que el navegador no puede añadirlo ni modificarlo.
+Igris tiene **dos formas de entrar**. La clave de administrador sigue funcionando como acceso principal del panel, y un usuario normal entra por `/u/login`. Si una cuenta de usuario tiene `is_admin=true`, su JWT también puede abrir el mismo panel administrativo. Ese permiso se valida en el backend contra la firma del token, el rol `user`, `is_active` y el campo `is_admin` en base de datos; no se confía solo en el navegador.
 
 | | Administrador | Usuarios |
 | --- | --- | --- |
 | Pantalla | `/acceso` | `/u/login` |
-| Cómo se autentica | Clave única en el header `X-Igris-Key` | Usuario + contraseña → token JWT (`Authorization: Bearer`) |
+| Cómo se autentica | Clave única en `X-Igris-Key` **o** JWT de usuario admin | Usuario + contraseña → token JWT (`Authorization: Bearer`) |
 | Dónde se guarda | `localStorage` (sobrevive al cierre del navegador) | `localStorage` con expiración (la sesión dura 7 días) |
 | Duración | Mientras no se borre la clave | 7 días (o hasta que el JWT del servidor caduque) |
-| Rutas | `/`, `/config`, `/panel/usuarios` | `/u` |
+| Rutas | `/`, `/config`, `/panel/usuarios`; usuario admin también conserva acceso a `/u` y «Conexiones» | `/u` |
 
-La clave del administrador vive **solo** en la variable de entorno `IGRIS_ACCESS_KEY` (Coolify). El frontend nunca la contiene: se escribe a mano en la pantalla `/acceso` y se envía en cada petición.
+La clave del administrador vive **solo** en la variable de entorno `IGRIS_ACCESS_KEY` (Coolify). El frontend nunca la contiene: se escribe a mano en la pantalla `/acceso` y se envía en cada petición. Las cuentas marcadas como admin se crean o editan desde `/panel/usuarios` con el campo `is_admin`.
 
 **Límites de intentos**, independientes entre sí para que nadie pueda bloquear el acceso del otro:
 
@@ -66,8 +67,8 @@ Los dos límites viven en memoria, así que se reinician al reiniciar el backend
 | Método | Ruta | Qué hace |
 | --- | --- | --- |
 | `GET` | `/api/admin/users` | Lista los usuarios (nunca devuelve el hash de la contraseña) |
-| `POST` | `/api/admin/users` | Crea un usuario (`username`, `email`, `password`) |
-| `PUT` | `/api/admin/users/{id}` | Edita, activa/desactiva, cambia la contraseña o configura el trato personalizado |
+| `POST` | `/api/admin/users` | Crea un usuario (`username`, `email`, `password`, permisos y `is_admin`) |
+| `PUT` | `/api/admin/users/{id}` | Edita, activa/desactiva, cambia contraseña, permisos, trato personalizado o `is_admin` |
 | `DELETE` | `/api/admin/users/{id}` | Borra un usuario |
 | `DELETE` | `/api/admin/users/{id}/telegram` | Desvincula el Telegram de un usuario (el bot deja de atenderle de inmediato) |
 | `GET` | `/api/admin/features` | Catálogo de funciones que se pueden habilitar |
@@ -111,6 +112,10 @@ El administrador decide **qué puede hacer cada usuario**, y ese permiso se comp
 | `GET` | `/api/user/me` | Devuelve la sesión actual |
 | `POST` | `/api/user/chat` | Habla con Igris (historial aislado por usuario) |
 | `POST` | `/api/user/tts` | Convierte texto en voz |
+| `GET` | `/api/user/voice-profile` | Indica si el usuario tiene perfil de voz registrado |
+| `POST` | `/api/user/voice-profile` | Registra la voz con varias muestras guiadas |
+| `DELETE` | `/api/user/voice-profile` | Borra el perfil/grabaciones de validación de voz |
+| `POST` | `/api/user/voice-chat` | Verifica la voz, transcribe con Whisper y ejecuta el comando |
 | `GET` | `/api/user/connections` | Qué tiene conectado y qué le falta (alimenta «Conexiones» en `/u`) |
 | `GET` | `/api/user/google/start` | Devuelve la URL de consentimiento de Google |
 | `GET` | `/api/user/google/callback` | Recibe el código de Google y guarda el permiso del usuario |
@@ -118,7 +123,7 @@ El administrador decide **qué puede hacer cada usuario**, y ese permiso se comp
 | `POST` | `/api/user/telegram/code` | Genera el código de vinculación de Telegram |
 | `DELETE` | `/api/user/telegram` | Desvincula su Telegram |
 
-La sección **«Conexiones»** de `/u` es donde el usuario conecta su Google y vincula su Telegram. Solo aparecen las que le hacen falta: a quien no tiene correo ni calendario habilitados no se le pide conectar Google.
+La sección **«Conexiones»** de `/u` es donde el usuario conecta su Google y vincula su Telegram. Solo aparecen las que le hacen falta: a quien no tiene correo ni calendario habilitados no se le pide conectar Google. Si el usuario también es admin, puede entrar al panel principal y seguir teniendo disponible el menú de Conexiones.
 
 ---
 ## 📲 Instalable como aplicación (PWA)
@@ -220,7 +225,7 @@ La confirmación se hace cumplir **en el servidor**, no solo con el prompt:
 ---
 ## 🚀 Características
 ### Interfaz web (estilo Jarvis)
-Hay **dos interfaces**: la del administrador (la que se describe aquí) y la del área de usuarios (`/u`), más simple y sin menú de administración.
+Hay **dos interfaces**: la del administrador y la del área de usuarios (`/u`). Un usuario con `is_admin=true` puede usar ambas: entra al panel completo y también conserva el menú de Conexiones de su cuenta.
 
 La pantalla del chat del administrador funciona como un asistente de voz:
 - **Acceso con clave:** al abrir la web, si el navegador no tiene la clave guardada, se muestra la pantalla `/acceso`. Al escribir la clave correcta se guarda en el navegador y se entra al chat. El botón **Salir** del menú la borra.
@@ -235,11 +240,11 @@ La pantalla del chat del administrador funciona como un asistente de voz:
 - **Manos libres siempre activo:** al abrir el chat empieza a escuchar solo, en bucle. Hablas, Igris responde con voz y, al terminar, vuelve a escuchar. Mientras piensa o habla, el micrófono se pausa para que no se oiga a sí mismo. Un botón pequeño ("Manos libres: activo/pausado") permite pausarlo y reanudarlo.
 - **Escribir un mensaje:** el botón ✉️ Enviar abre el cuadro de texto con su botón "Enviar" (Enter también envía, Esc lo cierra). Mientras escribes, el micrófono se pausa.
 - **Historial:** panel translúcido en la parte inferior con los mensajes (`user:` / `igris:`) y un botón de altavoz para repetir cualquier respuesta.
-- **Menú (administrador):** 💬 Chat, ⚙️ Configuración, 👥 Usuarios y Salir.
-- **Área de usuarios (`/u`):** interfaz propia y más simple, sin menú de administración. El usuario solo ve su chat y su nombre con un botón para salir. No puede alcanzar Configuración ni el panel de usuarios.
+- **Menú (administrador):** 💬 Chat, ⚙️ Configuración, 👥 Usuarios y Salir. Si el acceso viene de una cuenta con `is_admin=true`, también aparece **🔗 Conexiones**.
+- **Área de usuarios (`/u`):** interfaz propia y más simple. El usuario ve su chat, Conexiones y Salir; si además es admin, aparece un botón para volver al **Panel admin**. Un usuario sin `is_admin` no puede alcanzar Configuración ni el panel de usuarios.
 - **Instalar como app:** en las pantallas de acceso (`/acceso` y `/u/login`) aparece un botón **📲 Instalar** (ver **Instalable como aplicación (PWA)**).
 ### Requisitos y límites del navegador
-- **Voz:** usa la Web Speech API del navegador (idioma `es-CO`), por lo que requiere Chrome o Edge y HTTPS. Firefox y Safari no la soportan completa; en ese caso se puede escribir con el botón Enviar. Este reconocimiento ocurre en el navegador y no pasa por `core/stt.py` (ese solo se usa para Telegram).
+- **Voz en navegador:** el panel admin mantiene reconocimiento del navegador donde aplica; el área de usuarios graba con `MediaRecorder` y envía el audio al backend para verificar voz y transcribir con Whisper. Requiere HTTPS y permiso de micrófono. Si el navegador no soporta la captura de audio, se puede escribir con el botón Enviar.
 - **Micrófono:** la primera vez el navegador pide permiso; hay que aceptarlo. Si se bloquea, se corrige desde el candado de la barra de direcciones y pulsando "Manos libres".
 - **Sonido:** los navegadores no reproducen audio hasta que haya un clic o toque en la página. Si lo bloquean, aparece el aviso "Toca la pantalla para activar el sonido"; con un toque basta.
 - **Video:** el video es vertical (480×800). En un monitor horizontal ocupa todo el alto y los costados se funden con el fondo; en el celular llena toda la pantalla.
@@ -262,8 +267,9 @@ La pantalla del chat del administrador funciona como un asistente de voz:
 - Se recuerdan los últimos 6 turnos (`IGRIS_HISTORY_TURNS`). Las sesiones expiran tras 2 horas sin uso y hay un máximo de 200.
 - **Viven en memoria:** se pierden al reiniciar o redesplegar el backend (también una propuesta de evento pendiente de confirmar). Funciona con un solo worker de Uvicorn. Las cuentas de usuario, los recordatorios y las notas sí se guardan en la base de datos.
 ### Voz
-- **Web (entrada):** reconocimiento de voz del navegador (Web Speech API), en modo manos libres.
-- **STT en el backend (Telegram):** `core/stt.py`. Proveedor `local` (Whisper, requiere ffmpeg en la imagen) u `openai` (API de Whisper). Ojo con los nombres: `IGRIS_WHISPER_MODEL` elige el modelo **local** y `IGRIS_STT_MODEL` el de la API; cada uno solo se lee en su propia ruta, así que definir el que no corresponde no tiene efecto.
+- **Web (entrada):** el área de usuarios graba audio con `MediaRecorder`, corta automáticamente cuando detecta silencio y lo envía al backend. Antes de transcribir, `core/voice.py` limpia el audio con ffmpeg, normaliza volumen, calcula embeddings con SpeechBrain ECAPA-TDNN y compara contra el perfil registrado. Si no supera el umbral, no llega a Whisper ni a ejecución de comandos.
+- **Perfil de voz:** se registra desde `/u` con varias muestras guiadas variando distancia y volumen. El usuario puede borrar su perfil con **Borrar grabaciones** para desactivar esa validación.
+- **STT en el backend:** `core/stt.py` usa Whisper local por defecto (`IGRIS_WHISPER_MODEL=base`) para audio validado y Telegram. Ojo con los nombres: `IGRIS_WHISPER_MODEL` elige el modelo **local** y `IGRIS_STT_MODEL` el de la API OpenAI; cada uno solo se lee en su propia ruta, así que definir el que no corresponde no tiene efecto.
 - **TTS (texto a voz):** `core/tts.py`, expuesto en `POST /api/tts`. La web lo reproduce automáticamente tras cada respuesta y mide su volumen con la Web Audio API para animar al avatar.
 ### Configuración de IA
 - **Proveedores:** `nemotron`, `openai`, `anthropic`, `local` (Ollama). `nemotron`, `openai` y `local` se consumen con el SDK de OpenAI (APIs compatibles con `/v1/chat/completions`). **`anthropic` es la excepción:** Claude solo se sirve por el protocolo nativo de Anthropic (`/v1/messages`, con `x-api-key`), así que usa el SDK `anthropic` y su propio bucle de herramientas (`_complete_with_anthropic`); enviarlo por `/v1/chat/completions` devuelve `protocol_mismatch`. Por eso su URL base **no lleva `/v1`**: el SDK añade `/v1/messages`. La lista válida está en `PROVIDERS` de `core/brain.py` y debe coincidir con `AVAILABLE_PROVIDERS` de `core/config.py`.
@@ -272,9 +278,9 @@ La pantalla del chat del administrador funciona como un asistente de voz:
 - Los cambios hechos desde la web o Telegram se guardan en `core/settings.json` y aplican de inmediato, pero **no sobreviven a un redeploy completo**. Para dejarlos permanentes, usa variables de entorno en Coolify.
 - Un `settings.json` antiguo que contenga un proveedor que ya no existe (por ejemplo `groq`) se limpia al cargarse y no rompe nada. `GET /status` y `GET /api/ai-config` solo listan proveedores válidos, y `PUT /api/ai-config` y `/setprovider` rechazan los inválidos.
 ### API del backend
-Los endpoints `/api/*` del administrador requieren el header `X-Igris-Key` con la clave de acceso (`IGRIS_ACCESS_KEY`). Sin clave o con una incorrecta responden `401`; tras 10 intentos fallidos desde la misma IP en 5 minutos responden `429`.
+Los endpoints administrativos aceptan `X-Igris-Key` con `IGRIS_ACCESS_KEY` o `Authorization: Bearer <token>` de un usuario activo con `is_admin=true`. Sin credencial válida responden `401`; tras 10 intentos fallidos desde la misma IP en 5 minutos responden `429`.
 
-Los del área de usuarios (`/api/user/*`) se autentican con `Authorization: Bearer <token>`, y los del panel (`/api/admin/*`) con la misma clave del administrador. La tabla completa de unos y otros está en **Las dos superficies de acceso**.
+Los endpoints del área de usuarios (`/api/user/*`) se autentican con `Authorization: Bearer <token>`. La tabla completa está en **Las dos superficies de acceso**.
 
 | Endpoint | Descripción |
 | --- | --- |
@@ -408,6 +414,7 @@ Las credenciales OAuth que usan `core/tools/google_client.py`, `gmail.py` y `gca
 | `IGRIS_WHISPER_MODEL` | Modelo de Whisper local (`tiny`, `base`, `small`, `medium`) | `base` |
 | `IGRIS_STT_MODEL` | Modelo de Whisper para el proveedor `openai` (no aplica al local) | `whisper-1` |
 | `IGRIS_STT_LANGUAGE` | Idioma del audio a transcribir (código de 2 letras) | `es` |
+| `IGRIS_VOICE_THRESHOLD` | Umbral mínimo de similitud para aceptar al hablante registrado | `0.40` |
 | `IGRIS_TTS_PROVIDER` | Proveedor de síntesis de voz | `local` |
 | `IGRIS_TTS_VOICE` | Voz a usar (los valores válidos dependen del proveedor de TTS) | según proveedor |
 | `IGRIS_TTS_RATE` | Velocidad de la voz | según proveedor |
@@ -533,7 +540,7 @@ curl -i -X OPTIONS $API/api/chat \
 ### Recomendación: caché del modelo de Whisper
 La primera nota de voz tras un despliegue descarga el modelo de Whisper (unos 140 MB para `base`). Para no repetirlo en cada redeploy, monta un volumen persistente en `/root/.cache/whisper` (Coolify → backend → Storages).
 ### PyTorch solo CPU
-El servidor no tiene GPU, así que el `Dockerfile` instala `torch==2.3.0` desde el índice de CPU de PyTorch **antes** de `requirements.txt`. Así `openai-whisper` encuentra `torch` ya instalado y no descarga la versión con CUDA (varios GB). La versión del `Dockerfile` debe coincidir con la de `requirements.txt`. Para comprobarlo dentro del contenedor del backend: `pip list | grep -i -E "^(torch|nvidia)"` debe mostrar solo `torch 2.3.0+cpu`.
+El servidor no tiene GPU, así que el `Dockerfile` instala `torch==2.5.1` y `torchaudio==2.5.1` desde el índice de CPU de PyTorch **antes** de `requirements.txt`. Así `openai-whisper` y SpeechBrain encuentran PyTorch ya instalado y no descargan la versión con CUDA (varios GB). La versión del `Dockerfile` debe coincidir con la de `requirements.txt`. Para comprobarlo dentro del contenedor del backend: `pip list | grep -i -E "^(torch|torchaudio|nvidia)"` debe mostrar Torch/Torchaudio CPU y no paquetes CUDA.
 ---
 ## 🩺 Solución de problemas
 | Síntoma | Causa probable | Solución |
@@ -547,6 +554,8 @@ El servidor no tiene GPU, así que el `Dockerfile` instala `torch==2.3.0` desde 
 | Aviso rojo "Micrófono bloqueado" | Permiso denegado en el navegador | Permitir el micrófono en el candado de la barra de direcciones y pulsar "Manos libres" |
 | "Tu navegador no soporta la voz" | Firefox o Safari | Usar Chrome o Edge, o escribir con el botón ✉️ Enviar |
 | Aviso "Toca la pantalla para activar el sonido" | El navegador bloquea el audio hasta que haya una interacción | Hacer clic o tocar la página una vez |
+| La voz registrada marca similitud baja o rechaza al usuario correcto | Muestras con ruido, volumen/distancia muy distintos, o perfil antiguo | Regrabar el perfil con las muestras guiadas; si no se quiere validación por voz, usar **Borrar grabaciones** |
+| La primera transcripción tarda mucho después de redeploy | Whisper descargó de nuevo el modelo local | Montar volumen persistente en `/root/.cache/whisper` |
 | Igris responde en texto pero no habla | Falla de `/api/tts` en el backend | Revisar los logs del backend y la configuración de `IGRIS_TTS_*` |
 | Igris se responde a sí mismo en bucle | Altavoces muy fuertes cerca del micrófono | Usar audífonos o bajar el volumen |
 | `Proveedor 'nemotron' falló: respuesta vacía` | El modelo razona y agota los tokens antes de responder | Subir `IGRIS_MAX_TOKENS` (2048 o más); el log indica el `finish_reason` |
@@ -576,7 +585,7 @@ El servidor no tiene GPU, así que el `Dockerfile` instala `torch==2.3.0` desde 
 | 429 "Demasiados intentos" al entrar un usuario | 8 fallos desde la misma IP para ese usuario en 5 minutos | Esperar 5 minutos o reiniciar el backend (el contador está en memoria) |
 ---
 ## 📝 Notas importantes
-- **Acceso del administrador:** la interfaz pide una clave (`IGRIS_ACCESS_KEY`) en `/acceso`. El navegador la guarda en `localStorage` y la envía en el header `X-Igris-Key` a `/api/chat`, `/api/tts`, `/api/ai-config`, `/api/auth/check` y `/api/admin/*`. El backend compara la clave en tiempo constante, rechaza todo si la variable no está definida y responde 429 tras 10 intentos fallidos desde una IP en 5 minutos. `/health`, `/status` y el webhook de Telegram no usan esta clave. **Esta clave es la del administrador**: los usuarios entran con su propia cuenta desde `/u/login` (ver **Las dos superficies de acceso**).
+- **Acceso del administrador:** la interfaz admite la clave (`IGRIS_ACCESS_KEY`) en `/acceso` o un JWT de usuario con `is_admin=true`. La clave se guarda en `localStorage` y se envía como `X-Igris-Key`; el JWT se envía como `Authorization: Bearer`. El backend compara la clave en tiempo constante y, para JWT, valida firma, rol, usuario activo y `is_admin` en base de datos. Si la variable de clave falta, la ruta por clave falla cerrada; el acceso por JWT admin sigue requiriendo `SECRET_KEY` válido. `/health`, `/status` y el webhook de Telegram no usan esta clave.
 - **CORS:** el backend solo acepta peticiones del frontend (`https://webigris.zottagroup.com`), de `http://localhost:5173` y de `http://localhost:3000` (el servidor del frontend en local), con los métodos `GET`, `POST`, `PUT`, `DELETE` y `OPTIONS` y los headers `Content-Type`, `X-Igris-Key` y `Authorization`. Si falta un método o un header, el navegador bloquea la petición **antes** de enviarla y el error que se ve es de CORS, no el error real del servidor.
 - **El bot de Telegram tiene su propia protección:** solo responde a los IDs de `ALLOWED_TELEGRAM_IDS` y valida el secreto del webhook.
 - **System prompt** (en `core/config.py`): Igris es un caballero de las sombras leal, formal, de respuestas breves y sin markdown (sus respuestas están pensadas para decirse en voz alta), y se dirige al usuario como "mi señor".
