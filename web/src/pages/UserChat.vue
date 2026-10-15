@@ -396,8 +396,33 @@ function listenOnce() {
     let stream
     let recorder
     const chunks = []
+    let meterContext
+    let meterSource
+    let meterAnalyser
+    let meterFrame
+    let heardSpeech = false
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      // El medidor evita depender únicamente de SpeechRecognition: si hay voz
+      // pero el navegador no devuelve texto, Whisper recibe igualmente el audio.
+      meterContext = new (window.AudioContext || window.webkitAudioContext)()
+      meterSource = meterContext.createMediaStreamSource(stream)
+      meterAnalyser = meterContext.createAnalyser()
+      meterAnalyser.fftSize = 512
+      meterSource.connect(meterAnalyser)
+      const samples = new Uint8Array(meterAnalyser.fftSize)
+      const sample = () => {
+        meterAnalyser.getByteTimeDomainData(samples)
+        let sum = 0
+        for (const value of samples) {
+          const normalized = (value - 128) / 128
+          sum += normalized * normalized
+        }
+        // RMS aproximado de -39 dBFS; el ruido ambiente queda por debajo.
+        if (Math.sqrt(sum / samples.length) > 0.011) heardSpeech = true
+        meterFrame = requestAnimationFrame(sample)
+      }
+      sample()
       recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' })
       recorder.ondataavailable = (event) => event.data.size && chunks.push(event.data)
       recorder.start()
@@ -433,7 +458,7 @@ function listenOnce() {
       isListening.value = false
       stream.getTracks().forEach((track) => track.stop())
       const audio = new Blob(chunks, { type: 'audio/webm' })
-      resolve({ text, audio, error })
+      resolve({ text, audio: heardSpeech ? audio : null, error })
     }
     rec.onend = () => {
       if (recorder && recorder.state !== 'inactive') {
