@@ -40,6 +40,7 @@ def _wav_bytes(audio: bytes, suffix: str = ".ogg") -> bytes:
     try:
         result = subprocess.run(
             ["ffmpeg", "-nostdin", "-loglevel", "error", "-i", source_path,
+             "-af", "silenceremove=start_periods=1:start_duration=0.15:start_threshold=-35dB:stop_periods=-1:stop_duration=0.25:stop_threshold=-35dB,dynaudnorm=f=150:g=15",
              "-ac", "1", "-ar", "16000", "-f", "wav", "pipe:1"],
             check=True,
             stdout=subprocess.PIPE,
@@ -103,7 +104,7 @@ def average_embedding(audio_items: Iterable[bytes], suffix: str = ".ogg") -> lis
 
 
 def verify(audio: bytes, stored: str, suffix: str = ".ogg") -> tuple[bool, float]:
-    threshold = float(os.getenv("IGRIS_VOICE_THRESHOLD", "0.72"))
+    threshold = float(os.getenv("IGRIS_VOICE_THRESHOLD", "0.50"))
     current = embedding(audio, suffix)
     scores = [similarity(current, sample) for sample in deserialize(stored)]
     score = max(scores) if scores else -1.0

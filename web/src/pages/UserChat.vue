@@ -634,8 +634,8 @@ async function registerVoice() {
     const steps = [
       'Paso 1 de 4: habla con tu volumen normal, cerca del micrófono.',
       'Paso 2 de 4: aléjate aproximadamente un metro y habla con volumen normal.',
-      'Paso 3 de 4: vuelve cerca del micrófono y habla con volumen bajo, sin susurrar.',
-      'Paso 4 de 4: mantén la distancia y habla con un volumen un poco más alto.',
+      'Paso 3 de 4: vuelve cerca del micrófono y habla un poco más bajo, sin susurrar.',
+      'Paso 4 de 4: mantén la distancia y habla un poco más alto, sin gritar.',
     ]
     for (let index = 0; index < steps.length; index += 1) {
       voiceStepLabel.value = `${steps[index]} Preparando grabación…`
