@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import base64
 import io
+import json
 import logging
 import os
 import subprocess
@@ -70,15 +71,23 @@ def embedding(audio: bytes, suffix: str = ".ogg") -> np.ndarray:
     return vector.squeeze().detach().cpu().numpy().astype(np.float32)
 
 
-def serialize(vector: np.ndarray) -> str:
-    return encrypt(base64.b64encode(vector.tobytes()).decode("ascii")) or ""
+def serialize(vector: np.ndarray | list[np.ndarray]) -> str:
+    vectors = vector if isinstance(vector, list) else [vector]
+    payload = [base64.b64encode(item.astype(np.float32).tobytes()).decode("ascii") for item in vectors]
+    return encrypt(json.dumps(payload)) or ""
 
 
-def deserialize(value: str) -> np.ndarray:
+def deserialize(value: str) -> list[np.ndarray]:
     raw = decrypt(value)
     if not raw:
         raise ValueError("Huella de voz inválida")
-    return np.frombuffer(base64.b64decode(raw), dtype=np.float32)
+    try:
+        payload = json.loads(raw)
+        if isinstance(payload, str):
+            payload = [payload]
+    except json.JSONDecodeError:
+        payload = [raw]
+    return [np.frombuffer(base64.b64decode(item), dtype=np.float32) for item in payload]
 
 
 def similarity(left: np.ndarray, right: np.ndarray) -> float:
@@ -86,18 +95,18 @@ def similarity(left: np.ndarray, right: np.ndarray) -> float:
     return float(np.dot(left, right) / denominator) if denominator else -1.0
 
 
-def average_embedding(audio_items: Iterable[bytes], suffix: str = ".ogg") -> np.ndarray:
+def average_embedding(audio_items: Iterable[bytes], suffix: str = ".ogg") -> list[np.ndarray]:
     vectors = [embedding(item, suffix) for item in audio_items]
     if not vectors:
         raise ValueError("Se necesita al menos una muestra de voz")
-    result = np.mean(vectors, axis=0)
-    norm = np.linalg.norm(result)
-    return result / norm if norm else result
+    return vectors
 
 
 def verify(audio: bytes, stored: str, suffix: str = ".ogg") -> tuple[bool, float]:
     threshold = float(os.getenv("IGRIS_VOICE_THRESHOLD", "0.72"))
-    score = similarity(embedding(audio, suffix), deserialize(stored))
+    current = embedding(audio, suffix)
+    scores = [similarity(current, sample) for sample in deserialize(stored)]
+    score = max(scores) if scores else -1.0
     return score >= threshold, score
 
 
