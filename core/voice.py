@@ -59,6 +59,10 @@ def embedding(audio: bytes, suffix: str = ".ogg") -> np.ndarray:
     wav = _wav_bytes(audio, suffix)
     signal, sample_rate = torchaudio.load(io.BytesIO(wav))
     signal = signal.mean(dim=0, keepdim=True)
+    # Reduce differences caused by microphone distance and speaking volume.
+    peak = signal.abs().max()
+    if peak > 1e-4:
+        signal = signal / peak
     if sample_rate != 16000:
         signal = torchaudio.functional.resample(signal, sample_rate, 16000)
     with torch.no_grad():

@@ -610,16 +610,17 @@ def _bind_identity(session, user: User, db: Session) -> None:
 
 @router.post("/api/user/voice-profile")
 async def register_voice_profile(
-    audio: UploadFile = File(...),
+    audio: list[UploadFile] = File(...),
     user: User = Depends(require_user),
     db: Session = Depends(get_db),
 ):
     """Registra o reemplaza la huella de voz del usuario."""
-    data = await audio.read()
-    if len(data) < 10_000:
-        raise HTTPException(status_code=422, detail="La muestra de voz es demasiado corta")
+    samples = [await item.read() for item in audio]
+    samples = [item for item in samples if len(item) >= 10_000]
+    if len(samples) < 3:
+        raise HTTPException(status_code=422, detail="Necesitas al menos 3 muestras de voz válidas")
     try:
-        vector = await asyncio.to_thread(voice.average_embedding, [data], ".webm")
+        vector = await asyncio.to_thread(voice.average_embedding, samples, ".webm")
         encoded = voice.serialize(vector)
     except Exception as exc:
         logger.exception("No se pudo registrar la voz")

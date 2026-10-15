@@ -74,7 +74,7 @@
           <section>
             <h3>Reconocimiento de voz</h3>
             <p class="conn-note">
-              Registra tu voz para que Igris acepte órdenes habladas solo cuando te reconozca.
+              Graba 4 muestras: habla normal, bajo, alto y a distancia media. Igris combinará las muestras para reconocer mejor tu voz.
             </p>
             <p v-if="voiceRegistered" class="conn-ok">Voz registrada.</p>
             <p v-if="voiceError" class="conn-error">{{ voiceError }}</p>
@@ -605,26 +605,38 @@ async function refreshVoiceStatus() {
   }
 }
 
+async function recordVoiceSample() {
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+  const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : undefined
+  const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream)
+  const chunks = []
+  recorder.ondataavailable = (event) => event.data.size && chunks.push(event.data)
+  const finished = new Promise((resolve) => { recorder.onstop = resolve })
+  recorder.start()
+  await new Promise((resolve) => setTimeout(resolve, 4500))
+  recorder.stop()
+  await finished
+  stream.getTracks().forEach((track) => track.stop())
+  return new Blob(chunks, { type: recorder.mimeType || 'audio/webm' })
+}
+
 async function registerVoice() {
   voiceError.value = ''
   handsFree.value = false
   if (recognition) recognition.abort()
   voiceRecording.value = true
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-    const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' })
-    const chunks = []
-    recorder.ondataavailable = (event) => event.data.size && chunks.push(event.data)
-    const finished = new Promise((resolve) => { recorder.onstop = resolve })
-    recorder.start()
-    await new Promise((resolve) => setTimeout(resolve, 5000))
-    recorder.stop()
-    await finished
-    stream.getTracks().forEach((track) => track.stop())
+    const samples = []
+    for (let index = 0; index < 4; index += 1) {
+      setNotice(`Muestra ${index + 1} de 4: habla durante la grabación`, 5000)
+      samples.push(await recordVoiceSample())
+      if (index < 3) await sleep(700)
+    }
     const form = new FormData()
-    form.append('audio', new Blob(chunks, { type: 'audio/webm' }), 'voice.webm')
+    samples.forEach((sample) => form.append('audio', sample, 'voice.webm'))
     await userApi.post('/api/user/voice-profile', form, { headers: { 'Content-Type': 'multipart/form-data' } })
     voiceRegistered.value = true
+    setNotice('Voz registrada con 4 muestras.', 5000)
   } catch (e) {
     voiceError.value = errorMessage(e, 'No se pudo registrar la voz')
   } finally {
