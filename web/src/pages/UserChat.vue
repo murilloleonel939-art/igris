@@ -543,7 +543,7 @@ const runHandsFree = async () => {
           setNotice(err.response?.data?.detail || 'Voz no reconocida. Orden rechazada.')
         }
       } else if (error && error !== 'no-speech' && error !== 'aborted') {
-        await sleep(2000)
+        await sleep(5000)
       } else {
         await sleep(300)
       }
@@ -644,7 +644,7 @@ async function registerVoice() {
       samples.push(await recordVoiceSample())
       if (index < steps.length - 1) {
         voiceStepLabel.value = `Muestra ${index + 1} completada. ${steps[index + 1]}`
-        await sleep(2000)
+        await sleep(5000)
       }
     }
     voiceStepLabel.value = 'Procesando tus cuatro muestras…'
