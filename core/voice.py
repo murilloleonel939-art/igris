@@ -104,7 +104,7 @@ def average_embedding(audio_items: Iterable[bytes], suffix: str = ".ogg") -> lis
 
 
 def verify(audio: bytes, stored: str, suffix: str = ".ogg") -> tuple[bool, float]:
-    threshold = float(os.getenv("IGRIS_VOICE_THRESHOLD", "0.50"))
+    threshold = float(os.getenv("IGRIS_VOICE_THRESHOLD", "0.40"))
     current = embedding(audio, suffix)
     scores = [similarity(current, sample) for sample in deserialize(stored)]
     score = max(scores) if scores else -1.0

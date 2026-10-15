@@ -676,7 +676,7 @@ async def user_voice_chat(
         logger.exception("Falló la verificación de voz")
         raise HTTPException(status_code=500, detail=f"No se pudo verificar la voz: {exc}")
     if not verified:
-        logger.warning("Voz no reconocida para usuario %s: score=%.4f threshold=%s", user.id, score, os.getenv("IGRIS_VOICE_THRESHOLD", "0.72"))
+        logger.warning("Voz no reconocida para usuario %s: score=%.4f threshold=%s", user.id, score, os.getenv("IGRIS_VOICE_THRESHOLD", "0.40"))
         raise HTTPException(status_code=403, detail=f"Voz no reconocida (similitud {score:.2f})")
 
     try:
