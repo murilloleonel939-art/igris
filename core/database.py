@@ -174,7 +174,8 @@ class Profile(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     name = Column(String(100), nullable=False)  # Nombre/alias del perfil
-    voice_print = Column(String(255), nullable=True)  # Huella de voz (futuro)
+    # El embedding cifrado suele superar los 255 caracteres.
+    voice_print = Column(Text, nullable=True)
     is_authorized = Column(Boolean, default=True)
     can_execute_commands = Column(Boolean, default=True)
     can_manage_users = Column(Boolean, default=False)
@@ -369,6 +370,15 @@ def _run_migrations(engine) -> None:
         if not _table_exists(conn, dialect, "users"):
             logger.info("Migraciones omitidas: la tabla 'users' todavía no existe")
             return
+
+        # ── profiles.voice_print ────────────────────────────────────────────
+        # Los embeddings cifrados pueden superar 255 caracteres.
+        if _table_exists(conn, dialect, "profiles"):
+            if not _column_exists(conn, dialect, "profiles", "voice_print"):
+                conn.execute(text("ALTER TABLE profiles ADD COLUMN voice_print TEXT"))
+                logger.info("Migración aplicada: profiles.voice_print (%s)", dialect)
+            elif dialect == "postgresql":
+                conn.execute(text("ALTER TABLE profiles ALTER COLUMN voice_print TYPE TEXT"))
 
         # ── users.addressing_instruction ────────────────────────────────────
         if not _column_exists(conn, dialect, "users", "addressing_instruction"):

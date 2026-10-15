@@ -52,6 +52,9 @@
           {{ handsFree ? 'Manos libres: activo' : 'Manos libres: pausado' }}
         </button>
         <button v-if="!showInput" class="pill" @click="openInput">✉️ Enviar</button>
+        <button class="pill" :disabled="voiceRecording" @click="registerAdminVoice">
+          {{ voiceRecording ? 'Grabando voz…' : 'Registrar voz' }}
+        </button>
       </div>
     </div>
   </div>
@@ -71,6 +74,7 @@ const isListening = ref(false)
 const isBusy = ref(false) // true mientras Igris piensa o habla
 const handsFree = ref(true) // activo desde el inicio
 const isPlayingTTS = ref([])
+const voiceRecording = ref(false)
 const notice = ref('')
 // Los navegadores exigen un toque antes de reproducir sonido
 const needsTap = ref(
@@ -251,12 +255,24 @@ const sendChat = async () => {
 /* ───────────── Reconocimiento de voz ───────────── */
 let recognition = null
 
-// Escucha una frase y devuelve { text, error }
+// Captura el audio y usa SpeechRecognition solo para detectar el final de la frase.
 function listenOnce() {
-  return new Promise((resolve) => {
+  return new Promise(async (resolve) => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition
-    if (!SR) {
-      resolve({ text: '', error: 'unsupported' })
+    if (!SR || !navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+      resolve({ text: '', audio: null, error: 'unsupported' })
+      return
+    }
+    let stream
+    let recorder
+    const chunks = []
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' })
+      recorder.ondataavailable = (event) => event.data.size && chunks.push(event.data)
+      recorder.start()
+    } catch (err) {
+      resolve({ text: '', audio: null, error: 'not-allowed' })
       return
     }
 
@@ -279,10 +295,20 @@ function listenOnce() {
     rec.onerror = (event) => {
       error = event.error
     }
-    rec.onend = () => {
+    let settled = false
+    const finish = () => {
+      if (settled) return
+      settled = true
       if (recognition === rec) recognition = null
       isListening.value = false
-      resolve({ text, error })
+      stream.getTracks().forEach((track) => track.stop())
+      resolve({ text, audio: new Blob(chunks, { type: 'audio/webm' }), error })
+    }
+    rec.onend = () => {
+      if (recorder.state !== 'inactive') {
+        recorder.addEventListener('stop', finish, { once: true })
+        recorder.stop()
+      } else finish()
     }
 
     try {
@@ -294,7 +320,9 @@ function listenOnce() {
       recognition = null
       isListening.value = false
       setIgrisState('idle')
-      resolve({ text: '', error: 'start-failed' })
+      if (recorder && recorder.state !== 'inactive') recorder.stop()
+      stream.getTracks().forEach((track) => track.stop())
+      resolve({ text: '', audio: null, error: 'start-failed' })
     }
   })
 }
@@ -331,14 +359,29 @@ const runHandsFree = async () => {
         await sleep(200)
         continue
       }
-      const { text, error } = await listenOnce()
+      const { text, audio, error } = await listenOnce()
       if (!handsFree.value) break
       if (reportVoiceError(error)) {
         handsFree.value = false
         break
       }
-      if (text) {
-        await sendMessage(text)
+      if (text && audio) {
+        const form = new FormData()
+        form.append('audio', audio, 'voice.webm')
+        form.append('session_id', sessionId)
+        try {
+          const response = await api.post('/api/voice-chat', form, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+          })
+          if (response.data.status === 'ok') {
+            chatMessages.value.push({ from: 'user', text: response.data.text })
+            chatMessages.value.push({ from: 'igris', text: response.data.reply })
+            scrollToBottom()
+            await playIrisResponse(response.data.reply, chatMessages.value.length - 1)
+          }
+        } catch (err) {
+          setNotice(err.response?.data?.detail || 'Voz no reconocida. Orden rechazada.')
+        }
       } else if (error && error !== 'no-speech' && error !== 'aborted') {
         await sleep(2000) // error temporal (p. ej. red): espera y reintenta
       } else {
@@ -348,6 +391,33 @@ const runHandsFree = async () => {
   } finally {
     loopRunning = false
     if (!isBusy.value) setIgrisState('idle')
+  }
+}
+
+async function registerAdminVoice() {
+  handsFree.value = false
+  if (recognition) recognition.abort()
+  voiceRecording.value = true
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' })
+    const chunks = []
+    recorder.ondataavailable = (event) => event.data.size && chunks.push(event.data)
+    recorder.start()
+    await new Promise((resolve) => setTimeout(resolve, 5000))
+    await new Promise((resolve) => {
+      recorder.addEventListener('stop', resolve, { once: true })
+      recorder.stop()
+    })
+    stream.getTracks().forEach((track) => track.stop())
+    const form = new FormData()
+    form.append('audio', new Blob(chunks, { type: 'audio/webm' }), 'voice.webm')
+    await api.post('/api/voice-profile', form, { headers: { 'Content-Type': 'multipart/form-data' } })
+    setNotice('Voz registrada correctamente.')
+  } catch (err) {
+    setNotice(err.response?.data?.detail || 'No se pudo registrar la voz.')
+  } finally {
+    voiceRecording.value = false
   }
 }
 

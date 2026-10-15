@@ -19,6 +19,7 @@ de ese usuario; no puede alcanzar la sesión de otro.
 """
 from __future__ import annotations
 
+import asyncio
 import hmac
 import logging
 import re
@@ -30,7 +31,7 @@ from threading import Lock
 from typing import Any, Optional
 
 import httpx
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Request, UploadFile, status
 from jose import JWTError, jwt
 from pydantic import BaseModel, field_validator
 from sqlalchemy.orm import Session
@@ -50,7 +51,8 @@ from core.capabilities import (
     admin_capabilities,
     capabilities_from_user,
 )
-from core.database import GoogleAccount, TelegramLink, User, get_db
+from core.database import GoogleAccount, Profile, TelegramLink, User, get_db
+from core import stt, voice
 
 router = APIRouter()
 
@@ -604,6 +606,92 @@ def _bind_identity(session, user: User, db: Session) -> None:
 
     link = db.query(TelegramLink).filter(TelegramLink.user_id == user.id).first()
     session.telegram_linked = bool(link and link.chat_id)
+
+
+@router.post("/api/user/voice-profile")
+async def register_voice_profile(
+    audio: UploadFile = File(...),
+    user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+):
+    """Registra o reemplaza la huella de voz del usuario."""
+    data = await audio.read()
+    if len(data) < 10_000:
+        raise HTTPException(status_code=422, detail="La muestra de voz es demasiado corta")
+    try:
+        vector = await asyncio.to_thread(voice.average_embedding, [data], ".webm")
+        encoded = voice.serialize(vector)
+    except Exception as exc:
+        logger.exception("No se pudo registrar la voz")
+        raise HTTPException(status_code=500, detail=f"No se pudo registrar la voz: {exc}")
+
+    profile = db.query(Profile).filter(
+        Profile.user_id == user.id,
+        Profile.name == "Voz principal",
+    ).first()
+    if profile is None:
+        profile = Profile(user_id=user.id, name="Voz principal")
+        db.add(profile)
+    profile.voice_print = encoded
+    profile.is_authorized = True
+    db.commit()
+    return {"status": "ok", "message": "Voz registrada correctamente"}
+
+
+@router.get("/api/user/voice-profile")
+async def voice_profile_status(
+    user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+):
+    profile = db.query(Profile).filter(
+        Profile.user_id == user.id,
+        Profile.name == "Voz principal",
+    ).first()
+    return {"registered": bool(profile and profile.voice_print and profile.is_authorized)}
+
+
+@router.post("/api/user/voice-chat")
+async def user_voice_chat(
+    audio: UploadFile = File(...),
+    session_id: Optional[str] = Form(None),
+    user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+):
+    """Verifica al hablante, transcribe y solo entonces ejecuta la orden."""
+    profile = db.query(Profile).filter(
+        Profile.user_id == user.id,
+        Profile.name == "Voz principal",
+        Profile.is_authorized.is_(True),
+    ).first()
+    if profile is None or not profile.voice_print:
+        raise HTTPException(status_code=403, detail="Registra tu voz antes de usar órdenes por voz")
+    data = await audio.read()
+    if len(data) < 1_000:
+        raise HTTPException(status_code=422, detail="El audio está vacío o es demasiado corto")
+    try:
+        verified, score = await asyncio.to_thread(voice.verify, data, profile.voice_print, ".webm")
+    except Exception as exc:
+        logger.exception("Falló la verificación de voz")
+        raise HTTPException(status_code=500, detail=f"No se pudo verificar la voz: {exc}")
+    if not verified:
+        raise HTTPException(status_code=403, detail="Voz no reconocida")
+
+    try:
+        text = (await asyncio.to_thread(stt.transcribe, data, ".webm")).strip()
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=f"No se pudo transcribir el audio: {exc}")
+    if not text:
+        raise HTTPException(status_code=422, detail="No se entendió la orden")
+
+    if _sessions is None:
+        return {"status": "error", "message": "El chat no está disponible en este momento."}
+    session = _sessions.get(_session_key(user.id, session_id))
+    _bind_identity(session, user, db)
+    try:
+        reply = await session.say(text)
+        return {"status": "ok", "text": text, "reply": reply, "voice_score": round(score, 3)}
+    except Exception as exc:
+        return {"status": "error", "message": str(exc)}
 
 
 @router.post("/api/user/chat")

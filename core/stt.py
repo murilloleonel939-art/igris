@@ -55,10 +55,10 @@ def _load_whisper_model():
     return _whisper_model
 
 
-def transcribe(audio: AudioInput) -> str:
+def transcribe(audio: AudioInput, suffix: str = ".ogg") -> str:
     """
-    Recibe el audio (bytes, bytearray o archivo en memoria; Telegram envía
-    normalmente OGG Opus) y devuelve el texto reconocido.
+    Recibe el audio y su extensión real (por defecto OGG; el navegador usa WebM).
+    Devuelve el texto reconocido.
 
     Es una función bloqueante: desde código async llámala con
     `await asyncio.to_thread(transcribe, audio)`.
@@ -81,7 +81,7 @@ def transcribe(audio: AudioInput) -> str:
         try:
             resp = client.audio.transcriptions.create(
                 model=os.getenv("IGRIS_STT_MODEL", "whisper-1"),
-                file=("audio.ogg", data, "audio/ogg"),
+                file=(f"audio{suffix}", data, "audio/webm" if suffix == ".webm" else "audio/ogg"),
                 language=_language(),
             )
             return (resp.text or "").strip()
@@ -90,7 +90,7 @@ def transcribe(audio: AudioInput) -> str:
 
     elif provider == "local":
         # openai-whisper trabaja con rutas (usa ffmpeg por debajo): archivo temporal.
-        with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as tmp:
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
             tmp.write(data)
             tmp_path = tmp.name
 

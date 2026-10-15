@@ -71,6 +71,20 @@
             </template>
           </section>
 
+          <section>
+            <h3>Reconocimiento de voz</h3>
+            <p class="conn-note">
+              Registra tu voz para que Igris acepte órdenes habladas solo cuando te reconozca.
+            </p>
+            <p v-if="voiceRegistered" class="conn-ok">Voz registrada.</p>
+            <p v-if="voiceError" class="conn-error">{{ voiceError }}</p>
+            <div class="conn-actions">
+              <button class="btn primary" :disabled="voiceRecording" @click="registerVoice">
+                {{ voiceRecording ? 'Grabando…' : (voiceRegistered ? 'Actualizar mi voz' : 'Registrar mi voz') }}
+              </button>
+            </div>
+          </section>
+
           <section v-if="conn.features.includes('reminders')">
             <h3>Tu Telegram</h3>
             <p v-if="conn.telegram.linked" class="conn-ok">
@@ -189,6 +203,9 @@ const isListening = ref(false)
 const isBusy = ref(false)
 const handsFree = ref(true)
 const isPlayingTTS = ref([])
+const voiceRegistered = ref(false)
+const voiceRecording = ref(false)
+const voiceError = ref('')
 const notice = ref('')
 const needsTap = ref(
   typeof navigator !== 'undefined' && !(navigator.userActivation && navigator.userActivation.hasBeenActive),
@@ -369,10 +386,23 @@ const sendChat = async () => {
 let recognition = null
 
 function listenOnce() {
-  return new Promise((resolve) => {
+  return new Promise(async (resolve) => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition
-    if (!SR) {
-      resolve({ text: '', error: 'unsupported' })
+    if (!SR || !navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+      resolve({ text: '', audio: null, error: 'unsupported' })
+      return
+    }
+
+    let stream
+    let recorder
+    const chunks = []
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' })
+      recorder.ondataavailable = (event) => event.data.size && chunks.push(event.data)
+      recorder.start()
+    } catch (err) {
+      resolve({ text: '', audio: null, error: 'not-allowed' })
       return
     }
 
@@ -395,10 +425,23 @@ function listenOnce() {
     rec.onerror = (event) => {
       error = event.error
     }
-    rec.onend = () => {
+    let settled = false
+    const finish = () => {
+      if (settled) return
+      settled = true
       if (recognition === rec) recognition = null
       isListening.value = false
-      resolve({ text, error })
+      stream.getTracks().forEach((track) => track.stop())
+      const audio = new Blob(chunks, { type: 'audio/webm' })
+      resolve({ text, audio, error })
+    }
+    rec.onend = () => {
+      if (recorder && recorder.state !== 'inactive') {
+        recorder.addEventListener('stop', finish, { once: true })
+        recorder.stop()
+      } else {
+        finish()
+      }
     }
 
     try {
@@ -410,7 +453,9 @@ function listenOnce() {
       recognition = null
       isListening.value = false
       setIgrisState('idle')
-      resolve({ text: '', error: 'start-failed' })
+      if (recorder && recorder.state !== 'inactive') recorder.stop()
+      stream.getTracks().forEach((track) => track.stop())
+      resolve({ text: '', audio: null, error: 'start-failed' })
     }
   })
 }
@@ -445,14 +490,29 @@ const runHandsFree = async () => {
         await sleep(200)
         continue
       }
-      const { text, error } = await listenOnce()
+      const { text, audio, error } = await listenOnce()
       if (!handsFree.value) break
       if (reportVoiceError(error)) {
         handsFree.value = false
         break
       }
-      if (text) {
-        await sendMessage(text)
+      if (text && audio) {
+        const form = new FormData()
+        form.append('audio', audio, 'voice.webm')
+        form.append('session_id', sessionId)
+        try {
+          const response = await userApi.post('/api/user/voice-chat', form, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+          })
+          if (response.data.status === 'ok') {
+            chatMessages.value.push({ from: 'user', text: response.data.text })
+            chatMessages.value.push({ from: 'igris', text: response.data.reply })
+            scrollToBottom()
+            await playIrisResponse(response.data.reply, chatMessages.value.length - 1)
+          }
+        } catch (err) {
+          setNotice(err.response?.data?.detail || 'Voz no reconocida. Orden rechazada.')
+        }
       } else if (error && error !== 'no-speech' && error !== 'aborted') {
         await sleep(2000)
       } else {
@@ -511,6 +571,42 @@ function featureLabel(key) {
   return nombres[key] || key
 }
 
+async function refreshVoiceStatus() {
+  try {
+    const res = await userApi.get('/api/user/voice-profile')
+    voiceRegistered.value = Boolean(res.data?.registered)
+  } catch (e) {
+    voiceError.value = errorMessage(e, 'No se pudo consultar el registro de voz')
+  }
+}
+
+async function registerVoice() {
+  voiceError.value = ''
+  handsFree.value = false
+  if (recognition) recognition.abort()
+  voiceRecording.value = true
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' })
+    const chunks = []
+    recorder.ondataavailable = (event) => event.data.size && chunks.push(event.data)
+    const finished = new Promise((resolve) => { recorder.onstop = resolve })
+    recorder.start()
+    await new Promise((resolve) => setTimeout(resolve, 5000))
+    recorder.stop()
+    await finished
+    stream.getTracks().forEach((track) => track.stop())
+    const form = new FormData()
+    form.append('audio', new Blob(chunks, { type: 'audio/webm' }), 'voice.webm')
+    await userApi.post('/api/user/voice-profile', form, { headers: { 'Content-Type': 'multipart/form-data' } })
+    voiceRegistered.value = true
+  } catch (e) {
+    voiceError.value = errorMessage(e, 'No se pudo registrar la voz')
+  } finally {
+    voiceRecording.value = false
+  }
+}
+
 async function refreshConnections() {
   conn.value.loading = true
   conn.value.error = ''
@@ -530,6 +626,7 @@ async function refreshConnections() {
 
 function openConnections() {
   conn.value.open = true
+  refreshVoiceStatus()
   // Solo se pide al servidor la primera vez; después se refresca desde los
   // botones de dentro, para no repetir la llamada en cada apertura.
   if (!conn.value.features.length && !conn.value.google) refreshConnections()

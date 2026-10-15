@@ -10,16 +10,16 @@ from collections import deque
 from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import FastAPI, Request, Header, HTTPException, BackgroundTasks, Depends
+from fastapi import FastAPI, Request, Header, HTTPException, BackgroundTasks, Depends, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 
 from core import Brain, config, stt          # ← añadido stt
 from core import database, telegram_links
 from core.capabilities import admin_capabilities, capabilities_from_user
-from core.database import GoogleAccount
+from core.database import GoogleAccount, Profile, User
 from core.settings_manager import get_settings
-from core import tts
+from core import tts, voice
 from core.database import init_db, engine
 from core.session_store import SessionStore
 from core.scheduler import run_reminder_loop
@@ -240,6 +240,65 @@ class ChatRequest(BaseModel):
     text: str
     session_id: Optional[str] = None  # opcional: si el frontend no lo envía, se usa una sesión única
 
+@app.post("/api/voice-profile", dependencies=[Depends(require_key)])
+async def register_admin_voice(audio: UploadFile = File(...)):
+    """Registra la voz del primer usuario administrador autorizado."""
+    data = await audio.read()
+    if len(data) < 10_000:
+        raise HTTPException(status_code=422, detail="La muestra de voz es demasiado corta")
+    try:
+        vector = await asyncio.to_thread(voice.average_embedding, [data], ".webm")
+        encoded = voice.serialize(vector)
+        with database.SessionLocal() as db:
+            user = db.query(User).filter(User.is_admin.is_(True)).order_by(User.id.asc()).first()
+            if user is None:
+                raise HTTPException(status_code=404, detail="No existe usuario administrador")
+            profile = db.query(Profile).filter(
+                Profile.user_id == user.id, Profile.name == "Voz principal"
+            ).first()
+            if profile is None:
+                profile = Profile(user_id=user.id, name="Voz principal")
+                db.add(profile)
+            profile.voice_print = encoded
+            profile.is_authorized = True
+            db.commit()
+        return {"status": "ok"}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("No se pudo registrar la voz del administrador")
+        raise HTTPException(status_code=500, detail=f"No se pudo registrar la voz: {exc}")
+
+
+@app.post("/api/voice-chat", dependencies=[Depends(require_key)])
+async def admin_voice_chat(audio: UploadFile = File(...), session_id: Optional[str] = Form(None)):
+    """Verifica la voz del administrador antes de transcribir y ejecutar."""
+    data = await audio.read()
+    if len(data) < 1_000:
+        raise HTTPException(status_code=422, detail="El audio está vacío o es demasiado corto")
+    with database.SessionLocal() as db:
+        user = db.query(User).filter(User.is_admin.is_(True)).order_by(User.id.asc()).first()
+        profile = db.query(Profile).filter(
+            Profile.user_id == user.id if user else False,
+            Profile.name == "Voz principal",
+            Profile.is_authorized.is_(True),
+        ).first() if user else None
+        if profile is None or not profile.voice_print:
+            raise HTTPException(status_code=403, detail="Registra tu voz antes de usar órdenes por voz")
+        try:
+            verified, score = await asyncio.to_thread(voice.verify, data, profile.voice_print, ".webm")
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"No se pudo verificar la voz: {exc}")
+    if not verified:
+        raise HTTPException(status_code=403, detail="Voz no reconocida")
+    text = (await asyncio.to_thread(stt.transcribe, data, ".webm")).strip()
+    if not text:
+        raise HTTPException(status_code=422, detail="No se entendió la orden")
+    sid = "".join(c for c in (session_id or "") if c.isalnum() or c in "-_")[:64] or "default"
+    reply = await sessions.get(f"web:{sid}").say(text)
+    return {"status": "ok", "text": text, "reply": reply, "voice_score": round(score, 3)}
+
+
 @app.post("/api/chat", dependencies=[Depends(require_key)])
 async def http_chat(req: ChatRequest):
     """Endpoint de chat simple - requiere X-Igris-Key"""
@@ -409,13 +468,24 @@ async def tts_endpoint(req: TTSRequest):
 # ----------------------------------------------------------------------
 # Transcripción de audio de Telegram
 # ----------------------------------------------------------------------
-async def _transcribe_telegram_file(file_id: str) -> str:
-    """Descarga un audio/nota de voz de Telegram y lo transcribe a texto."""
+async def _transcribe_telegram_file(file_id: str, user: User | None) -> str:
+    """Verifica al hablante y después transcribe el audio de Telegram."""
     tg_file = await telegram_bot.get_file(file_id)
-    audio_bytes = await tg_file.download_as_bytearray()
-    # stt.transcribe() es una función síncrona y pesada (Whisper): no se usa
-    # `await` directamente; se ejecuta en un hilo para no congelar el servidor.
-    return await asyncio.to_thread(stt.transcribe, audio_bytes)
+    audio_bytes = bytes(await tg_file.download_as_bytearray())
+    if user is None:
+        raise PermissionError("No hay un usuario asociado a esta voz")
+    with database.SessionLocal() as db:
+        profile = db.query(Profile).filter(
+            Profile.user_id == user.id,
+            Profile.name == "Voz principal",
+            Profile.is_authorized.is_(True),
+        ).first()
+        if profile is None or not profile.voice_print:
+            raise PermissionError("Registra tu voz antes de usar órdenes por voz")
+        verified, _ = await asyncio.to_thread(voice.verify, audio_bytes, profile.voice_print, ".ogg")
+    if not verified:
+        raise PermissionError("Voz no reconocida")
+    return await asyncio.to_thread(stt.transcribe, audio_bytes, ".ogg")
 
 
 # ----------------------------------------------------------------------
@@ -486,6 +556,9 @@ async def process_telegram_update(update_dict: dict):
         return
 
     # ------------------- Mensaje de texto o voz -------------------
+    if linked_user is None and is_env_allowed:
+        with database.SessionLocal() as db:
+            linked_user = db.query(User).filter(User.is_admin.is_(True)).order_by(User.id.asc()).first()
     message = update.effective_message
     if not message:
         # No hay mensaje (puede ser un update de otro tipo)
@@ -501,7 +574,10 @@ async def process_telegram_update(update_dict: dict):
         media = message.voice or message.audio
         try:
             await message.chat.send_action(action="typing")
-            user_text = (await _transcribe_telegram_file(media.file_id)).strip()
+            user_text = (await _transcribe_telegram_file(media.file_id, linked_user)).strip()
+        except PermissionError as e:
+            await message.reply_text(f"🚫 {e}")
+            return
         except Exception as e:
             logger.exception("Fallo al transcribir audio de Telegram")
             await message.reply_text(
