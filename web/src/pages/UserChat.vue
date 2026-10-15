@@ -74,9 +74,10 @@
           <section>
             <h3>Reconocimiento de voz</h3>
             <p class="conn-note">
-              Graba 4 muestras: habla normal, bajo, alto y a distancia media. Igris combinará las muestras para reconocer mejor tu voz.
+              Igris te guiará paso a paso. En cada paso espera la indicación y habla durante la grabación.
             </p>
-            <p v-if="voiceRegistered" class="conn-ok">Voz registrada.</p>
+            <p v-if="voiceStepLabel" class="conn-note voice-step">{{ voiceStepLabel }}</p>
+             <p v-if="voiceRegistered" class="conn-ok">Voz registrada.</p>
             <p v-if="voiceError" class="conn-error">{{ voiceError }}</p>
             <div class="conn-actions">
               <button class="btn primary" :disabled="voiceRecording" @click="registerVoice">
@@ -206,6 +207,7 @@ const isPlayingTTS = ref([])
 const voiceRegistered = ref(false)
 const voiceRecording = ref(false)
 const voiceError = ref('')
+const voiceStepLabel = ref('')
 const notice = ref('')
 const needsTap = ref(
   typeof navigator !== 'undefined' && !(navigator.userActivation && navigator.userActivation.hasBeenActive),
@@ -627,17 +629,31 @@ async function registerVoice() {
   voiceRecording.value = true
   try {
     const samples = []
-    for (let index = 0; index < 4; index += 1) {
-      setNotice(`Muestra ${index + 1} de 4: habla durante la grabación`, 5000)
+    const steps = [
+      'Paso 1 de 4: habla con tu volumen normal, cerca del micrófono.',
+      'Paso 2 de 4: aléjate aproximadamente un metro y habla con volumen normal.',
+      'Paso 3 de 4: vuelve cerca del micrófono y habla con volumen bajo, sin susurrar.',
+      'Paso 4 de 4: mantén la distancia y habla con un volumen un poco más alto.',
+    ]
+    for (let index = 0; index < steps.length; index += 1) {
+      voiceStepLabel.value = `${steps[index]} Preparando grabación…`
+      await sleep(1800)
+      voiceStepLabel.value = `${steps[index]} Grabando ahora…`
       samples.push(await recordVoiceSample())
-      if (index < 3) await sleep(700)
+      if (index < steps.length - 1) {
+        voiceStepLabel.value = `Muestra ${index + 1} completada. ${steps[index + 1]}`
+        await sleep(1800)
+      }
     }
+    voiceStepLabel.value = 'Procesando tus cuatro muestras…'
     const form = new FormData()
     samples.forEach((sample) => form.append('audio', sample, 'voice.webm'))
     await userApi.post('/api/user/voice-profile', form, { headers: { 'Content-Type': 'multipart/form-data' } })
     voiceRegistered.value = true
+    voiceStepLabel.value = 'Registro completado: Igris guardó tus cuatro muestras.'
     setNotice('Voz registrada con 4 muestras.', 5000)
   } catch (e) {
+    voiceStepLabel.value = ''
     voiceError.value = errorMessage(e, 'No se pudo registrar la voz')
   } finally {
     voiceRecording.value = false
