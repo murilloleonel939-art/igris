@@ -523,7 +523,9 @@ const runHandsFree = async () => {
         handsFree.value = false
         break
       }
-      if (text && audio) {
+      // SpeechRecognition puede no devolver texto aunque MediaRecorder sí haya
+      // capturado la voz. El backend usa Whisper para transcribir el audio.
+      if (audio) {
         const form = new FormData()
         form.append('audio', audio, 'voice.webm')
         form.append('session_id', sessionId)
