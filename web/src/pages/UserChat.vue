@@ -644,7 +644,7 @@ async function registerVoice() {
       samples.push(await recordVoiceSample())
       if (index < steps.length - 1) {
         voiceStepLabel.value = `Muestra ${index + 1} completada. ${steps[index + 1]}`
-        await sleep(800)
+        await sleep(2000)
       }
     }
     voiceStepLabel.value = 'Procesando tus cuatro muestras…'

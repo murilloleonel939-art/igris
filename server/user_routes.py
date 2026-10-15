@@ -22,6 +22,7 @@ from __future__ import annotations
 import asyncio
 import hmac
 import logging
+import os
 import re
 import secrets
 import time
@@ -675,7 +676,8 @@ async def user_voice_chat(
         logger.exception("Falló la verificación de voz")
         raise HTTPException(status_code=500, detail=f"No se pudo verificar la voz: {exc}")
     if not verified:
-        raise HTTPException(status_code=403, detail="Voz no reconocida")
+        logger.warning("Voz no reconocida para usuario %s: score=%.4f threshold=%s", user.id, score, os.getenv("IGRIS_VOICE_THRESHOLD", "0.72"))
+        raise HTTPException(status_code=403, detail=f"Voz no reconocida (similitud {score:.2f})")
 
     try:
         text = (await asyncio.to_thread(stt.transcribe, data, ".webm")).strip()
