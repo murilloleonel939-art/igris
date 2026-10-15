@@ -35,7 +35,7 @@ qrcode
 pillow
 numpy
 speechbrain
-torchaudio==2.3.0
+torchaudio==2.5.1
 pyjwt
 email-validator
 piper-tts

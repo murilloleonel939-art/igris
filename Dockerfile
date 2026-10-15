@@ -29,10 +29,9 @@ WORKDIR /app
 # PyTorch SOLO CPU (el servidor no tiene GPU). Se instala antes que el resto
 # para que openai-whisper encuentre torch ya instalado y no descargue la
 # versión con CUDA, que pesa varios GB.
-# La versión debe coincidir con la de requirements.txt (torch==2.3.0): pip
-# trata 2.3.0+cpu como 2.3.0 y no la reinstala.
+# La versión debe coincidir con torchaudio en requirements.txt.
 # --------------------------------------------------------------
-RUN pip install --no-cache-dir torch==2.3.0 --index-url https://download.pytorch.org/whl/cpu
+RUN pip install --no-cache-dir torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu
 
 # --------------------------------------------------------------
 # Copiar únicamente el fichero de requirements para aprovechar la capa de caché
@@ -43,9 +42,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # torchaudio de PyPI puede traer una build CUDA aunque torch sea CPU.
 # Reinstalar ambos desde el índice CPU evita errores como libtorch_cuda.so ausente.
 RUN pip install --no-cache-dir --force-reinstall \
-        torch==2.3.0 torchaudio==2.3.0 \
+        torch==2.5.1 torchaudio==2.5.1 \
         --index-url https://download.pytorch.org/whl/cpu \
-    && python -c "import torch, torchaudio; assert not torch.cuda.is_available(); print(torch.__version__, torchaudio.__version__)"
+    && python -c "import torch, torchaudio; assert not torch.cuda.is_available(); assert hasattr(torch.amp, 'custom_fwd'); print(torch.__version__, torchaudio.__version__)"
 
 # --------------------------------------------------------------
 # Instalar explícitamente la versión fijada de bcrypt (como en tu Dockerfile original)
