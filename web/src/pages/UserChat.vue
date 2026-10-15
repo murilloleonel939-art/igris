@@ -403,9 +403,12 @@ function listenOnce() {
     let meterAnalyser
     let meterFrame
     let heardSpeech = false
+    let speechStartedAt = 0
+    let lastSpeechAt = 0
     let text = ''
     let error = null
     let settled = false
+    let stopCapture = null
     try {
       stream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
@@ -423,7 +426,17 @@ function listenOnce() {
           const normalized = (value - 128) / 128
           sum += normalized * normalized
         }
-        if (Math.sqrt(sum / samples.length) > 0.011) heardSpeech = true
+        const rms = Math.sqrt(sum / samples.length)
+        const now = Date.now()
+        if (rms > 0.011) {
+          heardSpeech = true
+          if (!speechStartedAt) speechStartedAt = now
+          lastSpeechAt = now
+        }
+        if (speechStartedAt && now - lastSpeechAt > 850 && now - speechStartedAt > 700) {
+          stopCapture?.()
+          return
+        }
         if (!settled) meterFrame = requestAnimationFrame(sample)
       }
       sample()
@@ -450,15 +463,18 @@ function listenOnce() {
 
     // Whisper del backend es la única fuente de transcripción. Chrome no
     // participa en el texto porque puede inventar palabras o cortar frases.
-    isListening.value = true
-    setIgrisState('listening')
-    setTimeout(() => {
+    stopCapture = () => {
+      if (settled) return
       if (rec) { try { rec.abort() } catch (err) {} }
       if (recorder && recorder.state !== 'inactive') {
         recorder.addEventListener('stop', finish, { once: true })
         recorder.stop()
       } else finish()
-    }, 5000)
+    }
+    isListening.value = true
+    setIgrisState('listening')
+    // El silencio termina una orden normal; cinco segundos siguen siendo el límite.
+    setTimeout(() => stopCapture?.(), 5000)
   })
 }
 
