@@ -390,23 +390,27 @@ let recognition = null
 function listenOnce() {
   return new Promise(async (resolve) => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition
-    if (!SR || !navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+    if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
       resolve({ text: '', audio: null, error: 'unsupported' })
       return
     }
 
     let stream
     let recorder
+    let rec = null
     const chunks = []
     let meterContext
     let meterSource
     let meterAnalyser
     let meterFrame
     let heardSpeech = false
+    let text = ''
+    let error = null
+    let settled = false
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      // El medidor evita depender únicamente de SpeechRecognition: si hay voz
-      // pero el navegador no devuelve texto, Whisper recibe igualmente el audio.
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      })
       meterContext = new (window.AudioContext || window.webkitAudioContext)()
       meterSource = meterContext.createMediaStreamSource(stream)
       meterAnalyser = meterContext.createAnalyser()
@@ -420,12 +424,12 @@ function listenOnce() {
           const normalized = (value - 128) / 128
           sum += normalized * normalized
         }
-        // RMS aproximado de -39 dBFS; el ruido ambiente queda por debajo.
         if (Math.sqrt(sum / samples.length) > 0.011) heardSpeech = true
-        meterFrame = requestAnimationFrame(sample)
+        if (!settled) meterFrame = requestAnimationFrame(sample)
       }
       sample()
-      recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' })
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : undefined
+      recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream)
       recorder.ondataavailable = (event) => event.data.size && chunks.push(event.data)
       recorder.start()
     } catch (err) {
@@ -433,57 +437,45 @@ function listenOnce() {
       return
     }
 
-    const rec = new SR()
-    recognition = rec
-    rec.lang = 'es-CO'
-    rec.interimResults = false
-    rec.maxAlternatives = 1
-
-    let text = ''
-    let error = null
-
-    rec.onresult = (event) => {
-      const parts = []
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        if (event.results[i].isFinal) parts.push(event.results[i][0].transcript)
-      }
-      if (parts.length) text = (text + ' ' + parts.join(' ')).trim()
-    }
-    rec.onerror = (event) => {
-      error = event.error
-    }
-    let settled = false
     const finish = () => {
       if (settled) return
       settled = true
+      if (meterFrame) cancelAnimationFrame(meterFrame)
+      if (meterContext) meterContext.close()
       if (recognition === rec) recognition = null
       isListening.value = false
       stream.getTracks().forEach((track) => track.stop())
-      const audio = new Blob(chunks, { type: 'audio/webm' })
+      const audio = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' })
       resolve({ text, audio: heardSpeech ? audio : null, error })
     }
-    rec.onend = () => {
+
+    // SpeechRecognition is only a visual aid. It never decides when to stop
+    // recording, because Chrome often ends it before the speaker finishes.
+    if (SR) {
+      rec = new SR()
+      recognition = rec
+      rec.lang = 'es-CO'
+      rec.interimResults = false
+      rec.maxAlternatives = 1
+      rec.onresult = (event) => {
+        const parts = []
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          if (event.results[i].isFinal) parts.push(event.results[i][0].transcript)
+        }
+        if (parts.length) text = (text + ' ' + parts.join(' ')).trim()
+      }
+      rec.onerror = (event) => { if (event.error !== 'no-speech') error = event.error }
+      try { rec.start() } catch (err) { rec = null }
+    }
+    isListening.value = true
+    setIgrisState('listening')
+    setTimeout(() => {
+      if (rec) { try { rec.abort() } catch (err) {} }
       if (recorder && recorder.state !== 'inactive') {
         recorder.addEventListener('stop', finish, { once: true })
         recorder.stop()
-      } else {
-        finish()
-      }
-    }
-
-    try {
-      isListening.value = true
-      setIgrisState('listening')
-      rec.start()
-    } catch (err) {
-      console.error('Error starting recognition:', err)
-      recognition = null
-      isListening.value = false
-      setIgrisState('idle')
-      if (recorder && recorder.state !== 'inactive') recorder.stop()
-      stream.getTracks().forEach((track) => track.stop())
-      resolve({ text: '', audio: null, error: 'start-failed' })
-    }
+      } else finish()
+    }, 5000)
   })
 }
 
