@@ -652,6 +652,23 @@ async def voice_profile_status(
     return {"registered": bool(profile and profile.voice_print and profile.is_authorized)}
 
 
+@router.delete("/api/user/voice-profile")
+def delete_voice_profile(
+    user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+):
+    """Elimina todas las muestras cifradas de voz del usuario."""
+    profile = db.query(Profile).filter(
+        Profile.user_id == user.id,
+        Profile.name == "Voz principal",
+    ).first()
+    if profile is not None:
+        db.delete(profile)
+        db.commit()
+    logger.info("Perfil de voz eliminado por el usuario %s", user.id)
+    return {"success": True, "message": "Perfil de voz eliminado"}
+
+
 @router.post("/api/user/voice-chat")
 async def user_voice_chat(
     audio: UploadFile = File(...),

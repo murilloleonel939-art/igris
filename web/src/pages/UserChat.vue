@@ -82,7 +82,10 @@
             <div class="conn-actions">
               <button class="btn primary" :disabled="voiceRecording" @click="registerVoice">
                 {{ voiceRecording ? 'Grabando…' : (voiceRegistered ? 'Actualizar mi voz' : 'Registrar mi voz') }}
-              </button>
+                </button>
+                <button v-if="voiceRegistered && !voiceRecording" class="btn ghost" @click="deleteVoiceProfile">
+                  Borrar grabaciones
+                </button>
             </div>
           </section>
 
@@ -597,6 +600,19 @@ async function refreshVoiceStatus() {
     voiceRegistered.value = Boolean(res.data?.registered)
   } catch (e) {
     voiceError.value = errorMessage(e, 'No se pudo consultar el registro de voz')
+  }
+}
+
+async function deleteVoiceProfile() {
+  if (!window.confirm('¿Quieres borrar todas tus grabaciones de voz?')) return
+  voiceError.value = ''
+  try {
+    await userApi.delete('/api/user/voice-profile')
+    voiceRegistered.value = false
+    voiceStepLabel.value = ''
+    setNotice('Grabaciones de voz eliminadas.', 5000)
+  } catch (e) {
+    voiceError.value = errorMessage(e, 'No se pudieron borrar las grabaciones')
   }
 }
 
