@@ -9,10 +9,6 @@
 -->
 <template>
   <main class="min-h-screen flex flex-col items-center justify-center px-4 py-10">
-    <!-- La app instalada desde aquí abre en esta misma pantalla (el manifest
-         de usuarios tiene start_url /u/login). -->
-    <InstallHint />
-
     <form
       class="w-full max-w-sm rounded-xl border border-slate-700 bg-slate-800/80 p-8 shadow-xl"
       @submit.prevent="submit"
@@ -70,7 +66,6 @@ import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import userApi, { clearSession, setSession, errorMessage } from '../userApi'
 import { clearKey } from '../api'
-import InstallHint from '../components/InstallHint.vue'
 
 const route = useRoute()
 const router = useRouter()

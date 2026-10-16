@@ -10,8 +10,6 @@
 -->
 <template>
   <div class="dash" :class="{ 'connections-page': route.name === 'UserConnections' }">
-    <InstallHint />
-
     <!-- Avisos -->
     <div v-if="notice" class="notice">{{ notice }}</div>
     <div v-else-if="needsTap" class="notice soft">Toca la pantalla para activar el sonido</div>
@@ -234,7 +232,6 @@ import { getKey } from '../api'
 import { igris, setIgrisState } from '../composables/useIgris'
 import IgrisHero from '../components/IgrisHero.vue'
 import WorkspaceNav from '../components/WorkspaceNav.vue'
-import InstallHint from '../components/InstallHint.vue'
 
 const route = useRoute()
 const router = useRouter()

@@ -1,9 +1,5 @@
 <template>
   <main class="min-h-screen flex flex-col items-center justify-center px-4 py-10">
-    <!-- El aviso de instalación va aquí, en la pantalla de entrada del
-         administrador: es donde tiene sentido ofrecerle instalar la app. -->
-    <InstallHint />
-
     <form
       class="w-full max-w-sm rounded-xl border border-slate-700 bg-slate-800/80 p-8 shadow-xl"
       @submit.prevent="submit"
@@ -42,7 +38,6 @@
 import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import api, { setKey } from '../api'
-import InstallHint from '../components/InstallHint.vue'
 
 const router = useRouter()
 
