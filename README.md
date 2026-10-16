@@ -1,5 +1,5 @@
 # ⚔️ IGRIS - Asistente de IA con Avatar, Voz, Chat Web y Telegram
-> Igris, el caballero de las sombras: un asistente personal tipo Jarvis, leal y formal, que habla en español neutro. Se usa desde una interfaz web con avatar animado a pantalla completa y modo manos libres (le hablas y te responde en voz alta) y desde Telegram (texto, notas de voz y archivos de audio), con modelos de IA intercambiables, una cadena de fallback automática entre proveedores y herramientas para consultar la hora, el clima, el correo y el calendario, enviar y eliminar correos, agendar, mover y borrar eventos, y guardar recordatorios y notas.
+> Igris, el caballero de las sombras: un asistente personal tipo Jarvis, leal y formal, que habla en español neutro. Se usa desde una interfaz web con avatar animado a pantalla completa y modo manos libres (le hablas y te responde en voz alta) y desde Telegram (texto, notas de voz y archivos de audio), con modelos de IA intercambiables, una cadena de fallback automática entre proveedores, memoria estructurada por usuario y herramientas para consultar la hora, el clima, el correo y el calendario, enviar y eliminar correos, agendar, mover y borrar eventos, y guardar recordatorios y notas.
 [![GitHub](https://img.shields.io/badge/GitHub-murilloleonel939--art%2Figris-blue)](https://github.com/murilloleonel939-art/igris) [![Python](https://img.shields.io/badge/Python-3.12%2B-green)](https://www.python.org/) [![FastAPI](https://img.shields.io/badge/FastAPI-0.100%2B-009688)](https://fastapi.tiangolo.com/) [![Vue](https://img.shields.io/badge/Vue-3.3-4FC08D)](https://vuejs.org/)
 ---
 ## ✅ Qué hace Igris hoy
@@ -20,7 +20,7 @@
 | ⚙️ Configuración de proveedor activo y cadena de fallback (web y Telegram) | Funcional |
 | 🔁 Fallback automático entre proveedores de IA | Funcional |
 | 🔐 Acceso al bot restringido por ID de Telegram + secreto de webhook | Funcional |
-| 🧠 Memoria de conversación (por sesión: `web:<id>`, `tg:<id>` y `user:<id>:<conv>`) | Funcional |
+| 🧠 **Memoria estructurada**: estado mental con memoria conversacional, personal y operativa por usuario | Funcional |
 | 🕒 Hora y fecha de Colombia | Funcional |
 | 🌦️ Clima de una ciudad | Funcional |
 | 📧 Gmail (lectura de la bandeja) | Funcional |
@@ -52,6 +52,8 @@ Igris tiene **dos formas de entrar**. La clave de administrador sigue funcionand
 | Rutas | `/`, `/config`, `/panel/usuarios`; usuario admin también conserva acceso a `/u` y «Conexiones» | `/u` |
 
 La clave del administrador vive **solo** en la variable de entorno `IGRIS_ACCESS_KEY` (Coolify). El frontend nunca la contiene: se escribe a mano en la pantalla `/acceso` y se envía en cada petición. Las cuentas marcadas como admin se crean o editan desde `/panel/usuarios` con el campo `is_admin`.
+
+Si el panel clásico (`/`) se abre con un JWT de usuario admin, el backend no solo autoriza la entrada: también vincula esa sesión al `user_id` del administrador autenticado. Así el chat admin puede usar su propia memoria, notas, recordatorios, Google y Telegram. Si se entra solo con la clave histórica `IGRIS_ACCESS_KEY`, el panel conserva el modo antiguo sin usuario asociado.
 
 **Límites de intentos**, independientes entre sí para que nadie pueda bloquear el acceso del otro:
 
@@ -103,6 +105,20 @@ El administrador decide **qué puede hacer cada usuario**, y ese permiso se comp
 `time` y `weather` vienen activas de fábrica; el resto hay que abrirlas desde `/panel/usuarios`. El catálogo vive en `core/capabilities.py`, y el panel se construye a partir de él: añadir una función ahí la hace aparecer sola en la interfaz.
 
 **Aislamiento de datos.** Cada nota, recordatorio y sesión lleva su `user_id`, que el servidor deriva **solo** de la identidad autenticada (el token de la web o el chat de Telegram vinculado), nunca de lo que envíe el cliente. Un usuario no puede leer, borrar ni alcanzar los datos de otro. `calendar_write` es un permiso aparte a propósito: quien puede leer su agenda no tiene por qué poder escribir en ella.
+
+### Memoria estructurada y estado mental
+
+Igris mantiene un **estado mental** separado en tres capas:
+
+| Capa | Dónde vive | Para qué sirve |
+| --- | --- | --- |
+| Conversacional | En la sesión activa (`web:<id>`, `tg:<id>` o `user:<id>:<conv>`) | Dar continuidad a la conversación reciente aunque el historial exacto se recorte. |
+| Personal | Tabla `user_memories`, por `user_id` | Preferencias, trato, hábitos y datos estables del usuario. |
+| Operativa | Tabla `user_memories`, por `user_id` | Pendientes, objetivos, proyectos y decisiones recientes. |
+
+La captura de memoria es conservadora y se hace en servidor con reglas simples: frases como “recuerda que…”, “prefiero…”, “pendiente…”, “objetivo…” o “estamos trabajando…” pueden guardarse como contexto. El modelo **no decide directamente** qué se escribe en memoria, para evitar que correos, notas o texto de terceros inyecten recuerdos falsos.
+
+La memoria se inyecta en el prompt como contexto interno: ayuda a dar continuidad, pero **no es autoridad**, no reemplaza permisos, no identifica al usuario y no elimina confirmaciones obligatorias para acciones sensibles. Actualmente no hay panel para ver, editar o borrar recuerdos manualmente; los comandos tipo “olvida que…” se detectan y no se guardan, pero la eliminación selectiva queda para una interfaz dedicada.
 
 ### Área de usuarios (`/u`)
 
