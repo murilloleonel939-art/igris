@@ -9,7 +9,7 @@
         <router-link to="/panel/usuarios" class="link">Usuarios</router-link>
       </template>
       <template v-else>
-        <button class="link" type="button" @click="$emit('connections')">Conexiones</button>
+        <router-link to="/conexiones" class="link">Conexiones</router-link>
         <button class="link" type="button" @click="$emit('memory')">Mi memoria</button>
       </template>
     </div>

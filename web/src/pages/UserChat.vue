@@ -9,7 +9,7 @@
   ruta de administración. Un usuario solo ve su chat.
 -->
 <template>
-  <div class="dash">
+  <div class="dash" :class="{ 'connections-page': route.name === 'UserConnections' }">
     <InstallHint />
 
     <!-- Avisos -->
@@ -59,7 +59,7 @@
     </div>
 
     <!-- Panel de conexiones: qué funciones tienes y qué te falta conectar -->
-    <div v-if="conn.open" class="conn-backdrop" @click.self="conn.open = false">
+    <div v-if="conn.open || route.name === 'UserConnections'" class="conn-backdrop" :class="{ 'conn-page': route.name === 'UserConnections' }" @click.self="route.name !== 'UserConnections' && (conn.open = false)">
       <div class="conn">
         <h2>Conexiones</h2>
 
@@ -161,7 +161,7 @@
         </template>
 
         <div class="conn-foot">
-          <button class="btn ghost" @click="conn.open = false">Cerrar</button>
+          <button class="btn ghost" @click="route.name === 'UserConnections' ? router.replace('/') : (conn.open = false)">{{ route.name === 'UserConnections' ? 'Volver al chat' : 'Cerrar' }}</button>
         </div>
       </div>
     </div>
@@ -889,7 +889,7 @@ onMounted(() => {
   window.addEventListener('pointerdown', unlock, { once: true })
   window.addEventListener('keydown', unlock, { once: true })
   runHandsFree()
-  if (route.query.open === 'connections') openConnections()
+  if (route.query.open === 'connections' || route.name === 'UserConnections') openConnections()
 })
 
 onBeforeUnmount(() => {
@@ -917,6 +917,18 @@ onBeforeUnmount(() => {
   justify-content: center;
   padding: 1rem;
   background: rgba(2, 6, 23, 0.78);
+}
+.conn-backdrop.conn-page {
+  position: relative;
+  inset: auto;
+  min-height: calc(100vh - 4.3rem);
+  align-items: flex-start;
+  padding: 6rem 1rem 2rem;
+  background: transparent;
+}
+.conn-page .conn {
+  max-width: 42rem;
+  max-height: none;
 }
 .conn {
   width: 100%;

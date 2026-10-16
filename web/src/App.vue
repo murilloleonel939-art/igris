@@ -31,7 +31,7 @@ const isAdmin = computed(() => {
   route.fullPath
   return isAdminUser() || (!getToken() && !!getKey())
 })
-const showNav = computed(() => route.name === 'UserChat' || route.name === 'Chat' || (ADMIN_ROUTES.includes(route.name) && isAdmin.value))
+const showNav = computed(() => route.name === 'UserChat' || route.name === 'UserConnections' || route.name === 'Chat' || (ADMIN_ROUTES.includes(route.name) && isAdmin.value))
 const displayName = computed(() => {
   route.fullPath
   return getUser()?.username || 'Administrador'

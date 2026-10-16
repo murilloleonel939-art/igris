@@ -22,7 +22,7 @@ import { syncManifest } from './pwa'
 //
 // Un usuario normal queda en /u. Un usuario con is_admin=true también puede
 // abrir el panel del administrador; el backend vuelve a validar ese permiso.
-const USER_ROUTE_NAMES = ['UserLogin', 'UserChat']
+const USER_ROUTE_NAMES = ['UserLogin', 'UserChat', 'UserConnections']
 
 const routes = [
   {
@@ -39,6 +39,12 @@ const routes = [
     path: '/panel/conexiones',
     name: 'AdminConnections',
     component: AdminConnections
+  },
+  {
+    path: '/conexiones',
+    name: 'UserConnections',
+    component: UserChat,
+    meta: { requiresUser: true }
   },
   {
     path: '/panel/usuarios',
