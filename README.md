@@ -432,6 +432,28 @@ Las credenciales OAuth que usan `core/tools/google_client.py`, `gmail.py` y `gca
 | `IGRIS_STT_API_BASE` | Base URL de Whisper cloud | `https://api.openai.com/v1` |
 | `IGRIS_STT_MODEL` | Modelo de transcripción cloud | `whisper-1` |
 | `IGRIS_STT_LANGUAGE` | Idioma del audio a transcribir (código de 2 letras) | `es` |
+
+#### Configuración recomendada en Coolify
+
+Las variables de STT se configuran en el **servicio backend**. Una vez desplegadas, el administrador puede alternar el proveedor en **Configuración → Voz y audio** sin cambiar variables ni volver a desplegar.
+
+```env
+# Opción inicial: Whisper ejecutándose en el servidor
+IGRIS_STT_PROVIDER=local
+IGRIS_WHISPER_MODEL=base
+IGRIS_STT_LANGUAGE=es
+
+# Habilita Whisper cloud de OpenAI para seleccionarlo desde el panel
+IGRIS_STT_API_KEY=sk-tu-clave-directa-de-openai
+IGRIS_STT_API_BASE=https://api.openai.com/v1
+IGRIS_STT_MODEL=whisper-1
+```
+
+- **Whisper local:** no necesita una clave de OpenAI. `base` es el modelo recomendado para un equilibrio entre velocidad y precisión; también se admiten `tiny`, `small` y `medium`.
+- **Whisper OpenAI:** requiere `IGRIS_STT_API_KEY` con una clave **directa de OpenAI** y usa `whisper-1`. Esta clave no puede ser la de Pateway.
+- Las variables actúan como valores base; la selección hecha en el panel se guarda de forma persistente y tiene prioridad sobre `IGRIS_STT_PROVIDER`.
+- Si se agregan o cambian variables en Coolify, hay que redeplegar el backend para que las lea.
+
 | `IGRIS_VOICE_THRESHOLD` | Umbral mínimo de similitud para aceptar al hablante registrado | `0.40` |
 | `IGRIS_TTS_PROVIDER` | Proveedor de síntesis de voz | `local` |
 | `IGRIS_TTS_VOICE` | Voz a usar (los valores válidos dependen del proveedor de TTS) | según proveedor |
