@@ -1090,8 +1090,8 @@ async def google_callback(
         redirect_snippet = ""
         if ok:
             redirect_snippet = """
-<meta http-equiv="refresh" content="3;url=https://webigris.zottagroup.com/">
-<script>setTimeout(()=>{window.location.replace('https://webigris.zottagroup.com/')},3000)</script>"""
+<meta http-equiv="refresh" content="3;url=https://webigris.zottagroup.com/?open=connections">
+<script>setTimeout(()=>{window.location.replace('https://webigris.zottagroup.com/?open=connections')},3000)</script>"""
         return HTMLResponse(f"""<!doctype html>
 <html lang="es"><head><meta charset="utf-8">
 <title>Igris</title>{redirect_snippet}</head>

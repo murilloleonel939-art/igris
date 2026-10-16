@@ -26,9 +26,11 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import api from '../api'
+import { getToken, getUser } from '../userApi'
 import { errorMessage } from '../errors'
 
 const users = ref([])
+const personalSession = !!getToken()
 const loading = ref(false)
 const error = ref('')
 const unlinking = ref(null)
@@ -37,8 +39,26 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    const res = await api.get('/api/admin/users')
-    users.value = res.data?.users || []
+    if (personalSession) {
+      const res = await api.get('/api/user/connections')
+      const user = getUser() || {}
+      const data = res.data || {}
+      users.value = [{
+        id: user.id || 'me',
+        username: user.username || 'Mi cuenta',
+        email: user.email || '',
+        is_active: true,
+        connections: {
+          google: data.google?.email || null,
+          google_error: data.google?.error || null,
+          telegram_linked: Boolean(data.telegram?.linked),
+          telegram: data.telegram?.username || null,
+        },
+      }]
+    } else {
+      const res = await api.get('/api/admin/users')
+      users.value = res.data?.users || []
+    }
   } catch (e) {
     error.value = errorMessage(e, 'No se pudieron cargar las conexiones')
   } finally {
@@ -47,7 +67,11 @@ async function load() {
 }
 
 function goToUserLogin() {
-  window.location.href = '/u/login'
+  if (getToken()) {
+    window.location.href = '/?open=connections'
+    return
+  }
+  window.location.href = `/u/login?next=${encodeURIComponent('/?open=connections')}`
 }
 
 async function unlinkTelegram(user) {

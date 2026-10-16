@@ -67,10 +67,12 @@
 
 <script setup>
 import { ref, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
-import userApi, { setSession, errorMessage } from '../userApi'
+import { useRoute, useRouter } from 'vue-router'
+import userApi, { clearSession, setSession, errorMessage } from '../userApi'
+import { clearKey } from '../api'
 import InstallHint from '../components/InstallHint.vue'
 
+const route = useRoute()
 const router = useRouter()
 
 const username = ref('')
@@ -101,10 +103,13 @@ async function submit() {
     const token = res.data?.access_token
     if (!token) throw new Error('Respuesta inesperada')
 
+    clearKey()
+    clearSession()
     setSession(token, res.data.user)
     // Tras autenticar, el router dirige por rol: admin al panel completo y
     // usuario normal a su chat y herramientas personales.
-    await router.replace('/')
+    const next = typeof route.query.next === 'string' && route.query.next.startsWith('/') ? route.query.next : '/'
+    await router.replace(next)
   } catch (e) {
     const status = e.response?.status
     if (status === 401) {

@@ -27,9 +27,15 @@ const router = useRouter()
 // El menú del panel solo se muestra a administradores autenticados. El portal
 // /u de usuarios normales mantiene únicamente chat, conexiones y memoria.
 const ADMIN_ROUTES = ['Configuration', 'AdminConnections', 'AdminUsers']
-const isAdmin = computed(() => isAdminUser() || !!getKey())
+const isAdmin = computed(() => {
+  route.fullPath
+  return isAdminUser() || (!getToken() && !!getKey())
+})
 const showNav = computed(() => route.name === 'UserChat' || route.name === 'Chat' || (ADMIN_ROUTES.includes(route.name) && isAdmin.value))
-const displayName = computed(() => getUser()?.username || 'Administrador')
+const displayName = computed(() => {
+  route.fullPath
+  return getUser()?.username || 'Administrador'
+})
 function requestConnections() { window.dispatchEvent(new Event('igris:open-connections')) }
 function requestMemory() { window.dispatchEvent(new Event('igris:open-memory')) }
 
@@ -41,10 +47,10 @@ const displayInitials = computed(() => {
 // Borra la clave guardada y vuelve a la pantalla de acceso.
 // Al cambiar de ruta, la página actual se desmonta (Dashboard detiene el micrófono).
 function logout() {
-  const wasAdminUser = isAdminUser()
+  const wasUser = !!getToken()
   clearKey()
   clearSession()
-  router.replace(wasAdminUser ? { name: 'UserLogin' } : { name: 'Access' })
+  router.replace(wasUser ? { name: 'UserLogin' } : { name: 'Access' })
 }
 </script>
 

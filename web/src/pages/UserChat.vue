@@ -221,7 +221,7 @@
 
 <script setup>
 import { ref, computed, nextTick, onMounted, onBeforeUnmount } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import userApi, { getUser, clearSession, errorMessage } from '../userApi'
 import { getKey } from '../api'
 import { igris, setIgrisState } from '../composables/useIgris'
@@ -229,6 +229,7 @@ import IgrisHero from '../components/IgrisHero.vue'
 import WorkspaceNav from '../components/WorkspaceNav.vue'
 import InstallHint from '../components/InstallHint.vue'
 
+const route = useRoute()
 const router = useRouter()
 
 const username = computed(() => getUser()?.username || 'usuario')
@@ -888,6 +889,7 @@ onMounted(() => {
   window.addEventListener('pointerdown', unlock, { once: true })
   window.addEventListener('keydown', unlock, { once: true })
   runHandsFree()
+  if (route.query.open === 'connections') openConnections()
 })
 
 onBeforeUnmount(() => {
