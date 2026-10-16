@@ -450,6 +450,83 @@ def admin_list_user_memories(
     }
 
 
+@router.post("/api/admin/users/{user_id}/memories", status_code=status.HTTP_201_CREATED)
+def admin_create_user_memory(
+    user_id: int,
+    body: MemoryCreateIn,
+    _: None = Depends(require_admin_key),
+    db: Session = Depends(get_db),
+):
+    """Crea un recuerdo en nombre del usuario seleccionado por el administrador."""
+    user = db.query(User).filter(User.id == user_id).first()
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado")
+    duplicate = db.query(UserMemory).filter(
+        UserMemory.user_id == user_id,
+        UserMemory.kind == body.kind,
+        UserMemory.content == body.content,
+    ).first()
+    if duplicate:
+        return _memory_json(duplicate)
+    memory = UserMemory(user_id=user_id, kind=body.kind, content=body.content, source="admin")
+    db.add(memory)
+    db.commit()
+    db.refresh(memory)
+    return _memory_json(memory)
+
+
+@router.put("/api/admin/users/{user_id}/memories/{memory_id}")
+def admin_update_user_memory(
+    user_id: int,
+    memory_id: int,
+    body: MemoryUpdateIn,
+    _: None = Depends(require_admin_key),
+    db: Session = Depends(get_db),
+):
+    """Edita un recuerdo verificando usuario e id para evitar cruces de cuentas."""
+    memory = db.query(UserMemory).filter(
+        UserMemory.id == memory_id,
+        UserMemory.user_id == user_id,
+    ).first()
+    if memory is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No se encontró ese recuerdo")
+    duplicate = db.query(UserMemory).filter(
+        UserMemory.user_id == user_id,
+        UserMemory.kind == memory.kind,
+        UserMemory.content == body.content,
+        UserMemory.id != memory.id,
+    ).first()
+    if duplicate:
+        db.delete(memory)
+        db.commit()
+        return _memory_json(duplicate)
+    memory.content = body.content
+    memory.updated_at = datetime.utcnow()
+    memory.source = "admin"
+    db.commit()
+    db.refresh(memory)
+    return _memory_json(memory)
+
+
+@router.delete("/api/admin/users/{user_id}/memories/{memory_id}")
+def admin_delete_user_memory(
+    user_id: int,
+    memory_id: int,
+    _: None = Depends(require_admin_key),
+    db: Session = Depends(get_db),
+):
+    """Borra un recuerdo del usuario seleccionado."""
+    memory = db.query(UserMemory).filter(
+        UserMemory.id == memory_id,
+        UserMemory.user_id == user_id,
+    ).first()
+    if memory is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No se encontró ese recuerdo")
+    db.delete(memory)
+    db.commit()
+    return {"status": "ok"}
+
+
 @router.post("/api/admin/users", status_code=status.HTTP_201_CREATED)
 def create_user(
     payload: UserCreateIn,

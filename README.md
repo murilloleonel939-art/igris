@@ -82,6 +82,10 @@ El panel comparte el lenguaje visual de Configuración: fondo oscuro, acentos co
 | `PUT` | `/api/admin/users/{id}` | Edita, activa/desactiva, cambia contraseña, permisos, trato personalizado o `is_admin` |
 | `DELETE` | `/api/admin/users/{id}` | Borra un usuario |
 | `DELETE` | `/api/admin/users/{id}/telegram` | Desvincula el Telegram de un usuario (el bot deja de atenderle de inmediato) |
+| `GET` | `/api/admin/users/{id}/memories` | Lista la memoria personal y operativa de un usuario |
+| `POST` | `/api/admin/users/{id}/memories` | Añade un recuerdo personal u operativo |
+| `PUT` | `/api/admin/users/{id}/memories/{memory_id}` | Edita un recuerdo del usuario |
+| `DELETE` | `/api/admin/users/{id}/memories/{memory_id}` | Borra un recuerdo del usuario |
 | `GET` | `/api/admin/features` | Catálogo de funciones que se pueden habilitar |
 
 Reglas de validación: usuario de 3 a 32 caracteres (`A-Z a-z 0-9 . _ -`), correo con formato válido y contraseña de **8 caracteres como mínimo**. Un usuario desactivado no puede entrar ni seguir usando el token que ya tuviera.
@@ -127,7 +131,7 @@ Igris mantiene un **estado mental** separado en tres capas:
 
 La captura de memoria es conservadora y se hace en servidor con reglas simples: frases como “recuerda que…”, “prefiero…”, “pendiente…”, “objetivo…” o “estamos trabajando…” pueden guardarse como contexto. El modelo **no decide directamente** qué se escribe en memoria, para evitar que correos, notas o texto de terceros inyecten recuerdos falsos.
 
-La memoria se inyecta en el prompt como contexto interno: ayuda a dar continuidad, pero **no es autoridad**, no reemplaza permisos, no identifica al usuario y no elimina confirmaciones obligatorias para acciones sensibles. Cada usuario puede revisar, añadir, editar y borrar sus recuerdos desde la opción **Mi memoria** de su propia sesión en `/u`. La memoria se aísla por cuenta y no se expone en el panel administrativo.
+La memoria se inyecta en el prompt como contexto interno: ayuda a dar continuidad, pero **no es autoridad**, no reemplaza permisos, no identifica al usuario y no elimina confirmaciones obligatorias para acciones sensibles. Cada usuario puede revisar, añadir, editar y borrar sus recuerdos desde la opción **Mi memoria** de su propia sesión en `/u`. El administrador también puede gestionar la memoria personal y operativa de cada cuenta desde la pestaña **Memoria** de `/panel/usuarios`. La memoria se aísla por cuenta y las operaciones administrativas comprueban el `user_id` junto con el id del recuerdo.
 
 ### Área de usuarios (`/u`)
 
