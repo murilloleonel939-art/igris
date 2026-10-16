@@ -109,10 +109,30 @@ def _allowed_device(device_id: str) -> bool:
     return bool(allowed) and device_id in allowed
 
 
+async def _resolve_device_id(device_ref: str) -> str | None:
+    """Acepta el ID técnico o el nombre visible del dispositivo."""
+    if _allowed_device(device_ref):
+        return device_ref
+    try:
+        listed = await list_tuya_devices()
+        for device in listed.get("dispositivos", []):
+            if (
+                device.get("id")
+                and _allowed_device(device["id"])
+                and str(device.get("nombre", "")).casefold() == device_ref.casefold()
+            ):
+                return device["id"]
+    except Exception:
+        logger.exception("Error resolviendo nombre de dispositivo Tuya")
+    return None
+
+
 async def get_tuya_device_status(device_id: str) -> dict[str, Any]:
-    """Consulta el estado actual de un dispositivo por su id."""
-    if not _allowed_device(device_id):
+    """Consulta el estado actual de un dispositivo por su id o nombre."""
+    resolved_id = await _resolve_device_id(device_id)
+    if not resolved_id:
         return {"error": "Ese dispositivo no está autorizado para Igris."}
+    device_id = resolved_id
     try:
         return {"device_id": device_id, "estado": await _call(f"/v1.0/iot-03/devices/{device_id}/status")}
     except Exception as exc:
@@ -121,9 +141,11 @@ async def get_tuya_device_status(device_id: str) -> dict[str, Any]:
 
 
 async def send_tuya_command(device_id: str, code: str, value: Any) -> dict[str, Any]:
-    """Envía una orden; los códigos dependen del dispositivo (por ejemplo switch_led)."""
-    if not _allowed_device(device_id):
+    """Envía una orden; acepta el ID técnico o el nombre visible."""
+    resolved_id = await _resolve_device_id(device_id)
+    if not resolved_id:
         return {"error": "Ese dispositivo no está autorizado para Igris."}
+    device_id = resolved_id
     try:
         result = await _call(
             f"/v1.0/iot-03/devices/{device_id}/commands",
