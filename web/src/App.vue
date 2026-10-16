@@ -40,11 +40,10 @@ import { clearSession, getUser, isAdminUser } from './userApi'
 const route = useRoute()
 const router = useRouter()
 
-// El menú es solo del administrador. El área de usuarios (/u) tiene su propia
-// barra con su nombre y su botón de salir, y no debe ver ni Configuración ni
-// Usuarios ni la pantalla de la clave.
+// El menú del panel solo se muestra a administradores autenticados. El portal
+// /u de usuarios normales mantiene únicamente chat, conexiones y memoria.
 const ADMIN_ROUTES = ['Chat', 'Configuration', 'AdminUsers', 'AdminConnections']
-const showNav = computed(() => ADMIN_ROUTES.includes(route.name))
+const showNav = computed(() => ADMIN_ROUTES.includes(route.name) && isAdminUser())
 const displayName = computed(() => getUser()?.username || 'Administrador')
 const displayInitials = computed(() => {
   const parts = displayName.value.trim().split(/\s+/).filter(Boolean)

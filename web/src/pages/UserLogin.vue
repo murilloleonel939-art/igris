@@ -102,9 +102,9 @@ async function submit() {
     if (!token) throw new Error('Respuesta inesperada')
 
     setSession(token, res.data.user)
-    // El acceso /u es personal incluso para cuentas administradoras: conserva
-    // la sesión en esta superficie para gestionar su propia memoria y conexiones.
-    await router.replace('/u')
+    // Tras autenticar, el router dirige por rol: admin al panel completo y
+    // usuario normal a su chat y herramientas personales.
+    await router.replace(res.data.user?.is_admin ? '/' : '/u')
   } catch (e) {
     const status = e.response?.status
     if (status === 401) {

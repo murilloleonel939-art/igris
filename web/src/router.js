@@ -84,6 +84,10 @@ router.beforeEach((to) => {
     if (!logged && to.name !== 'UserLogin') {
       return { name: 'UserLogin' }
     }
+    // Una cuenta administradora usa la superficie unificada del panel en /.
+    if (logged && isAdminUser() && to.name === 'UserChat') {
+      return { path: '/' }
+    }
     // Ya dentro: la pantalla de acceso de usuarios no tiene sentido
     if (logged && to.name === 'UserLogin') {
       return { path: '/u' }
