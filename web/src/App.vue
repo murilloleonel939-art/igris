@@ -15,7 +15,7 @@
         <div class="admin-nav__links">
           <router-link to="/" class="nav-link" :class="{ active: $route.name === 'Chat' }"><span>▢</span> Chat</router-link>
           <router-link to="/config" class="nav-link" :class="{ active: $route.name === 'Configuration' }"><span>⌘</span> Configuración</router-link>
-          <router-link v-if="adminUserLoggedIn" to="/u" class="nav-link"><span>♧</span> Conexiones</router-link>
+          <router-link to="/panel/conexiones" class="nav-link" :class="{ active: $route.name === 'AdminConnections' }"><span>♧</span> Conexiones</router-link>
           <router-link to="/panel/usuarios" class="nav-link" :class="{ active: $route.name === 'AdminUsers' }"><span>♧</span> Usuarios</router-link>
         </div>
 
@@ -35,7 +35,7 @@ import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import IgrisHero from './components/IgrisHero.vue'
 import { clearKey } from './api'
-import { clearSession, getUser, isAdminUser } from './userApi'
+import { clearSession, getUser } from './userApi'
 
 const route = useRoute()
 const router = useRouter()
@@ -43,9 +43,8 @@ const router = useRouter()
 // El menú es solo del administrador. El área de usuarios (/u) tiene su propia
 // barra con su nombre y su botón de salir, y no debe ver ni Configuración ni
 // Usuarios ni la pantalla de la clave.
-const ADMIN_ROUTES = ['Chat', 'Configuration', 'AdminUsers']
+const ADMIN_ROUTES = ['Chat', 'Configuration', 'AdminUsers', 'AdminConnections']
 const showNav = computed(() => ADMIN_ROUTES.includes(route.name))
-const adminUserLoggedIn = computed(() => isAdminUser())
 const displayName = computed(() => getUser()?.username || 'Administrador')
 const displayInitials = computed(() => {
   const parts = displayName.value.trim().split(/\s+/).filter(Boolean)

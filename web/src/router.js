@@ -5,6 +5,7 @@ import Access from './pages/Access.vue'
 import AdminUsers from './pages/AdminUsers.vue'
 import UserLogin from './pages/UserLogin.vue'
 import UserChat from './pages/UserChat.vue'
+import AdminConnections from './pages/AdminConnections.vue'
 import { getKey } from './api'
 import { isLoggedIn, isAdminUser } from './userApi'
 import { syncManifest } from './pwa'
@@ -39,6 +40,12 @@ const routes = [
     name: 'AdminUsers',
     component: AdminUsers
   },
+  {
+    path: '/panel/conexiones',
+    name: 'AdminConnections',
+    component: AdminConnections
+  },
+
   {
     path: '/acceso',
     name: 'Access',

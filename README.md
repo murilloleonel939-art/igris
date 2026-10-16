@@ -8,7 +8,7 @@
 | 💬 Chat web con Igris | Funcional |
 | 🔑 Acceso admin con clave (`IGRIS_ACCESS_KEY`) o usuario con `is_admin=true` | Funcional |
 | 👥 **Área de usuarios**: cuentas con usuario y contraseña, chat propio | Funcional |
-| 🛠️ **Panel de gestión de usuarios** (crear, activar/desactivar, borrar, cambiar contraseña) | Funcional |
+| 🛠️ **Panel de gestión de usuarios** con diseño unificado con Configuración (crear cuentas, administrar permisos, conexiones y estado) | Funcional |
 | 🗣️ **Trato personalizado por usuario**: el administrador configura cómo se dirige Igris a cada cuenta | Funcional |
 | 📲 **Instalable como app (PWA)**, con una app para el administrador y otra para los usuarios | Funcional |
 | 🧑‍🎤 Avatar animado (video) a pantalla completa que cambia según escucha, piensa o habla | Funcional |
@@ -64,7 +64,9 @@ Si el panel clásico (`/`) se abre con un JWT de usuario admin, el backend no so
 
 Los dos límites viven en memoria, así que se reinician al reiniciar el backend.
 
-### Herramienta de administración de usuarios (`/panel/usuarios`)
+### Panel de administración de usuarios (`/panel/usuarios`)
+
+El panel comparte el lenguaje visual de Configuración: fondo oscuro, acentos coral, tarjetas responsivas y estados visibles. Desde la pantalla se pueden crear cuentas, asignar el rol de administrador, activar o desactivar usuarios, restablecer contraseñas, editar el trato personalizado, ajustar funciones y revisar el estado de Google y Telegram. La presentación es solo del frontend; las operaciones siguen validadas por el backend.
 
 | Método | Ruta | Qué hace |
 | --- | --- | --- |
