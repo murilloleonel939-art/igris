@@ -104,7 +104,7 @@ async function submit() {
     setSession(token, res.data.user)
     // Tras autenticar, el router dirige por rol: admin al panel completo y
     // usuario normal a su chat y herramientas personales.
-    await router.replace(res.data.user?.is_admin ? '/' : '/u')
+    await router.replace('/')
   } catch (e) {
     const status = e.response?.status
     if (status === 401) {

@@ -86,7 +86,7 @@ router.beforeEach((to) => {
   if (to.name === 'UserLogin' || to.name === 'UserChat' || to.meta.requiresUser) {
     const logged = isLoggedIn()
     if (!logged && to.name !== 'UserLogin') return { name: 'UserLogin' }
-    if (logged && to.name === 'UserLogin') return { path: '/u' }
+    if (logged && to.name === 'UserLogin') return { path: '/' }
     return true
   }
 

@@ -1083,7 +1083,7 @@ async def google_callback(
   <div style="text-align:center;max-width:32rem;padding:2rem">
     <h1 style="color:{color};font-size:1.25rem;margin:0 0 .75rem">{escape(title)}</h1>
     <p style="color:#94a3b8;line-height:1.6;margin:0">{escape(detail)}</p>
-    {'<p style="color:#64748b;font-size:.875rem;margin-top:1.5rem">Redirigiendo a Igris en unos segundos… <a href="https://webigris.zottagroup.com/u" style="color:#6366f1;text-decoration:none">Ir ahora</a></p>' if ok else '<p style="color:#64748b;font-size:.875rem;margin-top:1.5rem">Puedes cerrar esta pestaña y volver a Igris.</p>'}
+    {'<p style="color:#64748b;font-size:.875rem;margin-top:1.5rem">Redirigiendo a Igris en unos segundos… <a href="https://webigris.zottagroup.com/" style="color:#6366f1;text-decoration:none">Ir ahora</a></p>' if ok else '<p style="color:#64748b;font-size:.875rem;margin-top:1.5rem">Puedes cerrar esta pestaña y volver a Igris.</p>'}
   </div>
 </body></html>""")
 
