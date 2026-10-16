@@ -204,8 +204,18 @@ _ON_CODES = {"switch", "switch 1", "switch 2", "power", "power switch", "switch 
 
 
 def _coerce_value(function: dict[str, Any], value: Any) -> Any:
-    """Ajusta el valor al tipo que declara el dispositivo (booleano, entero...)."""
+    """Ajusta el valor al tipo que declara el dispositivo (booleano, entero...).
+
+    Los botones de un control IR (PowerOn, PowerOff) se disparan con `true`; enviar
+    el nombre del botón como valor hace que Tuya acepte la orden pero no emita la
+    señal infrarroja.
+    """
+    code = _normalize_device_name(function.get("code"))
     ftype = str(function.get("type", "")).casefold()
+
+    if code in {"poweron", "poweroff"} or code.startswith("power on") or code.startswith("power off"):
+        return True
+
     if ftype == "boolean":
         if isinstance(value, str):
             return value.strip().casefold() in {"true", "1", "on", "encender", "prender", "si", "sí", "yes"}
@@ -229,9 +239,21 @@ def _pick_code(functions: list[dict[str, Any]], requested: str) -> dict[str, Any
         if _normalize_device_name(code) == normalized:
             return function
 
-    # El modelo suele pedir "switch" o "power" para encender/apagar: se busca el
-    # código equivalente que el dispositivo sí declara.
-    if normalized in _ON_CODES or "encender" in normalized or "prender" in normalized:
+    # Los controles IR exponen PowerOn/PowerOff en lugar de switch/power. Según lo
+    # que pida el usuario (o el valor), se elige el botón correcto.
+    wants_off = any(
+        word in normalized for word in ("poweroff", "apagar", "apaga", "off", "detener")
+    )
+    wants_on = any(
+        word in normalized for word in ("poweron", "encender", "prender", "enciende", "on", "arrancar")
+    )
+    if wants_on or wants_off or normalized in _ON_CODES:
+        for code, function in codes.items():
+            code_name = _normalize_device_name(code)
+            if wants_off and code_name in {"poweroff", "power off"}:
+                return function
+            if not wants_off and code_name in {"poweron", "power on"}:
+                return function
         for code, function in codes.items():
             if _normalize_device_name(code) in _ON_CODES:
                 return function
