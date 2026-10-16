@@ -18,6 +18,7 @@ from core.config import SYSTEM_PROMPT
 from core.settings_manager import get_settings
 from core.tools import TOOLS, run_tool, calendar_write
 from core.tools.time_tools import now_context
+from core.memory import memories_block, update_conversation_summary
 
 logger = logging.getLogger(__name__)
 
@@ -226,6 +227,16 @@ def _system_message(addressing_instruction: Optional[str] = None, session=None) 
     facts = _facts_block(session)
     if facts:
         base = f"{base}\n\n{facts}"
+
+    memory = ""
+    if session is not None:
+        memory = memories_block(
+            getattr(session, "personal_memory", []),
+            getattr(session, "operational_memory", []),
+            getattr(session, "conversation_summary", ""),
+        )
+    if memory:
+        base = f"{base}\n\n{memory}"
     return base
 
 
@@ -457,6 +468,14 @@ class BrainSession:
         self.google_linked: Optional[str] = None   # correo de Google conectado
         self.telegram_linked: bool = False
 
+        # ── Memoria estructurada ─────────────────────────────────────────────
+        # La memoria personal y operativa se carga desde BD al vincular identidad.
+        # El resumen conversacional vive en la sesión y complementa el historial
+        # exacto cuando este se recorta.
+        self.personal_memory: List[str] = []
+        self.operational_memory: List[str] = []
+        self.conversation_summary: str = ""
+
     async def _try_quick_confirm(self, text: str) -> Optional[str]:
         """Si hay una propuesta pendiente y el usuario acaba de confirmarla, la crea
         directamente, sin depender de que el modelo llame a confirm_event.
@@ -495,6 +514,7 @@ class BrainSession:
         if quick is not None:
             self.turns.append([user_msg, {"role": "assistant", "content": quick}])
             self.turns = self.turns[-MAX_HISTORY_TURNS:]
+            self.conversation_summary = update_conversation_summary(self.conversation_summary, self.turns)
             return quick
 
         messages = [{"role": "system", "content": _system_message(self.addressing_instruction, self)}]
@@ -518,6 +538,7 @@ class BrainSession:
                     reply, new_msgs = await _complete_with_tools(client, model, messages, self)
                 self.turns.append([user_msg] + new_msgs)
                 self.turns = self.turns[-MAX_HISTORY_TURNS:]
+                self.conversation_summary = update_conversation_summary(self.conversation_summary, self.turns)
                 return reply
             except Exception as e:
                 logger.error(f"Proveedor '{name}' falló: {e}")

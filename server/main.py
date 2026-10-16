@@ -21,6 +21,7 @@ from core.capabilities import admin_capabilities, capabilities_from_user
 from core.database import GoogleAccount, Profile, User
 from core.auth import ALGORITHM, SECRET_KEY, hash_password
 from core.settings_manager import get_settings
+from core.memory import load_memories, remember_from_text
 from core import tts, voice
 from core.database import init_db, engine
 from core.session_store import SessionStore
@@ -778,6 +779,9 @@ async def _get_igris_reply(text: str, session_key: Optional[str] = None) -> str:
                         GoogleAccount.user_id == linked_user.id
                     ).first()
                     session.google_linked = account.email if account is not None else None
+                    remember_from_text(db, linked_user.id, text)
+                    session.personal_memory = load_memories(db, linked_user.id, "personal")
+                    session.operational_memory = load_memories(db, linked_user.id, "operational")
             else:
                 # Chat autorizado por la lista del entorno (uso personal del dueño):
                 # sin límites, como antes.

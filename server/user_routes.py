@@ -51,6 +51,7 @@ from core.capabilities import (
     capabilities_from_user,
 )
 from core.database import GoogleAccount, Profile, TelegramLink, User, get_db
+from core.memory import load_memories, remember_from_text
 from core import stt, voice
 
 router = APIRouter()
@@ -605,6 +606,9 @@ def _bind_identity(session, user: User, db: Session) -> None:
     link = db.query(TelegramLink).filter(TelegramLink.user_id == user.id).first()
     session.telegram_linked = bool(link and link.chat_id)
 
+    session.personal_memory = load_memories(db, user.id, "personal")
+    session.operational_memory = load_memories(db, user.id, "operational")
+
 
 @router.post("/api/user/voice-profile")
 async def register_voice_profile(
@@ -704,6 +708,8 @@ async def user_voice_chat(
         return {"status": "error", "message": "El chat no está disponible en este momento."}
     session = _sessions.get(_session_key(user.id, session_id))
     _bind_identity(session, user, db)
+    remember_from_text(db, user.id, text)
+    _bind_identity(session, user, db)
     try:
         reply = await session.say(text)
         return {"status": "ok", "text": text, "reply": reply, "voice_score": round(score, 3)}
@@ -735,6 +741,8 @@ async def user_chat(
     session = _sessions.get(_session_key(user.id, payload.session_id))
     # Identidad y permisos SIEMPRE frescos, y la instrucción de trato: si el admin
     # la cambió en caliente, el próximo mensaje ya refleja el nuevo trato.
+    _bind_identity(session, user, db)
+    remember_from_text(db, user.id, text)
     _bind_identity(session, user, db)
     try:
         reply = await session.say(text)

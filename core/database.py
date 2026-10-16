@@ -150,6 +150,7 @@ class User(Base):
     ai_config = relationship("AIConfig", back_populates="user", uselist=False, cascade="all, delete-orphan")
     google_account = relationship("GoogleAccount", back_populates="user", uselist=False, cascade="all, delete-orphan")
     telegram_link = relationship("TelegramLink", back_populates="user", uselist=False, cascade="all, delete-orphan")
+    memories = relationship("UserMemory", back_populates="user", cascade="all, delete-orphan")
 
 
 class TwoFactorAuth(Base):
@@ -249,6 +250,31 @@ class Note(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
     text = Column(Text, nullable=False)
     created_at = Column(DateTime, default=utcnow, nullable=False)
+
+
+class UserMemory(Base):
+    """Memoria estructurada de Igris para un usuario.
+
+    kind separa la memoria personal estable de la operativa:
+      - personal: preferencias, trato, hábitos y datos estables.
+      - operational: pendientes, objetivos, proyectos y decisiones recientes.
+    """
+    __tablename__ = "user_memories"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    kind = Column(String(32), nullable=False, index=True)
+    content = Column(Text, nullable=False)
+    source = Column(String(32), default="chat", nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
+
+    user = relationship("User", back_populates="memories")
+
+    __table_args__ = (
+        Index("ix_user_memories_user_kind_updated", "user_id", "kind", "updated_at"),
+        UniqueConstraint("user_id", "kind", "content", name="uq_user_memory_content"),
+    )
 
 
 class GoogleAccount(Base):
