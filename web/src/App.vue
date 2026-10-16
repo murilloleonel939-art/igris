@@ -4,48 +4,22 @@
          el chat de usuarios monta su propio fondo dentro de UserChat) -->
     <IgrisHero v-if="$route.name === 'Chat'" />
 
-    <!-- Navigation Menu (solo en las rutas del administrador) -->
-    <nav
-      v-if="showNav"
-      class="border-b border-slate-700"
-      style="position: relative; z-index: 10; background: rgba(15, 23, 42, 0.55); backdrop-filter: blur(6px)"
-    >
-      <div class="max-w-4xl mx-auto px-6 py-3 flex flex-wrap justify-center items-center gap-3">
-        <router-link 
-          to="/" 
-          :class="{ 'bg-blue-600 text-white': $route.name === 'Chat', 'bg-slate-600 hover:bg-slate-700 text-slate-300': $route.name !== 'Chat' }"
-          class="px-4 py-2 rounded transition-all"
-        >
-          💬 Chat
+    <!-- Navegación administrativa -->
+    <nav v-if="showNav" class="admin-nav">
+      <div class="admin-nav__inner">
+        <router-link to="/" class="brand" aria-label="Igris · Chat">
+          <svg class="brand__mark" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M3.2 4.3 5.4 2l4.1 4.1v3.1L3.2 4.3Zm8.2 1.8L15.5 2l2.2 2.3-6.3 6.3V6.1Zm-8 5.2 2.2-2.2 6.3 6.3v3.1L3.4 11.3Zm8.2 3.2 6.3-6.3 2.2 2.2-8.5 8.5v-4.4Zm-6.3 5.2 2.2-2.2 2.3 2.3-2.2 2.2-2.3-2.3Zm9.5-1.1 2.2-2.2 2.2 2.2-2.2 2.2-2.2-2.2Z"/></svg>
+          <span class="brand__name">IGRIS</span><span class="brand__divider"></span><span class="brand__workspace">WORKSPACE</span>
         </router-link>
-        <router-link 
-          to="/config" 
-          :class="{ 'bg-blue-600 text-white': $route.name === 'Configuration', 'bg-slate-600 hover:bg-slate-700 text-slate-300': $route.name !== 'Configuration' }"
-          class="px-4 py-2 rounded transition-all"
-        >
-          ⚙️ Configuración
-        </router-link>
-        <router-link
-          v-if="adminUserLoggedIn"
-          to="/u"
-          class="px-4 py-2 rounded transition-all bg-slate-600 hover:bg-slate-700 text-slate-300"
-        >
-          🔗 Conexiones
-        </router-link>
-        <router-link 
-          to="/panel/usuarios" 
-          :class="{ 'bg-blue-600 text-white': $route.name === 'AdminUsers', 'bg-slate-600 hover:bg-slate-700 text-slate-300': $route.name !== 'AdminUsers' }"
-          class="px-4 py-2 rounded transition-all"
-        >
-          👥 Usuarios
-        </router-link>
-        <button
-          type="button"
-          class="px-3 py-1.5 rounded text-sm text-slate-400 hover:text-white hover:bg-slate-700 transition-all"
-          @click="logout"
-        >
-          Salir
-        </button>
+
+        <div class="admin-nav__links">
+          <router-link to="/" class="nav-link" :class="{ active: $route.name === 'Chat' }"><span>▢</span> Chat</router-link>
+          <router-link to="/config" class="nav-link" :class="{ active: $route.name === 'Configuration' }"><span>⌘</span> Configuración</router-link>
+          <router-link v-if="adminUserLoggedIn" to="/u" class="nav-link"><span>♧</span> Conexiones</router-link>
+          <router-link to="/panel/usuarios" class="nav-link" :class="{ active: $route.name === 'AdminUsers' }"><span>♧</span> Usuarios</router-link>
+        </div>
+
+        <button type="button" class="nav-user" @click="logout" title="Cerrar sesión"><span class="nav-user__initials">LM</span><span class="nav-user__name">Salir</span><span class="nav-user__arrow">⌄</span></button>
       </div>
     </nav>
 
@@ -96,5 +70,43 @@ body {
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+.admin-nav {
+  position: relative;
+  z-index: 10;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.11);
+  background: rgba(19, 8, 7, 0.94);
+  backdrop-filter: blur(12px);
+}
+.admin-nav__inner {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  width: min(100%, 1200px);
+  min-height: 5.45rem;
+  margin: 0 auto;
+  padding: 0 2.75rem;
+}
+.brand { display: inline-flex; align-items: center; width: max-content; color: white; text-decoration: none; }
+.brand__mark { width: 1.55rem; height: 1.55rem; color: #f04b45; }
+.brand__name { margin-left: .55rem; font-size: 1.18rem; font-weight: 800; letter-spacing: .025em; }
+.brand__divider { width: 1px; height: 1.1rem; margin: 0 .9rem; background: rgba(255, 255, 255, .17); }
+.brand__workspace { color: #cda99c; font-size: .57rem; font-weight: 700; letter-spacing: .16em; }
+.admin-nav__links { display: flex; align-items: center; gap: .45rem; }
+.nav-link { display: inline-flex; align-items: center; gap: .45rem; border-radius: .55rem; padding: .68rem .9rem; color: #c8b2a9; font-size: .8rem; text-decoration: none; transition: .2s; }
+.nav-link:hover { color: white; background: rgba(255,255,255,.05); }
+.nav-link.active { color: white; background: rgba(255,255,255,.09); font-weight: 600; }
+.nav-link span { color: #bca79f; font-size: .95rem; line-height: 1; }
+.nav-link.active span { color: white; }
+.nav-user { display: inline-flex; justify-self: end; align-items: center; gap: .55rem; border: 0; border-radius: .5rem; padding: .35rem; color: #c8b2a9; background: transparent; cursor: pointer; font-size: .76rem; transition: .2s; }
+.nav-user:hover { background: rgba(255,255,255,.06); color: white; }
+.nav-user__initials { display: grid; width: 1.75rem; height: 1.75rem; place-items: center; border-radius: 50%; color: #fff2e9; background: #2e1d1c; font-size: .58rem; font-weight: 700; }
+.nav-user__arrow { color: #897972; font-size: 1rem; }
+@media (max-width: 760px) {
+  .admin-nav__inner { grid-template-columns: 1fr auto; min-height: auto; padding: .8rem 1rem; gap: .75rem; }
+  .admin-nav__links { grid-column: 1 / -1; grid-row: 2; justify-content: space-between; width: 100%; gap: 0; overflow-x: auto; }
+  .nav-link { padding: .55rem .65rem; white-space: nowrap; }
+  .brand__workspace, .brand__divider, .nav-user__name { display: none; }
 }
 </style>
