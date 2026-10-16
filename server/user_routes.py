@@ -714,6 +714,7 @@ async def user_voice_chat(
     remember_from_text(db, user.id, text)
     _bind_identity(session, user, db)
     try:
+        reply = await session.say(text)
         result = {"status": "ok", "text": text, "reply": reply}
         if score is not None:
             result["voice_score"] = round(score, 3)
