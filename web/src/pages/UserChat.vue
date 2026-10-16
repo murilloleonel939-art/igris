@@ -22,8 +22,51 @@
     <div class="topbar">
       <span class="who">👤 {{ username }}</span>
       <button v-if="adminUser" type="button" class="out" @click="openAdminPanel">Panel admin</button>
+      <button type="button" class="out" @click="openMemories">Memoria</button>
       <button type="button" class="out" @click="openConnections">Conexiones</button>
       <button type="button" class="out" @click="logout">Salir</button>
+    </div>
+
+    <!-- Panel de memoria personal y operativa -->
+    <div v-if="memories.open" class="conn-backdrop" @click.self="memories.open = false">
+      <div class="conn memory-panel">
+        <h2>Mi memoria</h2>
+        <p class="conn-note">Aquí puedes revisar y corregir lo que Igris recuerda de ti.</p>
+        <p v-if="memories.error" class="conn-error">{{ memories.error }}</p>
+        <p v-if="memories.loading" class="conn-note">Cargando…</p>
+        <template v-else>
+          <section v-for="group in memoryGroups" :key="group.kind">
+            <div class="memory-heading">
+              <h3>{{ group.label }}</h3>
+              <button class="btn ghost small" @click="startMemory(group.kind)">Añadir</button>
+            </div>
+            <div v-if="!memories.items[group.kind].length" class="conn-note">No hay recuerdos todavía.</div>
+            <div v-for="item in memories.items[group.kind]" :key="item.id" class="memory-item">
+              <input v-if="memories.editing === item.id" v-model="memories.draft" maxlength="260" @keyup.enter="saveMemory(item)" />
+              <span v-else>{{ item.content }}</span>
+              <div class="memory-actions">
+                <button v-if="memories.editing === item.id" class="btn primary small" @click="saveMemory(item)">Guardar</button>
+                <button v-if="memories.editing === item.id" class="btn ghost small" @click="cancelMemory">Cancelar</button>
+                <button v-else class="btn ghost small" @click="editMemory(item)">Editar</button>
+                <button class="btn danger small" @click="deleteMemory(item)">Borrar</button>
+              </div>
+            </div>
+          </section>
+          <section v-if="memories.creating" class="memory-new">
+            <h3>Nuevo recuerdo</h3>
+            <select v-model="memories.newKind">
+              <option value="personal">Personal</option>
+              <option value="operational">Operativo</option>
+            </select>
+            <textarea v-model="memories.newContent" maxlength="260" placeholder="Escribe un recuerdo…" />
+            <div class="conn-actions">
+              <button class="btn primary" :disabled="!memories.newContent.trim()" @click="createMemory">Guardar</button>
+              <button class="btn ghost" @click="cancelNewMemory">Cancelar</button>
+            </div>
+          </section>
+        </template>
+        <div class="conn-foot"><button class="btn ghost" @click="memories.open = false">Cerrar</button></div>
+      </div>
     </div>
 
     <!-- Panel de conexiones: qué funciones tienes y qué te falta conectar -->
@@ -576,6 +619,106 @@ function logout() {
    qué funciones tiene el usuario y le deja conectar SUS cuentas. Los permisos
    no se pueden tocar desde aquí. */
 
+const memories = ref({
+  open: false,
+  loading: false,
+  error: '',
+  items: { personal: [], operational: [] },
+  editing: null,
+  draft: '',
+  creating: false,
+  newKind: 'personal',
+  newContent: '',
+})
+
+const memoryGroups = [
+  { kind: 'personal', label: 'Memoria personal' },
+  { kind: 'operational', label: 'Memoria operativa' },
+]
+
+async function refreshMemories() {
+  memories.value.loading = true
+  memories.value.error = ''
+  try {
+    const res = await userApi.get('/api/user/memories')
+    memories.value.items = {
+      personal: res.data?.personal || [],
+      operational: res.data?.operational || [],
+    }
+  } catch (e) {
+    memories.value.error = errorMessage(e, 'No se pudo cargar tu memoria')
+  } finally {
+    memories.value.loading = false
+  }
+}
+
+function openMemories() {
+  memories.value.open = true
+  memories.value.creating = false
+  memories.value.editing = null
+  refreshMemories()
+}
+
+function startMemory(kind) {
+  memories.value.creating = true
+  memories.value.newKind = kind
+  memories.value.newContent = ''
+  memories.value.editing = null
+}
+
+function cancelNewMemory() {
+  memories.value.creating = false
+  memories.value.newContent = ''
+}
+
+function editMemory(item) {
+  memories.value.editing = item.id
+  memories.value.draft = item.content
+  memories.value.creating = false
+}
+
+function cancelMemory() {
+  memories.value.editing = null
+  memories.value.draft = ''
+}
+
+async function createMemory() {
+  const content = memories.value.newContent.trim()
+  if (!content) return
+  try {
+    await userApi.post('/api/user/memories', { kind: memories.value.newKind, content })
+    cancelNewMemory()
+    await refreshMemories()
+    setNotice('Recuerdo guardado.', 4000)
+  } catch (e) {
+    memories.value.error = errorMessage(e, 'No se pudo guardar el recuerdo')
+  }
+}
+
+async function saveMemory(item) {
+  const content = memories.value.draft.trim()
+  if (!content) return
+  try {
+    await userApi.put(`/api/user/memories/${item.id}`, { content })
+    cancelMemory()
+    await refreshMemories()
+    setNotice('Recuerdo actualizado.', 4000)
+  } catch (e) {
+    memories.value.error = errorMessage(e, 'No se pudo actualizar el recuerdo')
+  }
+}
+
+async function deleteMemory(item) {
+  if (!window.confirm('¿Borrar este recuerdo?')) return
+  try {
+    await userApi.delete(`/api/user/memories/${item.id}`)
+    await refreshMemories()
+    setNotice('Recuerdo borrado.', 4000)
+  } catch (e) {
+    memories.value.error = errorMessage(e, 'No se pudo borrar el recuerdo')
+  }
+}
+
 const conn = ref({
   open: false,
   loading: false,
@@ -800,6 +943,61 @@ onBeforeUnmount(() => {
 }
 .conn section {
   margin-bottom: 1.25rem;
+}
+.memory-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.memory-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  margin: 0.45rem 0;
+  padding: 0.65rem;
+  border: 1px solid #334155;
+  border-radius: 9px;
+  background: rgba(30, 41, 59, 0.55);
+  font-size: 0.84rem;
+  line-height: 1.4;
+}
+.memory-item > span {
+  flex: 1;
+}
+.memory-item input,
+.memory-new textarea,
+.memory-new select {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #475569;
+  border-radius: 7px;
+  background: #0b1220;
+  color: #e2e8f0;
+  padding: 0.55rem;
+  font: inherit;
+}
+.memory-new textarea {
+  min-height: 5rem;
+  resize: vertical;
+}
+.memory-new select {
+  margin-bottom: 0.5rem;
+}
+.memory-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  flex-shrink: 0;
+}
+.btn.small {
+  padding: 0.3rem 0.55rem;
+  font-size: 0.72rem;
+}
+.btn.danger {
+  color: #fecaca;
+  border-color: rgba(248, 113, 113, 0.45);
 }
 .conn h3 {
   margin: 0 0 0.5rem;

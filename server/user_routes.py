@@ -50,7 +50,7 @@ from core.capabilities import (
     admin_capabilities,
     capabilities_from_user,
 )
-from core.database import GoogleAccount, Profile, TelegramLink, User, get_db
+from core.database import GoogleAccount, Profile, TelegramLink, User, UserMemory, get_db
 from core.memory import load_memories, remember_from_text
 from core import stt, voice
 
@@ -214,6 +214,39 @@ def require_user(
 class LoginIn(BaseModel):
     username: str
     password: str
+
+
+class MemoryCreateIn(BaseModel):
+    kind: str
+    content: str
+
+    @field_validator("kind")
+    @classmethod
+    def _v_kind(cls, value: str) -> str:
+        value = (value or "").strip().lower()
+        if value not in {"personal", "operational"}:
+            raise ValueError("El tipo de memoria no es válido")
+        return value
+
+    @field_validator("content")
+    @classmethod
+    def _v_content(cls, value: str) -> str:
+        value = re.sub(r"\\s+", " ", (value or "")).strip()
+        if not value or len(value) > 260:
+            raise ValueError("La memoria debe tener entre 1 y 260 caracteres")
+        return value
+
+
+class MemoryUpdateIn(BaseModel):
+    content: str
+
+    @field_validator("content")
+    @classmethod
+    def _v_content(cls, value: str) -> str:
+        value = re.sub(r"\\s+", " ", (value or "")).strip()
+        if not value or len(value) > 260:
+            raise ValueError("La memoria debe tener entre 1 y 260 caracteres")
+        return value
 
 
 class UserCreateIn(BaseModel):
@@ -569,6 +602,101 @@ def user_login(
 def user_me(user: User = Depends(require_user), db: Session = Depends(get_db)):
     """Comprueba que la sesión sigue viva y devuelve los datos del usuario."""
     return _public_user(user, db)
+
+
+# ============= MEMORIA DEL USUARIO =============
+
+def _memory_json(memory: UserMemory) -> dict[str, Any]:
+    return {
+        "id": memory.id,
+        "kind": memory.kind,
+        "content": memory.content,
+        "source": memory.source,
+        "created_at": memory.created_at.isoformat() if memory.created_at else None,
+        "updated_at": memory.updated_at.isoformat() if memory.updated_at else None,
+    }
+
+
+@router.get("/api/user/memories")
+def list_user_memories(user: User = Depends(require_user), db: Session = Depends(get_db)):
+    """Lista los recuerdos propios, separados por memoria personal y operativa."""
+    rows = db.query(UserMemory).filter(UserMemory.user_id == user.id).order_by(
+        UserMemory.updated_at.desc(), UserMemory.id.desc()
+    ).all()
+    return {
+        "personal": [_memory_json(row) for row in rows if row.kind == "personal"],
+        "operational": [_memory_json(row) for row in rows if row.kind == "operational"],
+    }
+
+
+@router.post("/api/user/memories", status_code=status.HTTP_201_CREATED)
+def create_user_memory(
+    body: MemoryCreateIn,
+    user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+):
+    """Crea un recuerdo propio desde el panel de memoria."""
+    duplicate = db.query(UserMemory).filter(
+        UserMemory.user_id == user.id,
+        UserMemory.kind == body.kind,
+        UserMemory.content == body.content,
+    ).first()
+    if duplicate:
+        return _memory_json(duplicate)
+    memory = UserMemory(user_id=user.id, kind=body.kind, content=body.content, source="panel")
+    db.add(memory)
+    db.commit()
+    db.refresh(memory)
+    return _memory_json(memory)
+
+
+@router.put("/api/user/memories/{memory_id}")
+def update_user_memory(
+    memory_id: int,
+    body: MemoryUpdateIn,
+    user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+):
+    """Edita un recuerdo sin permitir acceder a otro usuario."""
+    memory = db.query(UserMemory).filter(
+        UserMemory.id == memory_id,
+        UserMemory.user_id == user.id,
+    ).first()
+    if memory is None:
+        raise HTTPException(status_code=404, detail="No se encontró ese recuerdo")
+    duplicate = db.query(UserMemory).filter(
+        UserMemory.user_id == user.id,
+        UserMemory.kind == memory.kind,
+        UserMemory.content == body.content,
+        UserMemory.id != memory.id,
+    ).first()
+    if duplicate:
+        db.delete(memory)
+        db.commit()
+        return _memory_json(duplicate)
+    memory.content = body.content
+    memory.updated_at = datetime.utcnow()
+    db.commit()
+    db.refresh(memory)
+    return _memory_json(memory)
+
+
+@router.delete("/api/user/memories/{memory_id}")
+def delete_user_memory(
+    memory_id: int,
+    user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+):
+    """Borra un recuerdo propio."""
+    memory = db.query(UserMemory).filter(
+        UserMemory.id == memory_id,
+        UserMemory.user_id == user.id,
+    ).first()
+    if memory is None:
+        raise HTTPException(status_code=404, detail="No se encontró ese recuerdo")
+    db.delete(memory)
+    db.commit()
+    return {"status": "ok"}
 
 
 # ============= CHAT Y VOZ DEL USUARIO =============
