@@ -157,7 +157,7 @@ video {
 /* ───── Pantalla completa ───── */
 .igris--full {
   position: fixed;
-  inset: 0;
+  inset: var(--admin-nav-height, 0px) 0 0;
   z-index: 0;
   display: flex;
   justify-content: center;

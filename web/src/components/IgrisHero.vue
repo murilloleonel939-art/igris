@@ -26,7 +26,7 @@ const caption = computed(() => CAPTIONS[igris.state] || CAPTIONS.idle)
 <style scoped>
 .caption {
   position: fixed;
-  top: 76px;
+  top: calc(var(--admin-nav-height, 0px) + 10px);
   left: 0;
   right: 0;
   z-index: 5;

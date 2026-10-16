@@ -19,7 +19,7 @@
           <router-link to="/panel/usuarios" class="nav-link" :class="{ active: $route.name === 'AdminUsers' }"><span>♧</span> Usuarios</router-link>
         </div>
 
-        <button type="button" class="nav-user" @click="logout" title="Cerrar sesión"><span class="nav-user__initials">LM</span><span class="nav-user__name">Salir</span><span class="nav-user__arrow">⌄</span></button>
+        <button type="button" class="nav-user" @click="logout" title="Cerrar sesión de {{ displayName }}"><span class="nav-user__initials">{{ displayInitials }}</span><span class="nav-user__name">{{ displayName }}</span><span class="nav-user__arrow">⌄</span></button>
       </div>
     </nav>
 
@@ -35,7 +35,7 @@ import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import IgrisHero from './components/IgrisHero.vue'
 import { clearKey } from './api'
-import { clearSession, isAdminUser } from './userApi'
+import { clearSession, getUser, isAdminUser } from './userApi'
 
 const route = useRoute()
 const router = useRouter()
@@ -46,6 +46,11 @@ const router = useRouter()
 const ADMIN_ROUTES = ['Chat', 'Configuration', 'AdminUsers']
 const showNav = computed(() => ADMIN_ROUTES.includes(route.name))
 const adminUserLoggedIn = computed(() => isAdminUser())
+const displayName = computed(() => getUser()?.username || 'Administrador')
+const displayInitials = computed(() => {
+  const parts = displayName.value.trim().split(/\s+/).filter(Boolean)
+  return parts.slice(0, 2).map(part => part[0]).join('').toUpperCase()
+})
 
 // Borra la clave guardada y vuelve a la pantalla de acceso.
 // Al cambiar de ruta, la página actual se desmonta (Dashboard detiene el micrófono).
@@ -72,9 +77,12 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+#app { --admin-nav-height: 3.5rem; }
 .admin-nav {
-  position: relative;
-  z-index: 10;
+  position: fixed;
+  inset: 0 0 auto;
+  z-index: 20;
+  height: var(--admin-nav-height);
   border-bottom: 1px solid rgba(255, 255, 255, 0.11);
   background: rgba(19, 8, 7, 0.94);
   backdrop-filter: blur(12px);
@@ -84,7 +92,7 @@ body {
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
   width: min(100%, 1200px);
-  min-height: 5.45rem;
+  height: 100%;
   margin: 0 auto;
   padding: 0 2.75rem;
 }
@@ -103,10 +111,16 @@ body {
 .nav-user:hover { background: rgba(255,255,255,.06); color: white; }
 .nav-user__initials { display: grid; width: 1.75rem; height: 1.75rem; place-items: center; border-radius: 50%; color: #fff2e9; background: #2e1d1c; font-size: .58rem; font-weight: 700; }
 .nav-user__arrow { color: #897972; font-size: 1rem; }
+#app:has(.igris--full) > div[style*="z-index: 10"] { padding-top: var(--admin-nav-height); }
 @media (max-width: 760px) {
-  .admin-nav__inner { grid-template-columns: 1fr auto; min-height: auto; padding: .8rem 1rem; gap: .75rem; }
+  #app { --admin-nav-height: 5.75rem; }
+  .admin-nav__inner { grid-template-columns: 1fr auto; grid-template-rows: 2.5rem 2.75rem; padding: .2rem 1rem 0; gap: 0 .75rem; }
   .admin-nav__links { grid-column: 1 / -1; grid-row: 2; justify-content: space-between; width: 100%; gap: 0; overflow-x: auto; }
-  .nav-link { padding: .55rem .65rem; white-space: nowrap; }
+  .nav-link { padding: .45rem .65rem; white-space: nowrap; }
   .brand__workspace, .brand__divider, .nav-user__name { display: none; }
+}
+@media (max-width: 400px) {
+  #app { --admin-nav-height: 5.5rem; }
+  .nav-link { gap: .3rem; padding: .42rem .45rem; font-size: .72rem; }
 }
 </style>
