@@ -1,7 +1,7 @@
 <template>
   <div id="app" class="min-h-screen bg-gradient-to-br from-slate-900 to-slate-800">
     <!-- Fondo de Igris compartido en ambas superficies de chat -->
-    <IgrisHero v-if="$route.name === 'Chat'" />
+    <IgrisHero v-if="$route.name === 'Chat' || $route.name === 'UserChat'" />
 
     <!-- Navegación del espacio de trabajo, compartida y adaptada por rol -->
     <WorkspaceNav v-if="showNav" :admin="isAdmin" :username="displayName" @logout="logout" @connections="requestConnections" @memory="requestMemory" />
@@ -25,7 +25,7 @@ const router = useRouter()
 
 // El menú del panel solo se muestra a administradores autenticados. El portal
 // /u de usuarios normales mantiene únicamente chat, conexiones y memoria.
-const ADMIN_ROUTES = ['Configuration', 'AdminConnections']
+const ADMIN_ROUTES = ['Configuration', 'AdminConnections', 'AdminUsers']
 const isAdmin = computed(() => isAdminUser() || !!getKey())
 const showNav = computed(() => route.name === 'UserChat' || (route.name === 'Chat' && isAdmin.value) || (ADMIN_ROUTES.includes(route.name) && isAdmin.value))
 const displayName = computed(() => getUser()?.username || 'Administrador')

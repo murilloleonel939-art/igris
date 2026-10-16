@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import Configuration from './pages/Configuration.vue'
+import AdminUsers from './pages/AdminUsers.vue'
 import Access from './pages/Access.vue'
 import UserLogin from './pages/UserLogin.vue'
 import UserChat from './pages/UserChat.vue'
@@ -38,6 +39,11 @@ const routes = [
     path: '/panel/conexiones',
     name: 'AdminConnections',
     component: AdminConnections
+  },
+  {
+    path: '/panel/usuarios',
+    name: 'AdminUsers',
+    component: AdminUsers
   },
 
   {

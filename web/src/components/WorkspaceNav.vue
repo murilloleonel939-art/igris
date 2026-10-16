@@ -6,6 +6,7 @@
       <template v-if="admin">
         <router-link to="/config" class="link">Configuración</router-link>
         <router-link to="/panel/conexiones" class="link">Conexiones</router-link>
+        <router-link to="/panel/usuarios" class="link">Usuarios</router-link>
       </template>
       <template v-else>
         <button class="link" type="button" @click="$emit('connections')">Conexiones</button>
