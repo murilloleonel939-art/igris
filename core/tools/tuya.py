@@ -96,7 +96,13 @@ async def list_tuya_devices() -> dict[str, Any]:
             devices = []
         return {
             "dispositivos": [
-                {"id": d.get("id"), "nombre": d.get("name"), "producto": d.get("product_name"), "online": d.get("online")}
+                {
+                    "id": d.get("id"),
+                    "nombre": d.get("name"),
+                    "producto": d.get("product_name"),
+                    "categoria": d.get("category"),
+                    "online": d.get("online"),
+                }
                 for d in devices
             ]
         }
@@ -285,6 +291,69 @@ async def list_infrared_remotes(infrared_id: str) -> list[dict[str, Any]]:
 # En Tuya, la categoría 5 es "aire acondicionado" y la 2 "televisor".
 _AC_CATEGORY_ID = 5
 
+# Categorías de producto que identifican un hub emisor de infrarrojos.
+_HUB_CATEGORY_HINTS = ("infrared", "ir_remote", "remote_control", "wnykq", "smart ir")
+
+# Caché de hubs ya identificados: evita repetir el sondeo en cada orden.
+_HUB_CACHE: dict[str, tuple[float, list[dict[str, Any]]]] = {}
+_HUB_CACHE_TTL = 300
+
+
+def _looks_like_hub(device: dict[str, Any]) -> bool:
+    """Heurística para reconocer el aparato físico que emite infrarrojos."""
+    haystack = " ".join(
+        str(device.get(key) or "") for key in ("categoria", "category", "producto", "nombre")
+    ).casefold()
+    return any(hint in haystack for hint in _HUB_CATEGORY_HINTS)
+
+
+async def _find_infrared_hub(preferred_id: str) -> tuple[str, list[dict[str, Any]]] | None:
+    """Localiza el hub IR real y sus controles.
+
+    El usuario nombra "el aire", y la resolución devuelve el control *virtual*
+    (`eb0fa487...`), no el hub que emite. Se prueba el id recibido y después el
+    resto de dispositivos de la cuenta, dando prioridad a los que parecen un hub.
+    """
+    hub_id, remotes = await _probe_infrared(preferred_id)
+    if remotes:
+        return hub_id, remotes
+
+    try:
+        listed = await list_tuya_devices()
+        others = [
+            d for d in listed.get("dispositivos", [])
+            if d.get("id") and d["id"] != preferred_id
+        ]
+    except Exception:
+        logger.exception("No se pudo listar dispositivos para buscar el hub IR")
+        return None
+
+    # Primero los que por categoría o nombre parecen un hub emisor.
+    others.sort(key=lambda d: not _looks_like_hub(d))
+
+    for device in others:
+        candidate = device["id"]
+        hub_id, remotes = await _probe_infrared(candidate)
+        if remotes:
+            logger.info("Hub IR localizado en %s (%s)", candidate, device.get("nombre"))
+            return hub_id, remotes
+    return None
+
+
+async def _probe_infrared(candidate: str) -> tuple[str, list[dict[str, Any]]]:
+    """Devuelve (id, controles) si el dispositivo es un hub IR; si no, ([], [])."""
+    cached = _HUB_CACHE.get(candidate)
+    if cached and time.time() - cached[0] < _HUB_CACHE_TTL:
+        return candidate, cached[1]
+    try:
+        remotes = await list_infrared_remotes(candidate)
+    except Exception as exc:
+        logger.debug("Sin controles IR en %s: %s", candidate, exc)
+        return candidate, []
+    if remotes:
+        _HUB_CACHE[candidate] = (time.time(), remotes)
+    return candidate, remotes
+
 
 def _is_air_conditioner(remote: dict[str, Any]) -> bool:
     try:
@@ -365,26 +434,22 @@ async def send_tuya_command(device_id: str, code: str, value: Any) -> dict[str, 
     device_id = resolved_id
 
     # Un hub infrarrojo necesita su propia API: el aire no es un dispositivo aparte.
-    try:
-        remotes = await list_infrared_remotes(device_id)
-    except Exception as exc:
-        # Lo normal en cualquier dispositivo que no sea un hub IR.
-        logger.debug("Sin controles IR para %s: %s", device_id, exc)
-        remotes = []
+    hub = await _find_infrared_hub(device_id)
 
-    if remotes:
-        logger.info("Controles IR de %s: %s", device_id, [r.get("remote_name") for r in remotes])
+    if hub:
+        hub_id, remotes = hub
+        logger.info("Hub IR %s con controles: %s", hub_id, [r.get("remote_name") for r in remotes])
         air = _find_air_conditioner(remotes)
         power_on = _power_intent(code, value)
         if air and power_on is not None:
             try:
-                return await send_infrared_power(device_id, air, power_on)
+                return await send_infrared_power(hub_id, air, power_on)
             except Exception as exc:
                 logger.exception("Error enviando orden IR")
                 return {"error": str(exc)}
         if air and power_on is None:
             return {
-                "device_id": device_id,
+                "device_id": hub_id,
                 "error": (
                     f"La orden '{code}' no es de encendido ni apagado. Para el aire solo se "
                     "puede encender o apagar por ahora."
@@ -392,7 +457,7 @@ async def send_tuya_command(device_id: str, code: str, value: Any) -> dict[str, 
                 "controles_ir": [r.get("remote_name") for r in remotes],
             }
         return {
-            "device_id": device_id,
+            "device_id": hub_id,
             "error": "Ese hub infrarrojo no tiene configurado un control de aire acondicionado.",
             "controles_ir": [r.get("remote_name") for r in remotes],
         }
