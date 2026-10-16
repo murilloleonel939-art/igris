@@ -37,7 +37,15 @@ const displayName = computed(() => {
   return getUser()?.username || 'Administrador'
 })
 function requestConnections() { window.dispatchEvent(new Event('igris:open-connections')) }
-function requestMemory() { window.dispatchEvent(new Event('igris:open-memory')) }
+function requestMemory() {
+  if (route.name === 'UserChat' && route.query.open !== 'memory') {
+    router.push({ name: 'UserChat', query: { open: 'memory' } })
+  } else if (route.name === 'UserChat') {
+    window.dispatchEvent(new Event('igris:open-memory'))
+  } else {
+    window.dispatchEvent(new Event('igris:open-memory'))
+  }
+}
 
 const displayInitials = computed(() => {
   const parts = displayName.value.trim().split(/\s+/).filter(Boolean)

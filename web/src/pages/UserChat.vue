@@ -841,10 +841,12 @@ function openConnections() {
 // al pulsar «Conexiones» y el usuario vería el chat. Al salir se cierra, para
 // que no quede el panel flotando encima del chat.
 watch(
-  () => route.name,
-  (name) => {
+  () => [route.name, route.query.open],
+  ([name, open]) => {
     if (name === 'UserConnections') openConnections()
     else conn.value.open = false
+    if (name === 'UserChat' && open === 'memory') openMemories()
+    else if (name === 'UserChat') memories.value.open = false
   },
 )
 
@@ -906,6 +908,7 @@ onMounted(() => {
   window.addEventListener('keydown', unlock, { once: true })
   runHandsFree()
   if (route.query.open === 'connections' || route.name === 'UserConnections') openConnections()
+  if (route.query.open === 'memory' && route.name === 'UserChat') openMemories()
 })
 
 onBeforeUnmount(() => {
