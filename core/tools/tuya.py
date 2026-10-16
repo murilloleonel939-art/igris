@@ -294,7 +294,9 @@ _AC_CATEGORY_ID = 5
 # Categorías de producto que identifican un hub emisor de infrarrojos.
 _HUB_CATEGORY_HINTS = ("infrared", "ir_remote", "remote_control", "wnykq", "smart ir")
 
-# Caché de hubs ya identificados: evita repetir el sondeo en cada orden.
+# Caché de sondeos: evita repetir la búsqueda de hub en cada orden. Guarda también
+# los negativos, para que un dispositivo directo (bombilla, enchufe) no provoque un
+# sondeo de toda la cuenta cada vez que se le manda una orden.
 _HUB_CACHE: dict[str, tuple[float, list[dict[str, Any]]]] = {}
 _HUB_CACHE_TTL = 300
 
