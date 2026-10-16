@@ -453,8 +453,9 @@ TOOLS = [
         "function": {
             "name": "control_tuya_device",
             "description": (
-                "Controla un dispositivo Smart Life. Solo úsala después de que el usuario haya confirmado "
-                "la acción concreta, porque puede encender, apagar o modificar un equipo."
+                "Prepara una orden sobre un dispositivo Smart Life (encender, apagar, cambiar). "
+                "Llámala en cuanto el usuario pida la acción: la orden queda pendiente y el servidor "
+                "la ejecuta sola cuando el usuario responde «sí». No vuelvas a llamarla para confirmar."
             ),
             "parameters": {
                 "type": "object",

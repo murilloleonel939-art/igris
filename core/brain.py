@@ -456,6 +456,8 @@ class BrainSession:
         self.turn_no = 0               # cuenta mensajes REALES del usuario
         self.last_user_text = ""       # último mensaje real del usuario
         self.pending_event: Optional[dict] = None
+        # Orden de Smart Life pendiente de confirmación (la ejecuta el servidor).
+        self._tuya_pending: Optional[dict] = None
         self.telegram_id: Optional[int] = None  # lo fija main.py en sesiones de Telegram
         self.addressing_instruction: str = ""   # instrucción de trato personalizado (la fija user_routes)
 
@@ -496,6 +498,30 @@ class BrainSession:
             return f"Mi señor, no pude agendarlo. {result['error']}"
         return None
 
+    async def _try_quick_tuya(self, text: str) -> Optional[str]:
+        """Ejecuta una orden Smart Life pendiente cuando el usuario la confirma.
+
+        Se hace en el servidor, igual que la confirmación de eventos: así la orden
+        no se queda bloqueada esperando a que el modelo vuelva a llamar la
+        herramienta. El texto debe ser la afirmación REAL del usuario.
+        """
+        from core.tools import tuya
+
+        if not getattr(self, "_tuya_pending", None):
+            return None
+        try:
+            result = await tuya.confirm_pending_command(self)
+        except Exception:
+            logger.exception("Falló la confirmación directa de la orden Tuya")
+            return "Mi señor, no pude ejecutar la orden en el dispositivo por un fallo interno."
+        if not result:
+            return None
+        if result.get("error"):
+            return f"Mi señor, no pude ejecutarlo. {result['error']}"
+        if result.get("resultado") is not None or result.get("codigo"):
+            return "Hecho, mi señor. La orden ya se envió al dispositivo."
+        return None
+
     async def say(self, text: str, context: Optional[dict] = None) -> str:
         user_msg = {"role": "user", "content": text}
         prev_turn_no, prev_user_text = self.turn_no, self.last_user_text
@@ -511,6 +537,8 @@ class BrainSession:
 
         # Confirmación directa en el servidor (no depende del modelo)
         quick = await self._try_quick_confirm(text)
+        if quick is None:
+            quick = await self._try_quick_tuya(text)
         if quick is not None:
             self.turns.append([user_msg, {"role": "assistant", "content": quick}])
             self.turns = self.turns[-MAX_HISTORY_TURNS:]
