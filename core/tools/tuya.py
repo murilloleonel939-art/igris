@@ -84,7 +84,14 @@ async def list_tuya_devices() -> dict[str, Any]:
         if not uid:
             return {"error": "Falta TUYA_UID para identificar la cuenta Smart Life vinculada."}
         result = await _call(f"/v1.0/users/{uid}/devices")
-        devices = result.get("devices", []) if isinstance(result, dict) else []
+        # Tuya devuelve normalmente una lista directamente; algunas versiones
+        # responden {"devices": [...]}, por lo que soportamos ambos formatos.
+        if isinstance(result, list):
+            devices = result
+        elif isinstance(result, dict):
+            devices = result.get("devices", [])
+        else:
+            devices = []
         return {
             "dispositivos": [
                 {"id": d.get("id"), "nombre": d.get("name"), "producto": d.get("product_name"), "online": d.get("online")}
