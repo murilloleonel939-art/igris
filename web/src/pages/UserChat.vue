@@ -19,8 +19,11 @@
     <!-- Panel de memoria personal y operativa -->
     <div v-if="memories.open" class="conn-backdrop" @click.self="memories.open = false">
       <div class="conn memory-panel">
-        <h2>Mi memoria</h2>
-        <p class="conn-note">Aquí puedes revisar y corregir lo que Igris recuerda de ti.</p>
+        <header class="conn-head">
+          <div class="conn-crumbs"><span>Workspace</span><span>›</span><span>Mi memoria</span></div>
+          <h2>Mi memoria</h2>
+          <p>Aquí puedes revisar y corregir lo que Igris recuerda de ti.</p>
+        </header>
         <p v-if="memories.error" class="conn-error">{{ memories.error }}</p>
         <p v-if="memories.loading" class="conn-note">Cargando…</p>
         <template v-else>
@@ -61,7 +64,11 @@
     <!-- Panel de conexiones: qué funciones tienes y qué te falta conectar -->
     <div v-if="conn.open || route.name === 'UserConnections'" class="conn-backdrop" :class="{ 'conn-page': route.name === 'UserConnections' }" @click.self="route.name !== 'UserConnections' && (conn.open = false)">
       <div class="conn">
-        <h2>Conexiones</h2>
+        <header class="conn-head">
+          <div class="conn-crumbs"><span>Workspace</span><span>›</span><span>Conexiones</span></div>
+          <h2>Conexiones</h2>
+          <p>Tus cuentas y tu voz. Cada cosa se conecta con tu propia cuenta: nadie más ve tus datos.</p>
+        </header>
 
         <p v-if="conn.loading" class="conn-note">Cargando…</p>
         <p v-else-if="conn.error" class="conn-error">{{ conn.error }}</p>
@@ -166,7 +173,7 @@
       </div>
     </div>
 
-    <div class="bottom">
+    <div v-if="route.name !== 'UserConnections'" class="bottom">
       <!-- Historial -->
       <div v-show="chatMessages.length" ref="chatBox" class="history">
         <div v-for="(msg, i) in chatMessages" :key="i" class="msg">
@@ -220,7 +227,7 @@
 </template>
 
 <script setup>
-import { ref, computed, nextTick, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, nextTick, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import userApi, { getUser, clearSession, errorMessage } from '../userApi'
 import { getKey } from '../api'
@@ -832,6 +839,16 @@ function openConnections() {
   if (!conn.value.features.length && !conn.value.google) refreshConnections()
 }
 
+// Entrar por el menú a /conexiones no vuelve a montar el componente: Vue
+// reutiliza esta misma instancia. Sin este vigilante, el panel no se abriría
+// al pulsar «Conexiones» y el usuario vería el chat.
+watch(
+  () => route.name,
+  (name) => {
+    if (name === 'UserConnections') openConnections()
+  },
+)
+
 // Google: el servidor devuelve la URL de consentimiento y la abre el navegador.
 // Se pide en el momento (no al abrir el panel) porque el 'state' caduca.
 async function connectGoogle() {
@@ -907,48 +924,82 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-/* ── Panel de conexiones ── */
+/* ── Paneles (conexiones y memoria) — diseño del workspace ── */
 .conn-backdrop {
   position: fixed;
   inset: 0;
   z-index: 60;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
-  padding: 1rem;
-  background: rgba(2, 6, 23, 0.78);
+  overflow-y: auto;
+  padding: 5.5rem 1rem 2.5rem;
+  background: rgba(8, 4, 4, 0.86);
+  backdrop-filter: blur(14px);
 }
 .conn-backdrop.conn-page {
   position: relative;
   inset: auto;
-  min-height: calc(100vh - 4.3rem);
-  align-items: flex-start;
-  padding: 6rem 1rem 2rem;
+  min-height: 100vh;
+  padding: 7rem 1.25rem 3rem;
   background: transparent;
-}
-.conn-page .conn {
-  max-width: 42rem;
-  max-height: none;
+  backdrop-filter: none;
 }
 .conn {
   width: 100%;
-  max-width: 34rem;
-  max-height: 85vh;
-  overflow-y: auto;
-  padding: 1.5rem;
-  border: 1px solid #334155;
-  border-radius: 14px;
-  background: #0f172a;
-  color: #e2e8f0;
+  max-width: 44rem;
+  margin: auto;
+  padding: 1.75rem clamp(1.1rem, 3vw, 2.25rem) 2rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 1rem;
+  background: #140b0a;
+  color: #ded4cf;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
 }
-.conn h2 {
-  margin: 0 0 1rem;
-  font-size: 1.15rem;
-  font-weight: 600;
+.conn-backdrop.conn-page .conn {
+  max-width: 48rem;
+}
+.conn-head {
+  margin-bottom: 1.35rem;
+  padding-bottom: 1.15rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+.conn-crumbs {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.6rem;
+  color: #8c7d77;
+  font-size: 0.68rem;
+  letter-spacing: 0.05em;
+}
+.conn-crumbs span:last-child {
+  color: #cbbdb7;
+}
+.conn-head h2,
+.conn > h2 {
+  margin: 0;
   color: #fff;
+  font-size: 1.5rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+.conn > h2 {
+  margin-bottom: 1rem;
+}
+.conn-head p {
+  margin: 0.5rem 0 0;
+  max-width: 34rem;
+  color: #a99b95;
+  font-size: 0.82rem;
+  line-height: 1.55;
 }
 .conn section {
-  margin-bottom: 1.25rem;
+  margin-bottom: 0.85rem;
+  padding: 1rem 1.1rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0.8rem;
+  background: rgba(255, 255, 255, 0.025);
 }
 .memory-heading {
   display: flex;
@@ -963,9 +1014,9 @@ onBeforeUnmount(() => {
   gap: 0.6rem;
   margin: 0.45rem 0;
   padding: 0.65rem;
-  border: 1px solid #334155;
-  border-radius: 9px;
-  background: rgba(30, 41, 59, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 0.6rem;
+  background: rgba(255, 255, 255, 0.035);
   font-size: 0.84rem;
   line-height: 1.4;
 }
@@ -977,10 +1028,10 @@ onBeforeUnmount(() => {
 .memory-new select {
   width: 100%;
   box-sizing: border-box;
-  border: 1px solid #475569;
-  border-radius: 7px;
-  background: #0b1220;
-  color: #e2e8f0;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 0.5rem;
+  background: rgba(0, 0, 0, 0.35);
+  color: #f3ece8;
   padding: 0.55rem;
   font: inherit;
 }
@@ -1002,35 +1053,37 @@ onBeforeUnmount(() => {
   font-size: 0.72rem;
 }
 .btn.danger {
-  color: #fecaca;
-  border-color: rgba(248, 113, 113, 0.45);
+  color: #f7b6ae;
+  border: 1px solid rgba(240, 90, 80, 0.35);
+  background: rgba(240, 72, 65, 0.08);
 }
 .conn h3 {
-  margin: 0 0 0.5rem;
-  font-size: 0.85rem;
-  font-weight: 600;
+  margin: 0 0 0.55rem;
+  font-size: 0.8rem;
+  font-weight: 650;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: #94a3b8;
+  letter-spacing: 0.08em;
+  color: #cbbdb7;
 }
 .conn-note {
   margin: 0.35rem 0;
   font-size: 0.82rem;
-  line-height: 1.5;
-  color: #94a3b8;
+  line-height: 1.55;
+  color: #a99b95;
 }
 .conn-ok {
   margin: 0.35rem 0;
   font-size: 0.85rem;
-  color: #34d399;
+  color: #5bd6a1;
 }
 .conn-error {
   margin: 0.5rem 0;
-  padding: 0.6rem 0.75rem;
-  border-radius: 8px;
-  background: rgba(127, 29, 29, 0.45);
+  padding: 0.6rem 0.8rem;
+  border: 1px solid rgba(240, 90, 80, 0.28);
+  border-radius: 0.6rem;
+  background: rgba(127, 29, 29, 0.32);
   font-size: 0.82rem;
-  color: #fecaca;
+  color: #f7b6ae;
 }
 .chips {
   display: flex;
@@ -1038,35 +1091,58 @@ onBeforeUnmount(() => {
   gap: 0.4rem;
 }
 .chip {
-  padding: 3px 9px;
+  padding: 0.25rem 0.7rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 999px;
-  background: rgba(51, 65, 85, 0.8);
+  background: rgba(255, 255, 255, 0.05);
   font-size: 0.75rem;
-  color: #cbd5e1;
+  color: #ded4cf;
 }
 .conn-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
-  margin-top: 0.6rem;
+  margin-top: 0.7rem;
+}
+/* Los botones del panel usan el acento del workspace, no el azul genérico. */
+.conn .btn {
+  border: 1px solid transparent;
+  border-radius: 0.6rem;
+  font-size: 0.84rem;
+  font-weight: 550;
+}
+.conn .btn.primary {
+  background: #e0453e;
+  color: #fff;
+}
+.conn .btn.primary:hover:not(:disabled) {
+  background: #f05a50;
+}
+.conn .btn.ghost {
+  border-color: rgba(255, 255, 255, 0.13);
+  background: rgba(255, 255, 255, 0.05);
+  color: #ded4cf;
+}
+.conn .btn.ghost:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
 }
 .conn-code {
   margin: 0.6rem 0;
-  padding: 0.75rem;
-  border: 1px solid #334155;
-  border-radius: 10px;
-  background: rgba(30, 41, 59, 0.7);
+  padding: 0.8rem;
+  border: 1px solid rgba(240, 90, 80, 0.25);
+  border-radius: 0.7rem;
+  background: rgba(240, 72, 65, 0.07);
 }
 .conn-code p {
   margin: 0 0 0.4rem;
   font-size: 0.82rem;
-  color: #94a3b8;
+  color: #cbbdb7;
 }
 .conn-code code {
   display: block;
   margin-bottom: 0.4rem;
-  font-size: 1.15rem;
-  letter-spacing: 0.12em;
+  font-size: 1.2rem;
+  letter-spacing: 0.14em;
   color: #fff;
 }
 .conn code {
@@ -1075,7 +1151,9 @@ onBeforeUnmount(() => {
 .conn-foot {
   display: flex;
   justify-content: flex-end;
-  margin-top: 0.5rem;
+  margin-top: 0.9rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .admin-user-chat-bar{position:fixed;z-index:40;inset:0 0 auto;display:flex;align-items:center;justify-content:flex-end;gap:.9rem;padding:1rem 2rem;background:rgba(18,12,12,.83);color:#eee}.admin-user-chat-bar button{border:1px solid #ffffff20;border-radius:.5rem;background:#ffffff08;padding:.45rem .75rem;color:#eee;cursor:pointer}
