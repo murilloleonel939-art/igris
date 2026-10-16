@@ -172,10 +172,76 @@ async def get_tuya_device_status(device_id: str) -> dict[str, Any]:
         return {"error": "Ese dispositivo no está autorizado para Igris."}
     device_id = resolved_id
     try:
-        return {"device_id": device_id, "estado": await _call(f"/v1.0/iot-03/devices/{device_id}/status")}
+        status = await _call(f"/v1.0/iot-03/devices/{device_id}/status")
+        functions = await _device_functions(device_id)
+        response: dict[str, Any] = {"device_id": device_id, "estado": status}
+        if functions:
+            # Se le dicen al modelo los códigos válidos para que no los invente.
+            response["funciones"] = [
+                {"codigo": f["code"], "tipo": f.get("type"), "valores": f.get("values")}
+                for f in functions
+            ]
+        return response
     except Exception as exc:
         logger.exception("Error consultando estado Tuya")
         return {"error": str(exc)}
+
+
+async def _device_functions(device_id: str) -> list[dict[str, Any]]:
+    """Funciones reales del dispositivo (códigos válidos) según Tuya."""
+    try:
+        result = await _call(f"/v1.0/iot-03/devices/{device_id}/specification")
+    except Exception:
+        logger.exception("No se pudo leer la especificación del dispositivo Tuya")
+        return []
+    functions = result.get("functions") if isinstance(result, dict) else None
+    if not isinstance(functions, list):
+        return []
+    return [f for f in functions if isinstance(f, dict) and f.get("code")]
+
+
+_ON_CODES = {"switch", "switch 1", "switch 2", "power", "power switch", "switch led", "switch on"}
+
+
+def _coerce_value(function: dict[str, Any], value: Any) -> Any:
+    """Ajusta el valor al tipo que declara el dispositivo (booleano, entero...)."""
+    ftype = str(function.get("type", "")).casefold()
+    if ftype == "boolean":
+        if isinstance(value, str):
+            return value.strip().casefold() in {"true", "1", "on", "encender", "prender", "si", "sí", "yes"}
+        return bool(value)
+    if ftype == "integer":
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return value
+    return value
+
+
+def _pick_code(functions: list[dict[str, Any]], requested: str) -> dict[str, Any] | None:
+    """Elige el código real del dispositivo a partir del que pidió el modelo."""
+    codes = {f["code"]: f for f in functions}
+    if requested in codes:
+        return codes[requested]
+
+    normalized = _normalize_device_name(requested)
+    for code, function in codes.items():
+        if _normalize_device_name(code) == normalized:
+            return function
+
+    # El modelo suele pedir "switch" o "power" para encender/apagar: se busca el
+    # código equivalente que el dispositivo sí declara.
+    if normalized in _ON_CODES or "encender" in normalized or "prender" in normalized:
+        for code, function in codes.items():
+            if _normalize_device_name(code) in _ON_CODES:
+                return function
+
+    # Como último recurso, coincidencia parcial por nombre.
+    for code, function in codes.items():
+        code_name = _normalize_device_name(code)
+        if code_name and (code_name in normalized or normalized in code_name):
+            return function
+    return None
 
 
 async def send_tuya_command(device_id: str, code: str, value: Any) -> dict[str, Any]:
@@ -184,13 +250,28 @@ async def send_tuya_command(device_id: str, code: str, value: Any) -> dict[str, 
     if not resolved_id:
         return {"error": "Ese dispositivo no está autorizado para Igris."}
     device_id = resolved_id
+
+    functions = await _device_functions(device_id)
+    final_code = code
+    final_value = value
+    if functions:
+        function = _pick_code(functions, code)
+        if function is None:
+            return {
+                "device_id": device_id,
+                "error": f"El dispositivo no acepta la función '{code}'.",
+                "funciones_disponibles": [f["code"] for f in functions],
+            }
+        final_code = function["code"]
+        final_value = _coerce_value(function, value)
+
     try:
         result = await _call(
             f"/v1.0/iot-03/devices/{device_id}/commands",
             method="POST",
-            payload={"commands": [{"code": code, "value": value}]},
+            payload={"commands": [{"code": final_code, "value": final_value}]},
         )
-        return {"device_id": device_id, "resultado": result}
+        return {"device_id": device_id, "codigo": final_code, "valor": final_value, "resultado": result}
     except Exception as exc:
         logger.exception("Error enviando orden Tuya")
         return {"error": str(exc)}

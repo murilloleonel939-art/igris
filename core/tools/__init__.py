@@ -437,10 +437,13 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "get_tuya_device_status",
-            "description": "Consulta el estado actual de un dispositivo Smart Life usando su id.",
+            "description": (
+                "Consulta el estado actual de un dispositivo Smart Life y las funciones que acepta "
+                "(códigos válidos). Úsala antes de controlar un dispositivo para conocer sus códigos."
+            ),
             "parameters": {
                 "type": "object",
-                "properties": {"device_id": {"type": "string", "description": "Id obtenido al listar dispositivos."}},
+                "properties": {"device_id": {"type": "string", "description": "Id o nombre del dispositivo."}},
                 "required": ["device_id"],
             },
         },
@@ -456,8 +459,14 @@ TOOLS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "device_id": {"type": "string", "description": "Id del dispositivo listado."},
-                    "code": {"type": "string", "description": "Código de función Tuya del dispositivo."},
+                    "device_id": {"type": "string", "description": "Id o nombre del dispositivo listado."},
+                    "code": {
+                        "type": "string",
+                        "description": (
+                            "Código de función del dispositivo (por ejemplo switch). Si no lo conoces, "
+                            "consulta primero el estado del dispositivo para ver sus códigos válidos."
+                        ),
+                    },
                     "value": {
                         "description": "Valor de la orden, según el código del dispositivo.",
                         "anyOf": [{"type": "string"}, {"type": "number"}, {"type": "boolean"}],
