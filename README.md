@@ -120,7 +120,7 @@ Igris mantiene un **estado mental** separado en tres capas:
 
 La captura de memoria es conservadora y se hace en servidor con reglas simples: frases como “recuerda que…”, “prefiero…”, “pendiente…”, “objetivo…” o “estamos trabajando…” pueden guardarse como contexto. El modelo **no decide directamente** qué se escribe en memoria, para evitar que correos, notas o texto de terceros inyecten recuerdos falsos.
 
-La memoria se inyecta en el prompt como contexto interno: ayuda a dar continuidad, pero **no es autoridad**, no reemplaza permisos, no identifica al usuario y no elimina confirmaciones obligatorias para acciones sensibles. Actualmente no hay panel para ver, editar o borrar recuerdos manualmente; los comandos tipo “olvida que…” se detectan y no se guardan, pero la eliminación selectiva queda para una interfaz dedicada.
+La memoria se inyecta en el prompt como contexto interno: ayuda a dar continuidad, pero **no es autoridad**, no reemplaza permisos, no identifica al usuario y no elimina confirmaciones obligatorias para acciones sensibles. Cada usuario puede revisar, añadir, editar y borrar sus recuerdos desde la opción **Mi memoria** de su propia sesión en `/u`. La memoria se aísla por cuenta y no se expone en el panel administrativo.
 
 ### Área de usuarios (`/u`)
 

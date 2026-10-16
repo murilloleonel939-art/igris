@@ -19,7 +19,7 @@
           <router-link to="/panel/usuarios" class="nav-link" :class="{ active: $route.name === 'AdminUsers' }"><span>♧</span> Usuarios</router-link>
         </div>
 
-        <button type="button" class="nav-user" @click="logout" title="Cerrar sesión de {{ displayName }}"><span class="nav-user__initials">{{ displayInitials }}</span><span class="nav-user__name">{{ displayName }}</span><span class="nav-user__arrow">⌄</span></button>
+        <div class="nav-account"><span class="nav-user__initials">{{ displayInitials }}</span><span class="nav-user__name">{{ displayName }}</span><button type="button" class="nav-logout" @click="logout">Salir</button></div>
       </div>
     </nav>
 
@@ -35,7 +35,7 @@ import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import IgrisHero from './components/IgrisHero.vue'
 import { clearKey } from './api'
-import { clearSession, getUser } from './userApi'
+import { clearSession, getUser, isAdminUser } from './userApi'
 
 const route = useRoute()
 const router = useRouter()
@@ -106,8 +106,9 @@ body {
 .nav-link.active { color: white; background: rgba(255,255,255,.09); font-weight: 600; }
 .nav-link span { color: #bca79f; font-size: .95rem; line-height: 1; }
 .nav-link.active span { color: white; }
-.nav-user { display: inline-flex; justify-self: end; align-items: center; gap: .55rem; border: 0; border-radius: .5rem; padding: .35rem; color: #c8b2a9; background: transparent; cursor: pointer; font-size: .76rem; transition: .2s; }
-.nav-user:hover { background: rgba(255,255,255,.06); color: white; }
+.nav-account { display: inline-flex; justify-self: end; align-items: center; gap: .55rem; color: #c8b2a9; font-size: .76rem; }
+.nav-logout { border: 0; border-radius: .4rem; padding: .4rem .6rem; color: #c8b2a9; background: transparent; cursor: pointer; font-size: .72rem; }
+.nav-logout:hover { color: white; background: rgba(255,255,255,.08); }
 .nav-user__initials { display: grid; width: 1.75rem; height: 1.75rem; place-items: center; border-radius: 50%; color: #fff2e9; background: #2e1d1c; font-size: .58rem; font-weight: 700; }
 .nav-user__arrow { color: #897972; font-size: 1rem; }
 #app:has(.igris--full) > div[style*="z-index: 10"] { padding-top: var(--admin-nav-height); }
@@ -117,6 +118,7 @@ body {
   .admin-nav__links { grid-column: 1 / -1; grid-row: 2; justify-content: space-between; width: 100%; gap: 0; overflow-x: auto; }
   .nav-link { padding: .45rem .65rem; white-space: nowrap; }
   .brand__workspace, .brand__divider, .nav-user__name { display: none; }
+  .nav-logout { padding: .35rem .5rem; }
 }
 @media (max-width: 400px) {
   #app { --admin-nav-height: 5.5rem; }

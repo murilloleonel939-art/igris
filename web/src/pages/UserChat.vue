@@ -22,7 +22,7 @@
     <div class="topbar">
       <span class="who">👤 {{ username }}</span>
       <button v-if="adminUser" type="button" class="out" @click="openAdminPanel">Panel admin</button>
-      <button type="button" class="out" @click="openMemories">Memoria</button>
+      <button type="button" class="out" @click="openMemories">Mi memoria</button>
       <button type="button" class="out" @click="openConnections">Conexiones</button>
       <button type="button" class="out" @click="logout">Salir</button>
     </div>

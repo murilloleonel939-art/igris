@@ -18,9 +18,7 @@
     </header>
 
     <p v-if="flash" :class="['mb-5 rounded-lg border px-4 py-3 text-sm', flashError ? 'border-red-500/25 bg-red-950/30 text-red-200' : 'border-emerald-500/25 bg-emerald-950/20 text-emerald-200']">{{ flash }}</p>
-    <nav class="users-tabs"><button :class="{ selected: activeTab === 'accounts' }" @click="activeTab = 'accounts'">Cuentas</button><button :class="{ selected: activeTab === 'memory' }" @click="activeTab = 'memory'">Memoria</button></nav>
 
-    <template v-if="activeTab === 'accounts'">
     <form class="create-panel" @submit.prevent="createUser">
       <div class="create-heading"><span class="create-icon">＋</span><div><h2 class="text-base font-semibold text-white">Crear usuario</h2><p class="mt-1 text-xs text-stone-400">Crea una cuenta y define qué funciones podrá utilizar.</p></div></div>
       <div class="form-grid">
@@ -53,20 +51,6 @@
           </div>
         </article>
       </div>
-    </section>
-    </template>
-
-    <section v-else class="memory-admin">
-      <div class="memory-toolbar"><div><h2>Memoria de usuarios</h2><p>Revisa y administra los recuerdos personales y operativos que utiliza Igris.</p></div><select v-model="memoryUserId" class="field-input memory-user-select" @change="loadSelectedMemories"><option value="">Selecciona un usuario…</option><option v-for="u in users" :key="u.id" :value="String(u.id)">{{ u.username }}</option></select></div>
-      <p v-if="memoryError" class="mb-4 rounded-lg border border-red-500/25 bg-red-950/30 px-4 py-3 text-sm text-red-200">{{ memoryError }}</p>
-      <p v-if="memoryLoading" class="empty-state">Cargando memoria…</p>
-      <div v-else-if="memoryUserId" class="memory-columns">
-        <section v-for="group in memoryGroups" :key="group.kind" class="memory-group"><header><div><h3>{{ group.label }}</h3><p>{{ memories[group.kind].length }} recuerdos</p></div><button class="primary-action" @click="startAdminMemory(group.kind)">＋ Añadir</button></header>
-          <p v-if="!memories[group.kind].length" class="memory-empty">No hay recuerdos en esta categoría.</p>
-          <article v-for="item in memories[group.kind]" :key="item.id" class="memory-row"><template v-if="editingMemoryId === item.id"><textarea v-model="memoryDraft" maxlength="260" class="field-input memory-editor" /><div class="memory-buttons"><button class="act" @click="editingMemoryId = null">Cancelar</button><button class="primary-action" @click="saveAdminMemory(item)">Guardar</button></div></template><template v-else><p>{{ item.content }}</p><div class="memory-buttons"><button class="act" @click="editAdminMemory(item)">Editar</button><button class="act danger" @click="deleteAdminMemory(item)">Eliminar</button></div></template></article>
-        </section>
-      </div>
-      <div v-else class="empty-state"><b>Selecciona un usuario</b><span>Su memoria se mostrará aquí para revisarla o editarla.</span></div>
     </section>
 
     <!-- Modal: permisos del usuario -->
@@ -171,14 +155,6 @@ import api from '../api'
 import { errorMessage } from '../errors'
 
 const users = ref([])
-const activeTab = ref('accounts')
-const memoryUserId = ref('')
-const memoryLoading = ref(false)
-const memoryError = ref('')
-const memories = ref({ personal: [], operational: [] })
-const memoryGroups = [{ kind: 'personal', label: 'Memoria personal' }, { kind: 'operational', label: 'Memoria operativa' }]
-const editingMemoryId = ref(null)
-const memoryDraft = ref('')
 const loading = ref(false)
 const saving = ref(false)
 const flash = ref('')
@@ -260,41 +236,6 @@ async function load() {
   } finally {
     loading.value = false
   }
-}
-
-async function loadSelectedMemories() {
-  editingMemoryId.value = null
-  memoryError.value = ''
-  if (!memoryUserId.value) { memories.value = { personal: [], operational: [] }; return }
-  memoryLoading.value = true
-  try {
-    const res = await api.get(`/api/admin/users/${memoryUserId.value}/memories`)
-    memories.value = { personal: res.data?.personal || [], operational: res.data?.operational || [] }
-  } catch (e) { memoryError.value = errorMessage(e, 'No se pudo cargar la memoria') }
-  finally { memoryLoading.value = false }
-}
-
-function startAdminMemory(kind) {
-  const content = window.prompt(`Nuevo recuerdo para ${kind === 'personal' ? 'memoria personal' : 'memoria operativa'} (máximo 260 caracteres):`)
-  if (content === null) return
-  const value = content.trim()
-  if (!value || value.length > 260) { memoryError.value = 'El recuerdo debe tener entre 1 y 260 caracteres'; return }
-  api.post(`/api/admin/users/${memoryUserId.value}/memories`, { kind, content: value }).then(loadSelectedMemories).catch(e => { memoryError.value = errorMessage(e, 'No se pudo guardar el recuerdo') })
-}
-
-function editAdminMemory(item) { editingMemoryId.value = item.id; memoryDraft.value = item.content }
-
-async function saveAdminMemory(item) {
-  const content = memoryDraft.value.trim()
-  if (!content || content.length > 260) { memoryError.value = 'El recuerdo debe tener entre 1 y 260 caracteres'; return }
-  try { await api.put(`/api/admin/users/${memoryUserId.value}/memories/${item.id}`, { content }); await loadSelectedMemories() }
-  catch (e) { memoryError.value = errorMessage(e, 'No se pudo actualizar el recuerdo') }
-}
-
-async function deleteAdminMemory(item) {
-  if (!window.confirm('¿Eliminar este recuerdo?')) return
-  try { await api.delete(`/api/admin/users/${memoryUserId.value}/memories/${item.id}`); await loadSelectedMemories() }
-  catch (e) { memoryError.value = errorMessage(e, 'No se pudo eliminar el recuerdo') }
 }
 
 async function createUser() {
@@ -435,7 +376,7 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.users-page{background:#100807;min-height:calc(100vh - var(--admin-nav-height, 0px))}.users-tabs{display:flex;gap:.35rem;margin-bottom:1.4rem;border-bottom:1px solid rgba(255,255,255,.09)}.users-tabs button{position:relative;border:0;background:transparent;padding:.65rem .9rem;color:#92837d;font-size:.75rem;cursor:pointer}.users-tabs button.selected{color:#fff}.users-tabs button.selected:after{position:absolute;right:.6rem;bottom:-1px;left:.6rem;height:2px;background:#ee514a;content:''}.memory-admin{padding:.2rem 0}.memory-toolbar{display:flex;align-items:end;justify-content:space-between;gap:1rem;margin-bottom:1rem}.memory-toolbar h2{color:#fff;font-size:1rem;font-weight:600}.memory-toolbar p{margin-top:.3rem;color:#92837d;font-size:.7rem}.memory-user-select{max-width:15rem}.memory-columns{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem}.memory-group{overflow:hidden;border:1px solid rgba(255,255,255,.1);border-radius:.8rem;background:rgba(255,255,255,.025)}.memory-group>header{display:flex;align-items:center;justify-content:space-between;gap:.6rem;border-bottom:1px solid rgba(255,255,255,.08);padding:.9rem}.memory-group h3{color:#fff;font-size:.8rem;font-weight:600}.memory-group header p{margin-top:.2rem;color:#847873;font-size:.62rem}.memory-row{border-bottom:1px solid rgba(255,255,255,.06);padding:.85rem}.memory-row:last-child{border:0}.memory-row>p{color:#d8ceca;font-size:.75rem;line-height:1.5;white-space:pre-wrap}.memory-buttons{display:flex;justify-content:flex-end;gap:.4rem;margin-top:.5rem}.memory-editor{min-height:5rem;resize:vertical}.memory-empty{padding:1.2rem;color:#847873;font-size:.7rem}.users-count{display:inline-flex;align-items:center;gap:.45rem;border:1px solid rgba(255,255,255,.1);border-radius:999px;padding:.45rem .75rem;color:#c7b8b0;font-size:.72rem}.count-dot{width:.38rem;height:.38rem;border-radius:50%;background:#ed5149;box-shadow:0 0 10px #ed514966}.create-panel{border:1px solid rgba(255,255,255,.1);border-radius:.9rem;background:linear-gradient(135deg,rgba(255,255,255,.035),rgba(255,255,255,.012));padding:1.25rem}.create-heading{display:flex;align-items:center;gap:.75rem;border-bottom:1px solid rgba(255,255,255,.08);padding-bottom:1rem}.create-icon{display:grid;width:2.25rem;height:2.25rem;place-items:center;border:1px solid rgba(240,72,65,.3);border-radius:.65rem;background:rgba(240,72,65,.1);color:#f06a62;font-size:1.3rem}.form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem;margin-top:1.1rem}.field-label{display:flex;flex-direction:column;gap:.4rem;color:#d4c7c1;font-size:.75rem}.field-label small,.admin-check small{color:#847873;font-size:.65rem;line-height:1.4}.field-input{width:100%;border:1px solid rgba(255,255,255,.12);border-radius:.55rem;background:#160e0d;padding:.65rem .75rem;color:#fff;font-size:.82rem;outline:none;transition:.2s}.field-input:focus{border-color:#eb514a;box-shadow:0 0 0 2px rgba(235,81,74,.12)}.field-input::placeholder{color:#655954}.admin-check{display:flex;align-items:center;gap:.65rem;align-self:end;min-height:2.5rem;color:#eee5e1}.admin-check input,.feature-option input{accent-color:#ef5149}.admin-check b,.admin-check small,.feature-option b,.feature-option small,.feature-option em{display:block}.admin-check b{font-size:.74rem;font-weight:500}.feature-section{margin-top:1.2rem;border-top:1px solid rgba(255,255,255,.08);padding-top:1rem}.feature-option{display:flex;align-items:flex-start;gap:.6rem;border:1px solid rgba(255,255,255,.08);border-radius:.6rem;background:rgba(0,0,0,.12);padding:.65rem;cursor:pointer}.feature-option:hover{border-color:rgba(255,255,255,.18)}.feature-option input{margin-top:.13rem}.feature-option b{color:#e8dfdb;font-size:.72rem;font-weight:550}.feature-option small{margin-top:.15rem;color:#847873;font-size:.64rem;line-height:1.4}.feature-option em{margin-top:.2rem;color:#daa564;font-size:.62rem;font-style:normal}.primary-action{border-radius:.55rem;background:#ee4842;padding:.65rem 1rem;color:#fff;font-size:.78rem;font-weight:600;transition:.2s}.primary-action:hover:not(:disabled){background:#ff5b55}.primary-action:disabled{cursor:not-allowed;opacity:.45}.empty-state{display:flex;min-height:8rem;flex-direction:column;align-items:center;justify-content:center;gap:.4rem;border:1px dashed rgba(255,255,255,.13);border-radius:.8rem;color:#887b76;font-size:.78rem}.empty-state b{color:#ded4cf;font-weight:550}.empty-icon{color:#e3655e;font-size:1.35rem}.user-list{display:grid;gap:.75rem}.user-card{overflow:hidden;border:1px solid rgba(255,255,255,.1);border-radius:.8rem;background:rgba(255,255,255,.025)}.user-card__main{display:grid;grid-template-columns:auto minmax(10rem,1fr) minmax(15rem,auto);align-items:center;gap:.85rem;padding:1rem}.avatar-initials{display:grid;width:2.5rem;height:2.5rem;place-items:center;border:1px solid rgba(240,72,65,.22);border-radius:50%;background:rgba(240,72,65,.09);color:#f29a8e;font-size:.75rem;font-weight:700}.user-identity h3{color:#fff;font-size:.88rem;font-weight:600}.user-identity p{margin-top:.2rem;color:#b1a39d;font-size:.72rem}.user-identity small{display:block;margin-top:.2rem;color:#766b67;font-size:.62rem}.role-chip{border-radius:999px;background:rgba(238,72,66,.13);padding:.18rem .42rem;color:#f49a91;font-size:.55rem;font-weight:700;letter-spacing:.06em}.state-chip{display:inline-flex;align-items:center;gap:.3rem;border-radius:999px;padding:.18rem .45rem;font-size:.6rem}.state-chip i{width:.3rem;height:.3rem;border-radius:50%;background:currentColor}.is-active{background:rgba(43,190,130,.1);color:#5bd6a1}.is-disabled{background:rgba(238,72,66,.1);color:#f28e86}.user-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:.35rem}.act{border:1px solid rgba(255,255,255,.13);border-radius:.45rem;background:rgba(255,255,255,.035);padding:.38rem .55rem;color:#d6cbc6;font-size:.66rem;cursor:pointer;white-space:nowrap;transition:.2s}.act:hover{border-color:rgba(255,255,255,.25);background:rgba(255,255,255,.08);color:#fff}.act.danger{border-color:rgba(239,68,68,.25);color:#f29891}.act.danger:hover{background:rgba(127,29,29,.3)}.user-card__details{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.75rem;border-top:1px solid rgba(255,255,255,.07);background:rgba(0,0,0,.12);padding:.7rem 1rem}.detail-group{display:flex;flex-wrap:wrap;align-items:center;gap:.55rem}.detail-label{color:#847873;font-size:.55rem;font-weight:700;letter-spacing:.1em}.feature-chip{border-radius:.3rem;background:rgba(255,255,255,.07);padding:.2rem .4rem;color:#c5b8b2;font-size:.6rem}.connection-list{display:flex;flex-wrap:wrap;gap:.35rem}.connection-chip{border:1px solid transparent;border-radius:999px;padding:.2rem .48rem;font-size:.58rem}.connection-chip.connected{border-color:rgba(43,190,130,.15);background:rgba(43,190,130,.07);color:#68ce9e}.connection-chip.pending{border-color:rgba(228,166,84,.18);background:rgba(228,166,84,.06);color:#d5a860}.connection-chip.failed{border-color:rgba(239,68,68,.2);background:rgba(239,68,68,.06);color:#ec8e87}
+.users-page{background:#100807;min-height:calc(100vh - var(--admin-nav-height, 0px))}users-count{display:inline-flex;align-items:center;gap:.45rem;border:1px solid rgba(255,255,255,.1);border-radius:999px;padding:.45rem .75rem;color:#c7b8b0;font-size:.72rem}.count-dot{width:.38rem;height:.38rem;border-radius:50%;background:#ed5149;box-shadow:0 0 10px #ed514966}.create-panel{border:1px solid rgba(255,255,255,.1);border-radius:.9rem;background:linear-gradient(135deg,rgba(255,255,255,.035),rgba(255,255,255,.012));padding:1.25rem}.create-heading{display:flex;align-items:center;gap:.75rem;border-bottom:1px solid rgba(255,255,255,.08);padding-bottom:1rem}.create-icon{display:grid;width:2.25rem;height:2.25rem;place-items:center;border:1px solid rgba(240,72,65,.3);border-radius:.65rem;background:rgba(240,72,65,.1);color:#f06a62;font-size:1.3rem}.form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1rem;margin-top:1.1rem}.field-label{display:flex;flex-direction:column;gap:.4rem;color:#d4c7c1;font-size:.75rem}.field-label small,.admin-check small{color:#847873;font-size:.65rem;line-height:1.4}.field-input{width:100%;border:1px solid rgba(255,255,255,.12);border-radius:.55rem;background:#160e0d;padding:.65rem .75rem;color:#fff;font-size:.82rem;outline:none;transition:.2s}.field-input:focus{border-color:#eb514a;box-shadow:0 0 0 2px rgba(235,81,74,.12)}.field-input::placeholder{color:#655954}.admin-check{display:flex;align-items:center;gap:.65rem;align-self:end;min-height:2.5rem;color:#eee5e1}.admin-check input,.feature-option input{accent-color:#ef5149}.admin-check b,.admin-check small,.feature-option b,.feature-option small,.feature-option em{display:block}.admin-check b{font-size:.74rem;font-weight:500}.feature-section{margin-top:1.2rem;border-top:1px solid rgba(255,255,255,.08);padding-top:1rem}.feature-option{display:flex;align-items:flex-start;gap:.6rem;border:1px solid rgba(255,255,255,.08);border-radius:.6rem;background:rgba(0,0,0,.12);padding:.65rem;cursor:pointer}.feature-option:hover{border-color:rgba(255,255,255,.18)}.feature-option input{margin-top:.13rem}.feature-option b{color:#e8dfdb;font-size:.72rem;font-weight:550}.feature-option small{margin-top:.15rem;color:#847873;font-size:.64rem;line-height:1.4}.feature-option em{margin-top:.2rem;color:#daa564;font-size:.62rem;font-style:normal}.primary-action{border-radius:.55rem;background:#ee4842;padding:.65rem 1rem;color:#fff;font-size:.78rem;font-weight:600;transition:.2s}.primary-action:hover:not(:disabled){background:#ff5b55}.primary-action:disabled{cursor:not-allowed;opacity:.45}.empty-state{display:flex;min-height:8rem;flex-direction:column;align-items:center;justify-content:center;gap:.4rem;border:1px dashed rgba(255,255,255,.13);border-radius:.8rem;color:#887b76;font-size:.78rem}.empty-state b{color:#ded4cf;font-weight:550}.empty-icon{color:#e3655e;font-size:1.35rem}.user-list{display:grid;gap:.75rem}.user-card{overflow:hidden;border:1px solid rgba(255,255,255,.1);border-radius:.8rem;background:rgba(255,255,255,.025)}.user-card__main{display:grid;grid-template-columns:auto minmax(10rem,1fr) minmax(15rem,auto);align-items:center;gap:.85rem;padding:1rem}.avatar-initials{display:grid;width:2.5rem;height:2.5rem;place-items:center;border:1px solid rgba(240,72,65,.22);border-radius:50%;background:rgba(240,72,65,.09);color:#f29a8e;font-size:.75rem;font-weight:700}.user-identity h3{color:#fff;font-size:.88rem;font-weight:600}.user-identity p{margin-top:.2rem;color:#b1a39d;font-size:.72rem}.user-identity small{display:block;margin-top:.2rem;color:#766b67;font-size:.62rem}.role-chip{border-radius:999px;background:rgba(238,72,66,.13);padding:.18rem .42rem;color:#f49a91;font-size:.55rem;font-weight:700;letter-spacing:.06em}.state-chip{display:inline-flex;align-items:center;gap:.3rem;border-radius:999px;padding:.18rem .45rem;font-size:.6rem}.state-chip i{width:.3rem;height:.3rem;border-radius:50%;background:currentColor}.is-active{background:rgba(43,190,130,.1);color:#5bd6a1}.is-disabled{background:rgba(238,72,66,.1);color:#f28e86}.user-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:.35rem}.act{border:1px solid rgba(255,255,255,.13);border-radius:.45rem;background:rgba(255,255,255,.035);padding:.38rem .55rem;color:#d6cbc6;font-size:.66rem;cursor:pointer;white-space:nowrap;transition:.2s}.act:hover{border-color:rgba(255,255,255,.25);background:rgba(255,255,255,.08);color:#fff}.act.danger{border-color:rgba(239,68,68,.25);color:#f29891}.act.danger:hover{background:rgba(127,29,29,.3)}.user-card__details{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.75rem;border-top:1px solid rgba(255,255,255,.07);background:rgba(0,0,0,.12);padding:.7rem 1rem}.detail-group{display:flex;flex-wrap:wrap;align-items:center;gap:.55rem}.detail-label{color:#847873;font-size:.55rem;font-weight:700;letter-spacing:.1em}.feature-chip{border-radius:.3rem;background:rgba(255,255,255,.07);padding:.2rem .4rem;color:#c5b8b2;font-size:.6rem}.connection-list{display:flex;flex-wrap:wrap;gap:.35rem}.connection-chip{border:1px solid transparent;border-radius:999px;padding:.2rem .48rem;font-size:.58rem}.connection-chip.connected{border-color:rgba(43,190,130,.15);background:rgba(43,190,130,.07);color:#68ce9e}.connection-chip.pending{border-color:rgba(228,166,84,.18);background:rgba(228,166,84,.06);color:#d5a860}.connection-chip.failed{border-color:rgba(239,68,68,.2);background:rgba(239,68,68,.06);color:#ec8e87}
 :deep(.fixed.inset-0 > div){border-color:rgba(255,255,255,.12);background:#160e0d}.act + .bg-blue-600,.bg-blue-600{background:#ee4842}.bg-blue-600:hover{background:#ff5b55}.focus\\:border-blue-500:focus{border-color:#ee4842}
 @media(max-width:900px){.memory-columns{grid-template-columns:1fr}.user-card__main{grid-template-columns:auto 1fr}.user-actions{grid-column:1/-1;justify-content:flex-start}.user-card__details{align-items:flex-start;flex-direction:column}}
 @media(max-width:560px){.form-grid{grid-template-columns:1fr}.admin-check{align-self:auto}.create-panel{padding:1rem}.user-card__main{gap:.65rem;padding:.8rem}.user-actions .act{font-size:.62rem}.user-card__details{padding:.65rem .8rem}}
