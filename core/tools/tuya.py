@@ -266,12 +266,136 @@ def _pick_code(functions: list[dict[str, Any]], requested: str) -> dict[str, Any
     return None
 
 
+async def list_infrared_remotes(infrared_id: str) -> list[dict[str, Any]]:
+    """Controles remotos (aire, TV...) guardados dentro de un hub infrarrojo.
+
+    Un hub IR no expone el aire como dispositivo aparte: el aire vive aquí como un
+    control remoto virtual, con su propio `remote_id`.
+    """
+    result = await _call(f"/v2.0/infrareds/{infrared_id}/remotes")
+    if isinstance(result, list):
+        return [r for r in result if isinstance(r, dict)]
+    if isinstance(result, dict):
+        remotes = result.get("remotes") or result.get("result") or []
+        if isinstance(remotes, list):
+            return [r for r in remotes if isinstance(r, dict)]
+    return []
+
+
+# En Tuya, la categoría 5 es "aire acondicionado" y la 2 "televisor".
+_AC_CATEGORY_ID = 5
+
+
+def _is_air_conditioner(remote: dict[str, Any]) -> bool:
+    try:
+        if int(remote.get("category_id", -1)) == _AC_CATEGORY_ID:
+            return True
+    except (TypeError, ValueError):
+        pass
+    name = _normalize_device_name(remote.get("remote_name"))
+    return "aire" in name or "air" in name or "acondicionado" in name
+
+
+def _find_air_conditioner(remotes: list[dict[str, Any]]) -> dict[str, Any] | None:
+    for remote in remotes:
+        if _is_air_conditioner(remote) and remote.get("remote_id"):
+            return remote
+    return None
+
+
+def _power_intent(code: str, value: Any) -> bool | None:
+    """Traduce código y valor a encender (True) o apagar (False)."""
+    normalized = _normalize_device_name(code)
+    if any(word in normalized for word in ("poweroff", "power off", "apagar", "apaga", "detener")):
+        return False
+    if any(word in normalized for word in ("poweron", "power on", "encender", "prender", "enciende")):
+        return True
+
+    if isinstance(value, str):
+        lowered = value.strip().casefold()
+        if lowered in {"true", "1", "on", "encender", "prender", "si", "sí", "yes"}:
+            return True
+        if lowered in {"false", "0", "off", "apagar", "no"}:
+            return False
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    return None
+
+
+async def send_infrared_power(infrared_id: str, remote: dict[str, Any], power_on: bool) -> dict[str, Any]:
+    """Enciende o apaga el aire a través del control remoto del hub IR.
+
+    Se usa la API de aires acondicionados por infrarrojos, que es la que emite de
+    verdad la señal: la API genérica de comandos de dispositivo responde `true`
+    pero solo mueve los botones del hub, sin irradiar nada.
+    """
+    remote_id = remote.get("remote_id")
+    payload: dict[str, Any] = {"power": 1 if power_on else 0}
+    if remote.get("remote_index") is not None:
+        payload["remote_index"] = remote["remote_index"]
+    if remote.get("category_id") is not None:
+        payload["category_id"] = remote["category_id"]
+
+    result = await _call(
+        f"/v2.0/infrareds/{infrared_id}/air-conditioners/{remote_id}/scenes/command",
+        method="POST",
+        payload=payload,
+    )
+    logger.info("Orden IR enviada a %s remote=%s payload=%s → %s", infrared_id, remote_id, payload, result)
+    return {
+        "device_id": infrared_id,
+        "via": "infrarrojos",
+        "control": remote.get("remote_name") or "aire acondicionado",
+        "accion": "encender" if power_on else "apagar",
+        "resultado": result,
+    }
+
+
+async def get_infrared_ac_status(infrared_id: str, remote_id: str) -> dict[str, Any]:
+    return await _call(f"/v2.0/infrareds/{infrared_id}/remotes/{remote_id}/ac/status")
+
+
 async def send_tuya_command(device_id: str, code: str, value: Any) -> dict[str, Any]:
     """Envía una orden; acepta el ID técnico o el nombre visible."""
     resolved_id = await _resolve_device_id(device_id)
     if not resolved_id:
         return {"error": "Ese dispositivo no está autorizado para Igris."}
     device_id = resolved_id
+
+    # Un hub infrarrojo necesita su propia API: el aire no es un dispositivo aparte.
+    try:
+        remotes = await list_infrared_remotes(device_id)
+    except Exception as exc:
+        # Lo normal en cualquier dispositivo que no sea un hub IR.
+        logger.debug("Sin controles IR para %s: %s", device_id, exc)
+        remotes = []
+
+    if remotes:
+        logger.info("Controles IR de %s: %s", device_id, [r.get("remote_name") for r in remotes])
+        air = _find_air_conditioner(remotes)
+        power_on = _power_intent(code, value)
+        if air and power_on is not None:
+            try:
+                return await send_infrared_power(device_id, air, power_on)
+            except Exception as exc:
+                logger.exception("Error enviando orden IR")
+                return {"error": str(exc)}
+        if air and power_on is None:
+            return {
+                "device_id": device_id,
+                "error": (
+                    f"La orden '{code}' no es de encendido ni apagado. Para el aire solo se "
+                    "puede encender o apagar por ahora."
+                ),
+                "controles_ir": [r.get("remote_name") for r in remotes],
+            }
+        return {
+            "device_id": device_id,
+            "error": "Ese hub infrarrojo no tiene configurado un control de aire acondicionado.",
+            "controles_ir": [r.get("remote_name") for r in remotes],
+        }
 
     functions = await _device_functions(device_id)
     logger.info("Funciones del dispositivo %s: %s", device_id, [f.get("code") for f in functions])
