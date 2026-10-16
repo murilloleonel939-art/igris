@@ -147,15 +147,19 @@ async def _resolve_device_id(device_ref: str) -> str | None:
             device_name = _normalize_device_name(device.get("nombre"))
             if (
                 device_id
-                and _allowed_device(device_id)
                 and device_name
                 and (
                     device_name == normalized_ref
                     or device_name in normalized_ref
                     or normalized_ref in device_name
+                    or ("aire" in normalized_ref and "aire" in device_name)
+                    or ("acondicionado" in normalized_ref and "aire" in device_name)
                 )
             ):
-                return device_id
+                # Los dispositivos ya vienen autorizados por el proyecto Tuya.
+                # TUYA_DEVICE_IDS, si existe, solo restringe explícitamente.
+                if _allowed_device(device_id):
+                    return device_id
     except Exception:
         logger.exception("Error resolviendo nombre de dispositivo Tuya")
     return None
