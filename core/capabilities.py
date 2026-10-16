@@ -35,6 +35,7 @@ FEATURE_ORDER = (
     "calendar_write",
     "notes",
     "reminders",
+    "tuya",
 )
 
 # Funciones que están activas de fábrica. Son inofensivas: no tocan datos de
@@ -111,6 +112,12 @@ FEATURES: dict[str, Feature] = {
         label="Recordatorios",
         description="Programar avisos; le llegan por Telegram si lo tiene vinculado.",
     ),
+    "tuya": Feature(
+        key="tuya",
+        column="can_use_tuya",
+        label="Casa inteligente (Smart Life)",
+        description="Consultar y controlar los dispositivos vinculados a Tuya Cloud.",
+    ),
 }
 
 # ============= HERRAMIENTA -> FUNCIÓN =============
@@ -136,6 +143,9 @@ TOOL_FEATURES: dict[str, str] = {
     "create_reminder": "reminders",
     "list_reminders": "reminders",
     "delete_reminder": "reminders",
+    "list_tuya_devices": "tuya",
+    "get_tuya_device_status": "tuya",
+    "control_tuya_device": "tuya",
 }
 
 

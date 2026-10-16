@@ -12,7 +12,7 @@ import json
 import logging
 
 from core.capabilities import denial_message
-from core.tools import calendar_write, gcalendar, gmail, notes, reminders, time_tools, weather
+from core.tools import calendar_write, gcalendar, gmail, notes, reminders, time_tools, tuya, weather
 
 logger = logging.getLogger(__name__)
 
@@ -425,6 +425,48 @@ TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_tuya_devices",
+            "description": "Lista los dispositivos Smart Life vinculados al proyecto Tuya de Igris.",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_tuya_device_status",
+            "description": "Consulta el estado actual de un dispositivo Smart Life usando su id.",
+            "parameters": {
+                "type": "object",
+                "properties": {"device_id": {"type": "string", "description": "Id obtenido al listar dispositivos."}},
+                "required": ["device_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "control_tuya_device",
+            "description": (
+                "Controla un dispositivo Smart Life. Solo úsala después de que el usuario haya confirmado "
+                "la acción concreta, porque puede encender, apagar o modificar un equipo."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "device_id": {"type": "string", "description": "Id del dispositivo listado."},
+                    "code": {"type": "string", "description": "Código de función Tuya del dispositivo."},
+                    "value": {
+                        "description": "Valor de la orden, según el código del dispositivo.",
+                        "anyOf": [{"type": "string"}, {"type": "number"}, {"type": "boolean"}],
+                    },
+                },
+                "required": ["device_id", "code", "value"],
+            },
+        },
+    },
 ]
 
 _HANDLERS = {
@@ -448,6 +490,9 @@ _HANDLERS = {
     "list_notes": notes.list_notes,
     "search_notes": notes.search_notes,
     "delete_note": notes.delete_note,
+    "list_tuya_devices": tuya.list_tuya_devices_for_session,
+    "get_tuya_device_status": tuya.list_tuya_device_status,
+    "control_tuya_device": tuya.control_tuya_device,
 }
 
 # Herramientas que necesitan la sesión de conversación: para el estado de la charla
@@ -461,6 +506,7 @@ _SESSION_TOOLS = {
     "create_reminder", "list_reminders", "delete_reminder",
     "add_note", "list_notes", "search_notes", "delete_note",
     "list_emails", "read_email", "list_events",
+    "list_tuya_devices", "get_tuya_device_status", "control_tuya_device",
 }
 
 
