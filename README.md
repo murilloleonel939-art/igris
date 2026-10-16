@@ -32,7 +32,8 @@
 | ⏰ Recordatorios con aviso por Telegram (únicos, diarios o semanales) | Funcional |
 | 📝 Notas: anotar, listar, buscar y borrar | Funcional |
 | 🔑 **Permisos por usuario**: el admin activa o desactiva cada función (hora, clima, correo, enviar/eliminar correos, calendario, agendar/mover/eliminar eventos, notas, recordatorios) por cuenta | Funcional |
-| 🔗 **Google por usuario**: cada cuenta conecta su propio Gmail/Calendar desde `/u`; al terminar, el callback del backend redirige automáticamente al chat | Funcional |
+| 🔗 **Google por usuario**: cada cuenta conecta su propio Gmail/Calendar desde `/u`; al terminar, el callback del backend devuelve al usuario a la pantalla de Conexiones | Funcional |
+| 🔌 **Pantalla de Conexiones propia** (`/conexiones`): página completa con el diseño del workspace, no un cuadro emergente sobre el chat. Reúne Google, voz y Telegram en tarjetas | Funcional |
 | 📲 **Telegram por usuario**: cada cuenta vincula su propio chat con un código de 6 dígitos | Funcional |
 | 🛡️ **Admin puede desvincular Telegram de cualquier usuario** desde el panel | Funcional |
 | 🧬 **Perfil de voz por usuario**: registro guiado con varias muestras, validación antes de transcribir y opción de borrar grabaciones | Funcional |
@@ -49,11 +50,17 @@ Igris tiene **dos formas de entrar**. La clave de administrador sigue funcionand
 | Cómo se autentica | Clave única en `X-Igris-Key` **o** JWT de usuario admin | Usuario + contraseña → token JWT (`Authorization: Bearer`) |
 | Dónde se guarda | `localStorage` (sobrevive al cierre del navegador) | `localStorage` con expiración (la sesión dura 7 días) |
 | Duración | Mientras no se borre la clave | 7 días (o hasta que el JWT del servidor caduque) |
-| Rutas | `/`, `/config`, `/panel/usuarios`; usuario admin también conserva acceso a `/u` y «Conexiones» | `/u` |
+| Rutas | `/`, `/config`, `/panel/usuarios`, `/panel/conexiones`; usuario admin también conserva acceso a `/u`, `/conexiones` y «Mi memoria» | `/u`, `/conexiones` |
 
 La clave del administrador vive **solo** en la variable de entorno `IGRIS_ACCESS_KEY` (Coolify). El frontend nunca la contiene: se escribe a mano en la pantalla `/acceso` y se envía en cada petición. Las cuentas marcadas como admin se crean o editan desde `/panel/usuarios` con el campo `is_admin`.
 
 Si el panel clásico (`/`) se abre con un JWT de usuario admin, el backend no solo autoriza la entrada: también vincula esa sesión al `user_id` del administrador autenticado. Así el chat admin puede usar su propia memoria, notas, recordatorios, Google y Telegram. Si se entra solo con la clave histórica `IGRIS_ACCESS_KEY`, el panel conserva el modo antiguo sin usuario asociado.
+
+**Una sesión personal manda sobre la clave.** Si en el mismo navegador hay a la vez una clave de admin y un token de usuario, gana el token: el menú se presenta como el de la cuenta personal y el backend atiende como ese usuario. Esto evita que alguien con una clave antigua olvidada en el navegador acabe viendo los datos del panel. Por eso:
+
+- Al entrar por `/u/login` se **borra la clave** guardada, para que la sesión personal no herede el panel.
+- El botón **Salir** limpia las dos cosas y devuelve a la pantalla que corresponda a la sesión que estaba activa (`/u/login` si había token, `/acceso` si era solo la clave).
+- La lista de usuarios de Conexiones solo se pide con clave; con token se pide únicamente la cuenta propia.
 
 **Límites de intentos**, independientes entre sí para que nadie pueda bloquear el acceso del otro:
 
@@ -134,14 +141,31 @@ La memoria se inyecta en el prompt como contexto interno: ayuda a dar continuida
 | `POST` | `/api/user/voice-profile` | Registra la voz con varias muestras guiadas |
 | `DELETE` | `/api/user/voice-profile` | Borra el perfil/grabaciones de validación de voz |
 | `POST` | `/api/user/voice-chat` | Verifica la voz, transcribe con Whisper y ejecuta el comando |
-| `GET` | `/api/user/connections` | Qué tiene conectado y qué le falta (alimenta «Conexiones» en `/u`) |
+| `GET` | `/api/user/connections` | Qué tiene conectado y qué le falta (alimenta la pantalla «Conexiones») |
 | `GET` | `/api/user/google/start` | Devuelve la URL de consentimiento de Google |
 | `GET` | `/api/user/google/callback` | Recibe el código de Google y guarda el permiso del usuario |
 | `DELETE` | `/api/user/google` | Desconecta su cuenta de Google |
 | `POST` | `/api/user/telegram/code` | Genera el código de vinculación de Telegram |
 | `DELETE` | `/api/user/telegram` | Desvincula su Telegram |
 
-La sección **«Conexiones»** de `/u` es donde el usuario conecta su Google y vincula su Telegram. Solo aparecen las que le hacen falta: a quien no tiene correo ni calendario habilitados no se le pide conectar Google. Si el usuario también es admin, puede entrar al panel principal y seguir teniendo disponible el menú de Conexiones.
+### Pantalla de Conexiones (`/conexiones`)
+
+Es una **pantalla completa**, no un cuadro emergente sobre el chat: se entra desde el menú y se ve con el mismo lenguaje visual que Configuración y Usuarios (fondo oscuro cálido, acentos coral, tarjetas). Reúne en tarjetas separadas:
+
+| Tarjeta | Qué hace |
+| --- | --- |
+| Lo que puedes pedirme | Las funciones que el administrador te ha habilitado |
+| Tu cuenta de Google | Conectar, reconectar o desconectar tu Gmail/Calendar |
+| Reconocimiento de voz | Registrar la voz con muestras guiadas, o borrar las grabaciones |
+| Tu Telegram | Pedir el código de vinculación y desvincular |
+
+Solo aparecen las tarjetas que hacen falta: a quien no tiene correo ni calendario habilitados no se le pide conectar Google, y a quien no tiene recordatorios no se le pide Telegram.
+
+**Todos los servicios llevan al mismo sitio.** Desde el panel del administrador (`/panel/conexiones`), los botones de Google, Telegram y voz usan el mismo destino: `/conexiones` si ya hay sesión personal, o `/u/login?next=/conexiones` si hay que autenticarse antes. Antes la fila de voz apuntaba a `/u` por separado, así que abría el chat con el panel encima y parecía otro sistema distinto del resto.
+
+**Al volver de Google**, el callback del backend redirige a `/conexiones`, así que el usuario aterriza en la misma pantalla y ve el estado actualizado.
+
+> La ruta `/u` sigue existiendo para el chat del usuario. `/conexiones` es la pantalla de ajustes, separada del chat.
 
 ---
 ## 📲 Instalable como aplicación (PWA)
@@ -258,8 +282,9 @@ La pantalla del chat del administrador funciona como un asistente de voz:
 - **Manos libres siempre activo:** al abrir el chat empieza a escuchar solo, en bucle. Hablas, Igris responde con voz y, al terminar, vuelve a escuchar. Mientras piensa o habla, el micrófono se pausa para que no se oiga a sí mismo. Un botón pequeño ("Manos libres: activo/pausado") permite pausarlo y reanudarlo.
 - **Escribir un mensaje:** el botón ✉️ Enviar abre el cuadro de texto con su botón "Enviar" (Enter también envía, Esc lo cierra). Mientras escribes, el micrófono se pausa.
 - **Historial:** panel translúcido en la parte inferior con los mensajes (`user:` / `igris:`) y un botón de altavoz para repetir cualquier respuesta.
-- **Menú (administrador):** 💬 Chat, ⚙️ Configuración, 👥 Usuarios y Salir. Si el acceso viene de una cuenta con `is_admin=true`, también aparece **🔗 Conexiones**.
-- **Área de usuarios (`/u`):** interfaz propia y más simple. El usuario ve su chat, Conexiones y Salir; si además es admin, aparece un botón para volver al **Panel admin**. Un usuario sin `is_admin` no puede alcanzar Configuración ni el panel de usuarios.
+- **Menú (administrador):** 💬 Chat, ⚙️ Configuración, 🔗 Conexiones, 👥 Usuarios y Salir. Conexiones lleva al panel de administración (`/panel/conexiones`), donde se revisan las cuentas de todos los usuarios.
+- **Área de usuarios (`/u`):** interfaz propia y más simple. El usuario ve su chat, Conexiones, Mi memoria y Salir; si además es admin, aparece un botón para volver al **Panel admin**. Un usuario sin `is_admin` no puede alcanzar Configuración ni el panel de usuarios.
+- **Conexiones del usuario (`/conexiones`):** pantalla completa con Google, voz y Telegram en tarjetas. Al abrirla se ocultan el historial y los controles del chat, para que se vea como una pantalla de ajustes y no como el chat con algo encima.
 - **Instalar como app:** en las pantallas de acceso (`/acceso` y `/u/login`) aparece un botón **📲 Instalar** (ver **Instalable como aplicación (PWA)**).
 ### Requisitos y límites del navegador
 - **Voz en navegador:** el panel admin mantiene reconocimiento del navegador donde aplica; el área de usuarios graba con `MediaRecorder` y envía el audio al backend para verificar voz y transcribir con Whisper. Requiere HTTPS y permiso de micrófono. Si el navegador no soporta la captura de audio, se puede escribir con el botón Enviar.
@@ -286,7 +311,7 @@ La pantalla del chat del administrador funciona como un asistente de voz:
 - **Viven en memoria:** se pierden al reiniciar o redesplegar el backend (también una propuesta de evento pendiente de confirmar). Funciona con un solo worker de Uvicorn. Las cuentas de usuario, los recordatorios y las notas sí se guardan en la base de datos.
 ### Voz
 - **Web (entrada):** el área de usuarios graba audio con `MediaRecorder`, corta automáticamente cuando detecta silencio y lo envía al backend. Si existe perfil registrado, `core/voice.py` limpia el audio con ffmpeg, normaliza volumen, calcula embeddings con SpeechBrain ECAPA-TDNN y compara contra ese perfil antes de transcribir. Si no hay perfil, la orden pasa directo a Whisper sin validación de hablante.
-- **Perfil de voz:** se registra desde `/u` con varias muestras guiadas variando distancia y volumen. El usuario puede borrar su perfil con **Borrar grabaciones** para desactivar esa validación.
+- **Perfil de voz:** se registra desde `/conexiones` con varias muestras guiadas variando distancia y volumen (cuatro pasos: cerca, a un metro, más bajo y más alto). El usuario puede borrar su perfil con **Borrar grabaciones** para desactivar esa validación. El panel del administrador muestra si cada cuenta tiene la voz registrada, y su botón lleva a la misma pantalla personal.
 - **STT en el backend:** el proveedor (Whisper local u OpenAI cloud) se selecciona desde Configuración del panel admin y se aplica inmediatamente; las variables de Coolify son valores base. Whisper cloud necesita una clave OpenAI directa `IGRIS_STT_API_KEY`; no comparte la clave de Pateway.
 - **TTS (texto a voz):** `core/tts.py`, expuesto en `POST /api/tts`. La web lo reproduce automáticamente tras cada respuesta y mide su volumen con la Web Audio API para animar al avatar.
 ### Configuración de IA
@@ -353,11 +378,12 @@ igris/
 │       ├── App.vue                # Menú (con botón Salir) + avatar de fondo (solo en la ruta Chat)
 │       ├── router.js              # Rutas de las dos superficies + guards de clave y de token
 │       ├── api.js                 # Cliente Axios del administrador (X-Igris-Key, localStorage)
-│       ├── userApi.js             # Cliente Axios de usuarios (Bearer, sessionStorage)
+│       ├── userApi.js             # Cliente Axios de usuarios (Bearer, localStorage con expiración de 7 días)
 │       ├── pwa.js                 # Instalación de la PWA y sincronización del manifest por ruta
 │       ├── components/
 │       │   ├── IgrisAvatar.vue    # Video con efectos según estado y volumen
 │       │   ├── IgrisHero.vue      # Avatar a pantalla completa + texto de estado
+│       │   ├── WorkspaceNav.vue   # Menú del workspace, adaptado por rol (admin o usuario)
 │       │   └── InstallHint.vue    # Aviso y botón para instalar la app
 │       ├── composables/
 │       │   └── useIgris.js        # Estado compartido: igris.state y igris.level
@@ -366,8 +392,10 @@ igris/
 │           ├── Dashboard.vue      # Chat del administrador: voz, manos libres, TTS, historial y texto
 │           ├── Configuration.vue  # Proveedor activo y cadena de fallback
 │           ├── AdminUsers.vue     # Panel de gestión de usuarios
+│           ├── AdminConnections.vue # Conexiones de todos los usuarios (solo admin)
+│           ├── ChatSurface.vue    # Elige la superficie según haya token de usuario o clave
 │           ├── UserLogin.vue      # Acceso de usuarios (usuario y contraseña)
-│           └── UserChat.vue       # Chat del usuario
+│           └── UserChat.vue       # Chat del usuario y pantalla de Conexiones
 ├── Dockerfile         # Imagen del backend (Python 3.12-slim + ffmpeg + PyTorch solo CPU)
 ├── Dockerfile.web     # Imagen del frontend (Node.js + vite build)
 ├── requirements.txt
@@ -625,6 +653,10 @@ El servidor no tiene GPU, así que el `Dockerfile` instala `torch==2.5.1` y `tor
 | Un usuario dice que Igris olvidó la conversación | El historial vive en memoria y se pierde al reiniciar el backend | Es lo esperado; las conversaciones no se guardan en la base (solo usuarios, recordatorios y notas) |
 | Un usuario desactivado dice "Tu cuenta está desactivada" | Es el comportamiento correcto | Desactivarlo corta el acceso al instante (403), sin esperar a que caduque el token. Volver a activarlo lo restablece |
 | 429 "Demasiados intentos" al entrar un usuario | 8 fallos desde la misma IP para ese usuario en 5 minutos | Esperar 5 minutos o reiniciar el backend (el contador está en memoria) |
+| Al pulsar **Conexiones** en el menú sigue apareciendo el panel antiguo sobre el chat | El navegador sirve el bundle viejo, o el frontend no se ha redesplegado | Comprobar en la pestaña Network el nombre del `assets/index-*.js`. Si no coincide con el último build, hacer Rebuild and Deploy y recargar con Ctrl+Shift+R. El service worker (`igris-v2`) usa red primero, así que no debería retener el viejo |
+| Al pulsar **Conexiones** el usuario entra al panel del administrador | La cuenta tiene `is_admin=true`, así que el menú muestra las opciones de administrador | Es el comportamiento correcto; el panel admin está en `/panel/conexiones` y el personal en `/conexiones` |
+| Un usuario ve las conexiones de otras cuentas | Quedó una clave de administrador guardada en `localStorage` de ese navegador | Salir borra clave y sesión a la vez. Al entrar por `/u/login` también se limpia la clave, para que una sesión personal no herede permisos del panel |
+| Tras volver de Google, la pantalla no muestra la cuenta conectada | Se recargó una ruta donde el panel no estaba abierto | El callback redirige a `/conexiones`, que siempre carga el estado. Si no, abrir Conexiones desde el menú y refrescar |
 ---
 ## 📝 Notas importantes
 - **Acceso del administrador:** la interfaz admite la clave (`IGRIS_ACCESS_KEY`) en `/acceso` o un JWT de usuario con `is_admin=true`. La clave se guarda en `localStorage` y se envía como `X-Igris-Key`; el JWT se envía como `Authorization: Bearer`. El backend compara la clave en tiempo constante y, para JWT, valida firma, rol, usuario activo y `is_admin` en base de datos. Si la variable de clave falta, la ruta por clave falla cerrada; el acceso por JWT admin sigue requiriendo `SECRET_KEY` válido. `/health`, `/status` y el webhook de Telegram no usan esta clave.
