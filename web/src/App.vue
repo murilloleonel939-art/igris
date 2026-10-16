@@ -16,6 +16,7 @@
 <script setup>
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import IgrisHero from './components/IgrisHero.vue'
 import WorkspaceNav from './components/WorkspaceNav.vue'
 import { clearKey, getKey } from './api'
 import { clearSession, getToken, getUser, isAdminUser } from './userApi'
