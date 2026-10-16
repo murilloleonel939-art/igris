@@ -252,10 +252,12 @@ async def send_tuya_command(device_id: str, code: str, value: Any) -> dict[str, 
     device_id = resolved_id
 
     functions = await _device_functions(device_id)
+    logger.info("Funciones del dispositivo %s: %s", device_id, [f.get("code") for f in functions])
     final_code = code
     final_value = value
     if functions:
         function = _pick_code(functions, code)
+        logger.info("Código solicitado: %r  → elegido: %r", code, function.get("code") if function else None)
         if function is None:
             return {
                 "device_id": device_id,
@@ -264,13 +266,17 @@ async def send_tuya_command(device_id: str, code: str, value: Any) -> dict[str, 
             }
         final_code = function["code"]
         final_value = _coerce_value(function, value)
+    else:
+        logger.warning("No se obtuvieron funciones para %s; se envía código sin validar: %r", device_id, code)
 
+    logger.info("Enviando a Tuya device=%s code=%r value=%r", device_id, final_code, final_value)
     try:
         result = await _call(
             f"/v1.0/iot-03/devices/{device_id}/commands",
             method="POST",
             payload={"commands": [{"code": final_code, "value": final_value}]},
         )
+        logger.info("Respuesta Tuya para %s: %s", device_id, result)
         return {"device_id": device_id, "codigo": final_code, "valor": final_value, "resultado": result}
     except Exception as exc:
         logger.exception("Error enviando orden Tuya")
