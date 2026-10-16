@@ -14,9 +14,9 @@
         <div class="services">
           <div class="service"><span class="service-icon google">G</span><div class="service-info"><b>Google</b><span v-if="user.connections?.google">Conectado · {{ user.connections.google }}</span><span v-else-if="user.connections?.google_error" class="warning">La conexión reportó un error</span><span v-else>Sin conectar</span></div><i class="service-status" :class="user.connections?.google ? 'ok' : user.connections?.google_error ? 'bad' : ''"></i><button v-if="user.is_active" class="connect" @click="goToUserLogin">{{ user.connections?.google ? 'Gestionar' : 'Conectar' }}</button></div>
           <div class="service"><span class="service-icon telegram">➤</span><div class="service-info"><b>Telegram</b><span v-if="user.connections?.telegram_linked">Vinculado<span v-if="user.connections?.telegram"> · {{ user.connections.telegram }}</span></span><span v-else>Sin vincular</span></div><i class="service-status" :class="user.connections?.telegram_linked ? 'ok' : ''"></i><button v-if="user.connections?.telegram_linked" class="unlink" :disabled="unlinking === user.id" @click="unlinkTelegram(user)">{{ unlinking === user.id ? 'Desvinculando…' : 'Desvincular' }}</button><button v-else-if="user.is_active" class="connect" @click="goToUserLogin">Conectar</button></div>
-          <div class="service"><span class="service-icon voice">♫</span><div class="service-info"><b>Reconocimiento de voz</b><span>La grabación se gestiona desde la sesión personal del usuario.</span></div><a class="connect" :href="`/u/login?next=${encodeURIComponent('/u')}`">Iniciar sesión</a></div>
+          <div class="service"><span class="service-icon voice">♫</span><div class="service-info"><b>Reconocimiento de voz</b><span>La grabación se gestiona desde la sesión personal del usuario.</span></div><i class="service-status" :class="user.connections?.voice ? 'ok' : ''"></i><button v-if="user.is_active" class="connect" @click="goToUserLogin">{{ user.connections?.voice ? 'Gestionar' : 'Iniciar sesión' }}</button></div>
           <p class="user-portal-hint">Estas acciones se realizan desde la cuenta personal por seguridad. Usa el acceso de {{ user.username }} para conectar servicios o registrar la voz.</p>
-          <a v-if="user.is_active" class="user-portal-link" href="/u/login">Abrir acceso personal de {{ user.username }} →</a>
+          <a v-if="user.is_active" class="user-portal-link" :href="`/u/login?next=${encodeURIComponent('/conexiones')}`">Abrir acceso personal de {{ user.username }} →</a>
         </div>
       </article>
     </section>
@@ -43,6 +43,13 @@ async function load() {
       const res = await api.get('/api/user/connections')
       const user = getUser() || {}
       const data = res.data || {}
+      let voice = false
+      try {
+        const vp = await api.get('/api/user/voice-profile')
+        voice = Boolean(vp.data?.registered)
+      } catch {
+        // Si falla, se muestra como no registrada en vez de romper la pantalla
+      }
       users.value = [{
         id: user.id || 'me',
         username: user.username || 'Mi cuenta',
@@ -53,6 +60,7 @@ async function load() {
           google_error: data.google?.error || null,
           telegram_linked: Boolean(data.telegram?.linked),
           telegram: data.telegram?.username || null,
+          voice,
         },
       }]
     } else {
@@ -66,12 +74,16 @@ async function load() {
   }
 }
 
+// Todos los servicios llevan a la MISMA pantalla personal de Conexiones, que es
+// la del diseño nuevo. Antes la voz apuntaba a `/u` (el chat con el modal
+// encima), así que parecía otro sistema distinto del resto.
 function goToUserLogin() {
+  const target = '/conexiones'
   if (getToken()) {
-    window.location.href = '/?open=connections'
+    window.location.href = target
     return
   }
-  window.location.href = `/u/login?next=${encodeURIComponent('/?open=connections')}`
+  window.location.href = `/u/login?next=${encodeURIComponent(target)}`
 }
 
 async function unlinkTelegram(user) {

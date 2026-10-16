@@ -841,11 +841,13 @@ function openConnections() {
 
 // Entrar por el menú a /conexiones no vuelve a montar el componente: Vue
 // reutiliza esta misma instancia. Sin este vigilante, el panel no se abriría
-// al pulsar «Conexiones» y el usuario vería el chat.
+// al pulsar «Conexiones» y el usuario vería el chat. Al salir se cierra, para
+// que no quede el panel flotando encima del chat.
 watch(
   () => route.name,
   (name) => {
     if (name === 'UserConnections') openConnections()
+    else conn.value.open = false
   },
 )
 

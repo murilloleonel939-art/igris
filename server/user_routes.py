@@ -365,7 +365,13 @@ def _public_user(u: User, db: Session = None) -> dict[str, Any]:
         key=FEATURE_ORDER.index,
     )
 
-    connection = {"google": None, "google_error": None, "telegram": None, "telegram_linked": False}
+    connection = {
+        "google": None,
+        "google_error": None,
+        "telegram": None,
+        "telegram_linked": False,
+        "voice": False,
+    }
     if db is not None:
         account = db.query(GoogleAccount).filter(GoogleAccount.user_id == u.id).first()
         if account is not None:
@@ -375,6 +381,12 @@ def _public_user(u: User, db: Session = None) -> dict[str, Any]:
         if link is not None:
             connection["telegram_linked"] = bool(link.chat_id)
             connection["telegram"] = link.username
+        voice = (
+            db.query(Profile)
+            .filter(Profile.user_id == u.id, Profile.name == "Voz principal")
+            .first()
+        )
+        connection["voice"] = bool(voice and voice.voice_print and voice.is_authorized)
 
     return {
         "id": u.id,
