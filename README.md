@@ -285,7 +285,7 @@ La pantalla del chat del administrador funciona como un asistente de voz:
 ### Voz
 - **Web (entrada):** el área de usuarios graba audio con `MediaRecorder`, corta automáticamente cuando detecta silencio y lo envía al backend. Si existe perfil registrado, `core/voice.py` limpia el audio con ffmpeg, normaliza volumen, calcula embeddings con SpeechBrain ECAPA-TDNN y compara contra ese perfil antes de transcribir. Si no hay perfil, la orden pasa directo a Whisper sin validación de hablante.
 - **Perfil de voz:** se registra desde `/u` con varias muestras guiadas variando distancia y volumen. El usuario puede borrar su perfil con **Borrar grabaciones** para desactivar esa validación.
-- **STT en el backend:** `core/stt.py` usa Whisper local por defecto (`IGRIS_WHISPER_MODEL=base`) para audio validado y Telegram. Ojo con los nombres: `IGRIS_WHISPER_MODEL` elige el modelo **local** y `IGRIS_STT_MODEL` el de la API OpenAI; cada uno solo se lee en su propia ruta, así que definir el que no corresponde no tiene efecto.
+- **STT en el backend:** `core/stt.py` usa Whisper local por defecto (`IGRIS_WHISPER_MODEL=base`) para audio validado y Telegram. Para migrar la transcripción a Whisper cloud se puede usar `IGRIS_STT_PROVIDER=openai`; esta ruta admite una clave y base URL independientes para que el chat siga usando Pateway.
 - **TTS (texto a voz):** `core/tts.py`, expuesto en `POST /api/tts`. La web lo reproduce automáticamente tras cada respuesta y mide su volumen con la Web Audio API para animar al avatar.
 ### Configuración de IA
 - **Proveedores:** `nemotron`, `openai`, `anthropic`, `local` (Ollama). `nemotron`, `openai` y `local` se consumen con el SDK de OpenAI (APIs compatibles con `/v1/chat/completions`). **`anthropic` es la excepción:** Claude solo se sirve por el protocolo nativo de Anthropic (`/v1/messages`, con `x-api-key`), así que usa el SDK `anthropic` y su propio bucle de herramientas (`_complete_with_anthropic`); enviarlo por `/v1/chat/completions` devuelve `protocol_mismatch`. Por eso su URL base **no lleva `/v1`**: el SDK añade `/v1/messages`. La lista válida está en `PROVIDERS` de `core/brain.py` y debe coincidir con `AVAILABLE_PROVIDERS` de `core/config.py`.
@@ -426,9 +426,11 @@ Las credenciales OAuth que usan `core/tools/google_client.py`, `gmail.py` y `gca
 ### Voz
 | Variable | Descripción | Ejemplo / por defecto |
 | --- | --- | --- |
-| `IGRIS_STT_PROVIDER` | Proveedor de transcripción (Telegram): `local` u `openai` | `local` |
+| `IGRIS_STT_PROVIDER` | Proveedor de transcripción: `local` u `openai` | `local` |
 | `IGRIS_WHISPER_MODEL` | Modelo de Whisper local (`tiny`, `base`, `small`, `medium`) | `base` |
-| `IGRIS_STT_MODEL` | Modelo de Whisper para el proveedor `openai` (no aplica al local) | `whisper-1` |
+| `IGRIS_STT_API_KEY` | Clave para Whisper cloud; si falta usa `OPENAI_API_KEY` | — |
+| `IGRIS_STT_API_BASE` | Base URL de Whisper cloud | `https://api.openai.com/v1` |
+| `IGRIS_STT_MODEL` | Modelo de transcripción cloud | `whisper-1` |
 | `IGRIS_STT_LANGUAGE` | Idioma del audio a transcribir (código de 2 letras) | `es` |
 | `IGRIS_VOICE_THRESHOLD` | Umbral mínimo de similitud para aceptar al hablante registrado | `0.40` |
 | `IGRIS_TTS_PROVIDER` | Proveedor de síntesis de voz | `local` |

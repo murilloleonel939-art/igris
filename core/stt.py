@@ -72,12 +72,17 @@ def transcribe(audio: AudioInput, suffix: str = ".ogg") -> str:
                 "El paquete 'openai' no está instalado. "
                 "Instálalo con: pip install openai"
             )
-        api_key = os.getenv("OPENAI_API_KEY")
+        # La clave de STT es independiente de la clave del proveedor de chat.
+        # Así Pateway puede seguir en OPENAI_API_KEY mientras Whisper usa OpenAI directo.
+        api_key = os.getenv("IGRIS_STT_API_KEY") or os.getenv("OPENAI_API_KEY")
         if not api_key:
             raise RuntimeError(
-                "Falta la variable de entorno OPENAI_API_KEY necesaria para usar Whisper en la nube."
+                "Falta IGRIS_STT_API_KEY u OPENAI_API_KEY para usar Whisper en la nube."
             )
-        client = OpenAI(api_key=api_key)
+        base_url = (
+            os.getenv("IGRIS_STT_API_BASE") or "https://api.openai.com/v1"
+        ).rstrip("/")
+        client = OpenAI(api_key=api_key, base_url=base_url)
         try:
             resp = client.audio.transcriptions.create(
                 model=os.getenv("IGRIS_STT_MODEL", "whisper-1"),
