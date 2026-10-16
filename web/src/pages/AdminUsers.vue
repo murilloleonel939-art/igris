@@ -44,7 +44,7 @@
           <div class="user-card__main">
             <div class="avatar-initials">{{ u.username.slice(0, 2).toUpperCase() }}</div>
             <div class="user-identity"><div class="flex flex-wrap items-center gap-2"><h3>{{ u.username }}</h3><span v-if="u.is_admin" class="role-chip">ADMIN</span><span class="state-chip" :class="u.is_active ? 'is-active' : 'is-disabled'"><i></i>{{ u.is_active ? 'Activo' : 'Desactivado' }}</span></div><p>{{ u.email }}</p><small>Creado {{ formatDate(u.created_at) }}</small></div>
-            <div class="user-actions"><button class="act" @click="openPermisos(u)">Permisos</button><button class="act" @click="toggleActive(u)">{{ u.is_active ? 'Desactivar' : 'Activar' }}</button><button class="act" @click="resetPassword(u)">Cambiar contraseña</button><button class="act" @click="openTrato(u)">Editar trato</button><button class="act danger" @click="removeUser(u)">Eliminar</button></div>
+            <div class="user-actions"><button class="act" @click="openPermisos(u)">Permisos</button><button class="act" @click="openMemory(u)">Memoria</button><button class="act" @click="toggleActive(u)">{{ u.is_active ? 'Desactivar' : 'Activar' }}</button><button class="act" @click="resetPassword(u)">Cambiar contraseña</button><button class="act" @click="openTrato(u)">Editar trato</button><button class="act danger" @click="removeUser(u)">Eliminar</button></div>
           </div>
           <div class="user-card__details"><div class="detail-group"><span class="detail-label">FUNCIONES</span><div class="flex flex-wrap gap-1.5"><span v-for="f in featureLabels(u)" :key="f" class="feature-chip">{{ f }}</span><span v-if="!u.features?.length" class="text-xs text-stone-500">Sin funciones habilitadas</span></div></div>
             <div class="connection-list"><span v-if="u.connections?.google" class="connection-chip connected">Google · {{ u.connections.google }}</span><span v-else-if="needsGoogle(u)" class="connection-chip pending">Google sin conectar</span><span v-if="u.connections?.google_error" class="connection-chip failed">Error de Google</span><span v-if="u.connections?.telegram_linked" class="connection-chip connected">Telegram vinculado</span><span v-else-if="u.features?.includes('reminders')" class="connection-chip pending">Telegram sin vincular</span></div>
@@ -121,6 +121,25 @@
       </div>
     </div>
 
+    <!-- Modal: memoria del usuario -->
+    <div v-if="memoryModal.open" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+      <div class="max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-xl border border-slate-700 bg-slate-900 p-6 shadow-xl">
+        <div class="mb-5 flex items-start justify-between gap-4">
+          <div><h3 class="text-lg font-medium text-white">Memoria de {{ memoryModal.username }}</h3><p class="mt-1 text-sm text-slate-400">Solo lectura de los recuerdos guardados para esta cuenta.</p></div>
+          <button class="act" @click="memoryModal.open = false">Cerrar</button>
+        </div>
+        <p v-if="memoryModal.loading" class="text-sm text-slate-400">Cargando memoria…</p>
+        <p v-else-if="memoryModal.error" class="text-sm text-red-300">{{ memoryModal.error }}</p>
+        <div v-else class="memory-columns grid gap-4 md:grid-cols-2">
+          <section v-for="group in memoryGroups" :key="group.key" class="rounded-lg border border-slate-700 bg-slate-800/40 p-4">
+            <h4 class="mb-3 text-sm font-semibold text-white">{{ group.label }}</h4>
+            <div v-if="!memoryModal.items[group.key].length" class="text-xs text-slate-500">Sin recuerdos guardados.</div>
+            <div v-for="item in memoryModal.items[group.key]" :key="item.id" class="mb-2 rounded border border-slate-700 px-3 py-2 text-sm text-slate-300">{{ item.content }}</div>
+          </section>
+        </div>
+      </div>
+    </div>
+
     <!-- Modal: editar trato personalizado -->    <div v-if="tratoModal.open" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
       <div class="w-full max-w-lg rounded-xl border border-slate-700 bg-slate-900 p-6 shadow-xl">
         <h3 class="mb-1 text-lg font-medium text-white">Trato personalizado</h3>
@@ -178,6 +197,8 @@ const unlinkingTelegram = ref(false)
 // Modal de edición de trato personalizado
 const tratoModal = ref({ open: false, id: null, username: '', value: '' })
 const tratoSaving = ref(false)
+const memoryGroups = [{ key: 'personal', label: 'Memoria personal' }, { key: 'operational', label: 'Memoria operativa' }]
+const memoryModal = ref({ open: false, loading: false, error: '', id: null, username: '', items: { personal: [], operational: [] } })
 
 function featureLabels(u) {
   const keys = u.features || []
@@ -341,6 +362,18 @@ async function removeUser(u) {
     showFlash(`Usuario '${u.username}' eliminado`)
   } catch (e) {
     showFlash(errorMessage(e, 'No se pudo eliminar el usuario'), true)
+  }
+}
+
+async function openMemory(u) {
+  memoryModal.value = { open: true, loading: true, error: '', id: u.id, username: u.username, items: { personal: [], operational: [] } }
+  try {
+    const res = await api.get(`/api/admin/users/${u.id}/memories`)
+    memoryModal.value.items = { personal: res.data?.personal || [], operational: res.data?.operational || [] }
+  } catch (e) {
+    memoryModal.value.error = errorMessage(e, 'No se pudo cargar la memoria')
+  } finally {
+    memoryModal.value.loading = false
   }
 }
 

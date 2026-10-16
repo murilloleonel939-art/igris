@@ -421,6 +421,23 @@ def list_users(
     return {"users": [_public_user(u, db) for u in users]}
 
 
+@router.get("/api/admin/users/{user_id}/memories")
+def admin_list_user_memories(
+    user_id: int,
+    _: None = Depends(require_admin_key),
+    db: Session = Depends(get_db),
+):
+    """Lista la memoria de un usuario para la pestaña administrativa."""
+    user = db.query(User).filter(User.id == user_id).first()
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado")
+    rows = db.query(UserMemory).filter(UserMemory.user_id == user_id).order_by(UserMemory.updated_at.desc()).all()
+    return {
+        "personal": [_memory_json(row) for row in rows if row.kind == "personal"],
+        "operational": [_memory_json(row) for row in rows if row.kind == "operational"],
+    }
+
+
 @router.post("/api/admin/users", status_code=status.HTTP_201_CREATED)
 def create_user(
     payload: UserCreateIn,
