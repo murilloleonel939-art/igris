@@ -141,6 +141,10 @@ La memoria se inyecta en el prompt como contexto interno: ayuda a dar continuida
 | `GET` | `/api/user/me` | Devuelve la sesión actual |
 | `POST` | `/api/user/chat` | Habla con Igris (historial aislado por usuario) |
 | `POST` | `/api/user/tts` | Convierte texto en voz |
+| `GET` | `/api/user/memories` | Consulta la memoria personal y operativa propia |
+| `POST` | `/api/user/memories` | Añade un recuerdo personal u operativo propio |
+| `PUT` | `/api/user/memories/{memory_id}` | Edita un recuerdo propio |
+| `DELETE` | `/api/user/memories/{memory_id}` | Borra un recuerdo propio |
 | `GET` | `/api/user/voice-profile` | Indica si el usuario tiene perfil de voz registrado |
 | `POST` | `/api/user/voice-profile` | Registra la voz con varias muestras guiadas |
 | `DELETE` | `/api/user/voice-profile` | Borra el perfil/grabaciones de validación de voz |
