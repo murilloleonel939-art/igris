@@ -105,10 +105,18 @@ async def list_tuya_devices() -> dict[str, Any]:
         return {"error": str(exc)}
 
 
+def _configured_device_ids() -> set[str]:
+    return {
+        item.strip()
+        for item in os.getenv("TUYA_DEVICE_IDS", "").split(",")
+        if item.strip()
+    }
+
+
 def _allowed_device(device_id: str) -> bool:
-    configured = os.getenv("TUYA_DEVICE_IDS", "").strip()
-    allowed = {item.strip() for item in configured.split(",") if item.strip()}
-    return bool(allowed) and device_id in allowed
+    configured = _configured_device_ids()
+    # Sin allowlist explícita, la cuenta Smart Life vinculada es el límite de acceso.
+    return not configured or device_id in configured
 
 
 def _normalize_device_name(value: Any) -> str:
