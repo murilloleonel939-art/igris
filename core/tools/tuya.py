@@ -118,18 +118,36 @@ def _normalize_device_name(value: Any) -> str:
 
 
 async def _resolve_device_id(device_ref: str) -> str | None:
-    """Acepta el ID técnico o el nombre visible del dispositivo."""
+    """Acepta ID, nombre, alias configurado o una referencia natural."""
     if _allowed_device(device_ref):
         return device_ref
+
+    normalized_ref = _normalize_device_name(device_ref)
+    aliases = {}
+    for item in os.getenv("TUYA_DEVICE_ALIASES", "").split(","):
+        if ":" in item:
+            alias, device_id = item.split(":", 1)
+            aliases[_normalize_device_name(alias)] = device_id.strip()
+    alias_id = aliases.get(normalized_ref)
+    if alias_id and _allowed_device(alias_id):
+        return alias_id
+
     try:
         listed = await list_tuya_devices()
         for device in listed.get("dispositivos", []):
+            device_id = device.get("id")
+            device_name = _normalize_device_name(device.get("nombre"))
             if (
-                device.get("id")
-                and _allowed_device(device["id"])
-                and _normalize_device_name(device.get("nombre")) == _normalize_device_name(device_ref)
+                device_id
+                and _allowed_device(device_id)
+                and device_name
+                and (
+                    device_name == normalized_ref
+                    or device_name in normalized_ref
+                    or normalized_ref in device_name
+                )
             ):
-                return device["id"]
+                return device_id
     except Exception:
         logger.exception("Error resolviendo nombre de dispositivo Tuya")
     return None
