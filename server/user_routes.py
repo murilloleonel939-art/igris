@@ -677,25 +677,28 @@ async def user_voice_chat(
     user: User = Depends(require_user),
     db: Session = Depends(get_db),
 ):
-    """Verifica al hablante, transcribe y solo entonces ejecuta la orden."""
+    """Transcribe y ejecuta la orden; si hay perfil de voz, valida al hablante primero."""
+    data = await audio.read()
+    if len(data) < 1_000:
+        raise HTTPException(status_code=422, detail="El audio está vacío o es demasiado corto")
+
     profile = db.query(Profile).filter(
         Profile.user_id == user.id,
         Profile.name == "Voz principal",
         Profile.is_authorized.is_(True),
     ).first()
-    if profile is None or not profile.voice_print:
-        raise HTTPException(status_code=403, detail="Registra tu voz antes de usar órdenes por voz")
-    data = await audio.read()
-    if len(data) < 1_000:
-        raise HTTPException(status_code=422, detail="El audio está vacío o es demasiado corto")
-    try:
-        verified, score = await asyncio.to_thread(voice.verify, data, profile.voice_print, ".webm")
-    except Exception as exc:
-        logger.exception("Falló la verificación de voz")
-        raise HTTPException(status_code=500, detail=f"No se pudo verificar la voz: {exc}")
-    if not verified:
-        logger.warning("Voz no reconocida para usuario %s: score=%.4f threshold=%s", user.id, score, os.getenv("IGRIS_VOICE_THRESHOLD", "0.40"))
-        raise HTTPException(status_code=403, detail=f"Voz no reconocida (similitud {score:.2f})")
+    score: float | None = None
+    if profile is not None and profile.voice_print:
+        try:
+            verified, score = await asyncio.to_thread(voice.verify, data, profile.voice_print, ".webm")
+        except Exception as exc:
+            logger.exception("Falló la verificación de voz")
+            raise HTTPException(status_code=500, detail=f"No se pudo verificar la voz: {exc}")
+        if not verified:
+            logger.warning("Voz no reconocida para usuario %s: score=%.4f threshold=%s", user.id, score, os.getenv("IGRIS_VOICE_THRESHOLD", "0.40"))
+            raise HTTPException(status_code=403, detail=f"Voz no reconocida (similitud {score:.2f})")
+    else:
+        logger.info("Usuario %s usa orden por voz sin perfil registrado", user.id)
 
     try:
         text = (await asyncio.to_thread(stt.transcribe, data, ".webm")).strip()
@@ -711,8 +714,10 @@ async def user_voice_chat(
     remember_from_text(db, user.id, text)
     _bind_identity(session, user, db)
     try:
-        reply = await session.say(text)
-        return {"status": "ok", "text": text, "reply": reply, "voice_score": round(score, 3)}
+        result = {"status": "ok", "text": text, "reply": reply}
+        if score is not None:
+            result["voice_score"] = round(score, 3)
+        return result
     except Exception as exc:
         return {"status": "error", "message": str(exc)}
 

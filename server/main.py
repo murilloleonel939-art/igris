@@ -174,23 +174,31 @@ def _register_failure(ip: str, now: float) -> None:
     _failures.setdefault(ip, deque()).append(now)
 
 
-def _valid_admin_bearer(authorization: Optional[str]) -> bool:
-    """Acepta un JWT de usuario solo si pertenece a una cuenta admin activa."""
+def _admin_user_from_bearer(authorization: Optional[str]) -> Optional[User]:
+    """Devuelve el usuario admin del Bearer, o None si no es válido."""
     if not isinstance(authorization, str) or not authorization.lower().startswith("bearer "):
-        return False
+        return None
     token = authorization.split(" ", 1)[1].strip()
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
     except JWTError:
-        return False
+        return None
     if payload.get("role") != "user":
-        return False
+        return None
     user_id = payload.get("user_id")
     if not isinstance(user_id, int):
-        return False
+        return None
     with database.SessionLocal() as db:
         user = db.query(User).filter(User.id == user_id).first()
-        return bool(user and user.is_active and user.is_admin)
+        if not user or not user.is_active or not user.is_admin:
+            return None
+        db.expunge(user)
+        return user
+
+
+def _valid_admin_bearer(authorization: Optional[str]) -> bool:
+    """Acepta un JWT de usuario solo si pertenece a una cuenta admin activa."""
+    return _admin_user_from_bearer(authorization) is not None
 
 
 async def require_key(
@@ -340,10 +348,11 @@ async def register_admin_voice(audio: UploadFile = File(...)):
 
 @app.post("/api/voice-chat", dependencies=[Depends(require_key)])
 async def admin_voice_chat(audio: UploadFile = File(...), session_id: Optional[str] = Form(None)):
-    """Verifica la voz del administrador antes de transcribir y ejecutar."""
+    """Transcribe y ejecuta; si hay perfil admin registrado, valida la voz primero."""
     data = await audio.read()
     if len(data) < 1_000:
         raise HTTPException(status_code=422, detail="El audio está vacío o es demasiado corto")
+    score: float | None = None
     with database.SessionLocal() as db:
         user = db.query(User).filter(User.is_admin.is_(True)).order_by(User.id.asc()).first()
         profile = db.query(Profile).filter(
@@ -351,20 +360,24 @@ async def admin_voice_chat(audio: UploadFile = File(...), session_id: Optional[s
             Profile.name == "Voz principal",
             Profile.is_authorized.is_(True),
         ).first() if user else None
-        if profile is None or not profile.voice_print:
-            raise HTTPException(status_code=403, detail="Registra tu voz antes de usar órdenes por voz")
-        try:
-            verified, score = await asyncio.to_thread(voice.verify, data, profile.voice_print, ".webm")
-        except Exception as exc:
-            raise HTTPException(status_code=500, detail=f"No se pudo verificar la voz: {exc}")
-    if not verified:
-        raise HTTPException(status_code=403, detail="Voz no reconocida")
+        if profile is not None and profile.voice_print:
+            try:
+                verified, score = await asyncio.to_thread(voice.verify, data, profile.voice_print, ".webm")
+            except Exception as exc:
+                raise HTTPException(status_code=500, detail=f"No se pudo verificar la voz: {exc}")
+            if not verified:
+                raise HTTPException(status_code=403, detail="Voz no reconocida")
+        else:
+            logger.info("Orden por voz admin sin perfil registrado")
     text = (await asyncio.to_thread(stt.transcribe, data, ".webm")).strip()
     if not text:
         raise HTTPException(status_code=422, detail="No se entendió la orden")
     sid = "".join(c for c in (session_id or "") if c.isalnum() or c in "-_")[:64] or "default"
     reply = await sessions.get(f"web:{sid}").say(text)
-    return {"status": "ok", "text": text, "reply": reply, "voice_score": round(score, 3)}
+    result = {"status": "ok", "text": text, "reply": reply}
+    if score is not None:
+        result["voice_score"] = round(score, 3)
+    return result
 
 
 @app.post("/api/chat", dependencies=[Depends(require_key)])
