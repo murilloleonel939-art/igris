@@ -10,21 +10,11 @@
 -->
 <template>
   <div class="dash">
-    <IgrisHero />
-
     <InstallHint />
 
     <!-- Avisos -->
     <div v-if="notice" class="notice">{{ notice }}</div>
     <div v-else-if="needsTap" class="notice soft">Toca la pantalla para activar el sonido</div>
-
-    <!-- Barra superior: usuario y salir -->
-    <div class="topbar">
-      <span class="who">👤 {{ username }}</span>
-      <button v-if="!adminUser" type="button" class="out" @click="openMemories">Mi memoria</button>
-      <button type="button" class="out" @click="openConnections">Conexiones</button>
-      <button type="button" class="out" @click="logout">Salir</button>
-    </div>
 
     <!-- Panel de memoria personal y operativa -->
     <div v-if="memories.open" class="conn-backdrop" @click.self="memories.open = false">
@@ -233,14 +223,16 @@
 import { ref, computed, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import userApi, { getUser, clearSession, errorMessage } from '../userApi'
+import { getKey } from '../api'
 import { igris, setIgrisState } from '../composables/useIgris'
 import IgrisHero from '../components/IgrisHero.vue'
+import WorkspaceNav from '../components/WorkspaceNav.vue'
 import InstallHint from '../components/InstallHint.vue'
 
 const router = useRouter()
 
 const username = computed(() => getUser()?.username || 'usuario')
-const adminUser = computed(() => !!getUser()?.is_admin)
+const adminUser = computed(() => !!getUser()?.is_admin || Boolean(getKey()))
 
 const chatInput = ref('')
 const chatMessages = ref([])
@@ -606,7 +598,8 @@ const toggleHandsFree = () => {
 /* ───────────── Salir ───────────── */
 function logout() {
   clearSession()
-  router.replace('/u/login')
+  if (getKey()) router.replace('/acceso')
+  else router.replace('/u/login')
 }
 
 /* ───────────── Conexiones (Google y Telegram) ─────────────
@@ -890,12 +883,16 @@ const unlock = () => {
 }
 
 onMounted(() => {
+  window.addEventListener('igris:open-connections', openConnections)
+  window.addEventListener('igris:open-memory', openMemories)
   window.addEventListener('pointerdown', unlock, { once: true })
   window.addEventListener('keydown', unlock, { once: true })
   runHandsFree()
 })
 
 onBeforeUnmount(() => {
+  window.removeEventListener('igris:open-connections', openConnections)
+  window.removeEventListener('igris:open-memory', openMemories)
   window.removeEventListener('pointerdown', unlock)
   window.removeEventListener('keydown', unlock)
   clearTimeout(noticeTimer)
@@ -1067,36 +1064,7 @@ onBeforeUnmount(() => {
   margin-top: 0.5rem;
 }
 
-.topbar {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 11;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 16px;
-  background: rgba(15, 23, 42, 0.55);
-  backdrop-filter: blur(6px);
-  border-bottom: 1px solid rgba(148, 163, 184, 0.15);
-}
-.who {
-  font-size: 0.85rem;
-  color: #cbd5e1;
-}
-.out {
-  padding: 6px 14px;
-  border: 0;
-  border-radius: 999px;
-  background: rgba(51, 65, 85, 0.8);
-  color: #e2e8f0;
-  font-size: 0.8rem;
-  cursor: pointer;
-}
-.out:hover {
-  background: rgba(71, 85, 105, 0.9);
-}
+.admin-user-chat-bar{position:fixed;z-index:40;inset:0 0 auto;display:flex;align-items:center;justify-content:flex-end;gap:.9rem;padding:1rem 2rem;background:rgba(18,12,12,.83);color:#eee}.admin-user-chat-bar button{border:1px solid #ffffff20;border-radius:.5rem;background:#ffffff08;padding:.45rem .75rem;color:#eee;cursor:pointer}
 
 .bottom {
   position: fixed;

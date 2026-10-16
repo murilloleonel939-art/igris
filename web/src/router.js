@@ -1,10 +1,9 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import Dashboard from './pages/Dashboard.vue'
 import Configuration from './pages/Configuration.vue'
 import Access from './pages/Access.vue'
-import AdminUsers from './pages/AdminUsers.vue'
 import UserLogin from './pages/UserLogin.vue'
 import UserChat from './pages/UserChat.vue'
+import ChatSurface from './pages/ChatSurface.vue'
 import AdminConnections from './pages/AdminConnections.vue'
 import { getKey } from './api'
 import { isLoggedIn, isAdminUser } from './userApi'
@@ -28,17 +27,12 @@ const routes = [
   {
     path: '/',
     name: 'Chat',
-    component: Dashboard
+    component: ChatSurface
   },
   {
     path: '/config',
     name: 'Configuration',
     component: Configuration
-  },
-  {
-    path: '/panel/usuarios',
-    name: 'AdminUsers',
-    component: AdminUsers
   },
   {
     path: '/panel/conexiones',
@@ -78,20 +72,15 @@ const router = createRouter({
 router.beforeEach((to) => {
   const wantsUser = USER_ROUTE_NAMES.includes(to.name) || to.meta.requiresUser
 
-  if (wantsUser) {
-    // --- Área de usuarios ---
+  if (to.name === 'Chat') {
+    if (isLoggedIn() || getKey()) return true
+    return { name: 'Access' }
+  }
+
+  if (to.name === 'UserLogin' || to.name === 'UserChat' || to.meta.requiresUser) {
     const logged = isLoggedIn()
-    if (!logged && to.name !== 'UserLogin') {
-      return { name: 'UserLogin' }
-    }
-    // Una cuenta administradora usa la superficie unificada del panel en /.
-    if (logged && isAdminUser() && to.name === 'UserChat') {
-      return { path: '/' }
-    }
-    // Ya dentro: la pantalla de acceso de usuarios no tiene sentido
-    if (logged && to.name === 'UserLogin') {
-      return { path: '/u' }
-    }
+    if (!logged && to.name !== 'UserLogin') return { name: 'UserLogin' }
+    if (logged && to.name === 'UserLogin') return { path: '/u' }
     return true
   }
 

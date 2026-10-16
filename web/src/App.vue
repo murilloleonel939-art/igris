@@ -1,27 +1,10 @@
 <template>
   <div id="app" class="min-h-screen bg-gradient-to-br from-slate-900 to-slate-800">
-    <!-- Igris a pantalla completa de fondo (solo en el chat del administrador;
-         el chat de usuarios monta su propio fondo dentro de UserChat) -->
+    <!-- Fondo de Igris compartido en ambas superficies de chat -->
     <IgrisHero v-if="$route.name === 'Chat'" />
 
-    <!-- Navegación administrativa -->
-    <nav v-if="showNav" class="admin-nav">
-      <div class="admin-nav__inner">
-        <router-link to="/" class="brand" aria-label="Igris · Chat">
-          <svg class="brand__mark" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M3.2 4.3 5.4 2l4.1 4.1v3.1L3.2 4.3Zm8.2 1.8L15.5 2l2.2 2.3-6.3 6.3V6.1Zm-8 5.2 2.2-2.2 6.3 6.3v3.1L3.4 11.3Zm8.2 3.2 6.3-6.3 2.2 2.2-8.5 8.5v-4.4Zm-6.3 5.2 2.2-2.2 2.3 2.3-2.2 2.2-2.3-2.3Zm9.5-1.1 2.2-2.2 2.2 2.2-2.2 2.2-2.2-2.2Z"/></svg>
-          <span class="brand__name">IGRIS</span><span class="brand__divider"></span><span class="brand__workspace">WORKSPACE</span>
-        </router-link>
-
-        <div class="admin-nav__links">
-          <router-link to="/" class="nav-link" :class="{ active: $route.name === 'Chat' }"><span>▢</span> Chat</router-link>
-          <router-link to="/config" class="nav-link" :class="{ active: $route.name === 'Configuration' }"><span>⌘</span> Configuración</router-link>
-          <router-link to="/panel/conexiones" class="nav-link" :class="{ active: $route.name === 'AdminConnections' }"><span>♧</span> Conexiones</router-link>
-          <router-link to="/panel/usuarios" class="nav-link" :class="{ active: $route.name === 'AdminUsers' }"><span>♧</span> Usuarios</router-link>
-        </div>
-
-        <div class="nav-account"><span class="nav-user__initials">{{ displayInitials }}</span><span class="nav-user__name">{{ displayName }}</span><button type="button" class="nav-logout" @click="logout">Salir</button></div>
-      </div>
-    </nav>
+    <!-- Navegación del espacio de trabajo, compartida y adaptada por rol -->
+    <WorkspaceNav v-if="showNav" :admin="isAdmin" :username="displayName" @logout="logout" @connections="requestConnections" @memory="requestMemory" />
 
     <!-- Page Content (por encima del avatar) -->
     <div style="position: relative; z-index: 10">
@@ -33,18 +16,22 @@
 <script setup>
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import IgrisHero from './components/IgrisHero.vue'
-import { clearKey } from './api'
-import { clearSession, getUser, isAdminUser } from './userApi'
+import WorkspaceNav from './components/WorkspaceNav.vue'
+import { clearKey, getKey } from './api'
+import { clearSession, getToken, getUser, isAdminUser } from './userApi'
 
 const route = useRoute()
 const router = useRouter()
 
 // El menú del panel solo se muestra a administradores autenticados. El portal
 // /u de usuarios normales mantiene únicamente chat, conexiones y memoria.
-const ADMIN_ROUTES = ['Chat', 'Configuration', 'AdminUsers', 'AdminConnections']
-const showNav = computed(() => ADMIN_ROUTES.includes(route.name) && isAdminUser())
+const ADMIN_ROUTES = ['Configuration', 'AdminConnections']
+const isAdmin = computed(() => isAdminUser() || !!getKey())
+const showNav = computed(() => route.name === 'UserChat' || (route.name === 'Chat' && isAdmin.value) || (ADMIN_ROUTES.includes(route.name) && isAdmin.value))
 const displayName = computed(() => getUser()?.username || 'Administrador')
+function requestConnections() { window.dispatchEvent(new Event('igris:open-connections')) }
+function requestMemory() { window.dispatchEvent(new Event('igris:open-memory')) }
+
 const displayInitials = computed(() => {
   const parts = displayName.value.trim().split(/\s+/).filter(Boolean)
   return parts.slice(0, 2).map(part => part[0]).join('').toUpperCase()
