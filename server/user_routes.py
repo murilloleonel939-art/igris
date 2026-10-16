@@ -807,6 +807,34 @@ def delete_user_memory(
     return {"status": "ok"}
 
 
+# ============= PROACTIVIDAD CONTROLADA =============
+
+@router.get("/api/user/proactive-alerts")
+def user_proactive_alerts(
+    user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+):
+    """Devuelve avisos de recordatorios próximos o vencidos, sin ejecutar acciones."""
+    now = datetime.utcnow()
+    horizon = now + timedelta(hours=24)
+    rows = db.query(Reminder).filter(
+        Reminder.user_id == user.id,
+        Reminder.status == "pendiente",
+        Reminder.due_at <= horizon,
+    ).order_by(Reminder.due_at).limit(12).all()
+    alerts = []
+    for row in rows:
+        late = row.due_at < now
+        alerts.append({
+            "key": f"reminder:{row.id}:{row.due_at.isoformat()}",
+            "kind": "reminder_overdue" if late else "reminder_upcoming",
+            "title": "Recordatorio vencido" if late else "Recordatorio próximo",
+            "text": row.text,
+            "due_at": row.due_at.isoformat() if row.due_at else None,
+        })
+    return {"alerts": alerts, "generated_at": now.isoformat()}
+
+
 # ============= PERCEPCIÓN EN MODO LECTURA =============
 
 @router.get("/api/user/perception")

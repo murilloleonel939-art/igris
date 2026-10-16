@@ -13,6 +13,13 @@
     <!-- Avisos -->
     <div v-if="notice" class="notice">{{ notice }}</div>
     <div v-else-if="needsTap" class="notice soft">Toca la pantalla para activar el sonido</div>
+    <div v-if="proactive.alerts.length" class="proactive-alerts" role="status">
+      <div v-for="alert in proactive.alerts" :key="alert.key" class="proactive-alert">
+        <span class="proactive-icon">{{ alert.kind === 'reminder_overdue' ? '!' : '•' }}</span>
+        <div><strong>{{ alert.title }}</strong><span>{{ alert.text }} · {{ formatPerceptionDate(alert.due_at) }}</span></div>
+        <button type="button" class="proactive-close" @click="dismissProactive(alert)">×</button>
+      </div>
+    </div>
 
     <!-- Panel de memoria personal y operativa -->
     <div v-if="memories.open" class="conn-backdrop" @click.self="memories.open = false">
@@ -655,6 +662,26 @@ function logout() {
    qué funciones tiene el usuario y le deja conectar SUS cuentas. Los permisos
    no se pueden tocar desde aquí. */
 
+const proactive = ref({ alerts: [] })
+let proactiveTimer = 0
+
+function dismissProactive(alert) {
+  const dismissed = JSON.parse(localStorage.getItem('igris:dismissed-alerts') || '[]')
+  if (!dismissed.includes(alert.key)) dismissed.push(alert.key)
+  localStorage.setItem('igris:dismissed-alerts', JSON.stringify(dismissed.slice(-50)))
+  proactive.value.alerts = proactive.value.alerts.filter((item) => item.key !== alert.key)
+}
+
+async function refreshProactiveAlerts() {
+  try {
+    const res = await userApi.get('/api/user/proactive-alerts')
+    const dismissed = new Set(JSON.parse(localStorage.getItem('igris:dismissed-alerts') || '[]'))
+    proactive.value.alerts = (res.data?.alerts || []).filter((alert) => !dismissed.has(alert.key))
+  } catch (e) {
+    // Los avisos son opcionales; no interrumpen el chat si la consulta falla.
+  }
+}
+
 const perception = ref({
   open: false,
   loading: false,
@@ -984,6 +1011,8 @@ onMounted(() => {
   window.addEventListener('pointerdown', unlock, { once: true })
   window.addEventListener('keydown', unlock, { once: true })
   runHandsFree()
+  refreshProactiveAlerts()
+  proactiveTimer = window.setInterval(refreshProactiveAlerts, 60000)
   if (route.query.open === 'connections' || route.name === 'UserConnections') openConnections()
   if (route.query.open === 'memory' && route.name === 'UserChat') openMemories()
 })
@@ -995,6 +1024,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('pointerdown', unlock)
   window.removeEventListener('keydown', unlock)
   clearTimeout(noticeTimer)
+  clearInterval(proactiveTimer)
   handsFree.value = false
   if (recognition) recognition.abort()
   stopSpeaking()
@@ -1005,6 +1035,31 @@ onBeforeUnmount(() => {
 
 <style scoped>
 /* ── Paneles (conexiones y memoria) — diseño del workspace ── */
+.proactive-alerts {
+  position: fixed;
+  z-index: 50;
+  top: 5rem;
+  right: 1rem;
+  width: min(26rem, calc(100vw - 2rem));
+  display: grid;
+  gap: .5rem;
+}
+.proactive-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: .6rem;
+  padding: .75rem .8rem;
+  border: 1px solid rgba(240, 128, 114, .45);
+  border-radius: .7rem;
+  background: rgba(35, 15, 13, .95);
+  color: #f2e8e3;
+  box-shadow: 0 12px 30px rgba(0,0,0,.28);
+}
+.proactive-alert strong,
+.proactive-alert span { display: block; }
+.proactive-alert span { margin-top: .15rem; color: #cbbab3; font-size: .78rem; }
+.proactive-icon { color: #f08072 !important; font-weight: 800; font-size: 1rem !important; }
+.proactive-close { margin-left: auto; border: 0; background: transparent; color: #b9aaa4; font-size: 1.2rem; cursor: pointer; }
 .conn-backdrop {
   position: fixed;
   inset: 0;
