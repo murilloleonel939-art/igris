@@ -18,7 +18,7 @@ from jose import JWTError, jwt
 from core import Brain, config, stt          # ← añadido stt
 from core import database, telegram_links
 from core.capabilities import admin_capabilities, capabilities_from_user
-from core.database import GoogleAccount, Profile, User
+from core.database import GoogleAccount, Profile, TelegramLink, User
 from core.auth import ALGORITHM, SECRET_KEY, hash_password
 from core.settings_manager import get_settings
 from core.memory import load_memories, remember_from_text
@@ -235,6 +235,31 @@ async def require_key(
     _register_failure(ip, now)
     raise HTTPException(status_code=401, detail="Acceso de administrador inválido")
 
+
+def _bind_admin_identity_from_bearer(session, authorization: Optional[str], text: Optional[str] = None) -> None:
+    """Si el panel admin se abrió con usuario admin, ata la sesión a ese usuario.
+
+    Mantiene la clave histórica sin usuario como antes, pero cuando existe un JWT
+    admin válido permite que /api/chat y /api/voice-chat tengan memoria, notas y
+    recordatorios del administrador autenticado.
+    """
+    user = _admin_user_from_bearer(authorization)
+    if user is None:
+        return
+
+    session.user_id = user.id
+    session.capabilities = admin_capabilities()
+    session.addressing_instruction = user.addressing_instruction or ""
+    with database.SessionLocal() as db:
+        account = db.query(GoogleAccount).filter(GoogleAccount.user_id == user.id).first()
+        session.google_linked = account.email if account is not None else None
+        link = db.query(TelegramLink).filter(TelegramLink.user_id == user.id).first()
+        session.telegram_linked = bool(link and link.chat_id)
+        if text:
+            remember_from_text(db, user.id, text)
+        session.personal_memory = load_memories(db, user.id, "personal")
+        session.operational_memory = load_memories(db, user.id, "operational")
+
 # Instancia global del cerebro y almacén de sesiones (historial por conversación)
 brain = Brain()
 sessions = SessionStore(brain)
@@ -347,7 +372,11 @@ async def register_admin_voice(audio: UploadFile = File(...)):
 
 
 @app.post("/api/voice-chat", dependencies=[Depends(require_key)])
-async def admin_voice_chat(audio: UploadFile = File(...), session_id: Optional[str] = Form(None)):
+async def admin_voice_chat(
+    audio: UploadFile = File(...),
+    session_id: Optional[str] = Form(None),
+    authorization: Optional[str] = Header(default=None),
+):
     """Transcribe y ejecuta; si hay perfil admin registrado, valida la voz primero."""
     data = await audio.read()
     if len(data) < 1_000:
@@ -373,7 +402,9 @@ async def admin_voice_chat(audio: UploadFile = File(...), session_id: Optional[s
     if not text:
         raise HTTPException(status_code=422, detail="No se entendió la orden")
     sid = "".join(c for c in (session_id or "") if c.isalnum() or c in "-_")[:64] or "default"
-    reply = await sessions.get(f"web:{sid}").say(text)
+    session = sessions.get(f"web:{sid}")
+    _bind_admin_identity_from_bearer(session, authorization, text)
+    reply = await session.say(text)
     result = {"status": "ok", "text": text, "reply": reply}
     if score is not None:
         result["voice_score"] = round(score, 3)
@@ -381,13 +412,14 @@ async def admin_voice_chat(audio: UploadFile = File(...), session_id: Optional[s
 
 
 @app.post("/api/chat", dependencies=[Depends(require_key)])
-async def http_chat(req: ChatRequest):
+async def http_chat(req: ChatRequest, authorization: Optional[str] = Header(default=None)):
     """Endpoint de chat simple - requiere X-Igris-Key"""
     try:
         # Se limpia el id y se prefija "web:"; sin id se usa una sesión única
         # (uso personal con una sola clave de acceso).
         sid = "".join(c for c in (req.session_id or "") if c.isalnum() or c in "-_")[:64] or "default"
         session = sessions.get(f"web:{sid}")
+        _bind_admin_identity_from_bearer(session, authorization, req.text)
         reply = await session.say(req.text)
         return {"status": "ok", "reply": reply}
     except Exception as e:
