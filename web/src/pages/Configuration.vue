@@ -176,12 +176,28 @@
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <h2 class="text-lg font-semibold text-white mb-2">Transcripción (STT)</h2>
-            <div class="bg-slate-700 rounded-lg p-4">
-              <div class="flex items-center">
-                <svg class="w-5 h-5 text-blue-400 mr-2" viewBox="0 0 24 24"><path fill="currentColor" d="M12 15l2-6h4l-3 5 6-3-8 4-2-6z"/></svg>
-                <span>{{ aiConfig.stt.provider }}</span>
+            <div class="bg-slate-700 rounded-lg p-4 space-y-3">
+              <div class="flex items-center justify-between">
+                <span class="text-slate-300">Proveedor activo</span>
+                <span class="font-semibold text-white">{{ sttConfig.provider === 'openai' ? 'Whisper OpenAI' : 'Whisper local' }}</span>
               </div>
-              <p class="text-sm text-slate-400 mt-1">Habilitado: {{ aiConfig.stt.enabled ? 'Sí' : 'No' }}</p>
+              <label class="block text-sm font-medium text-slate-300">Seleccionar proveedor
+                <select v-model="sttEdit.provider" class="mt-1 block w-full px-3 py-2 bg-slate-600 border border-slate-500 rounded text-white">
+                  <option value="local">Whisper local (sin coste de API)</option>
+                  <option value="openai">Whisper OpenAI (coste por minuto)</option>
+                </select>
+              </label>
+              <div v-if="sttEdit.provider === 'openai'" class="text-sm text-slate-300">
+                <p>Modelo: {{ sttConfig.cloud_model }} · La clave permanece en Coolify y nunca se muestra aquí.</p>
+                <p v-if="!sttConfig.cloud_ready" class="text-amber-300 mt-1">Falta configurar IGRIS_STT_API_KEY en el backend.</p>
+              </div>
+              <p v-else class="text-sm text-slate-400">Modelo local: {{ sttConfig.local_model }}</p>
+              <button @click="saveSTTConfig" :disabled="sttSaving || (sttEdit.provider === 'openai' && !sttConfig.cloud_ready)" class="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded disabled:opacity-50">
+                {{ sttSaving ? 'Guardando...' : 'Guardar proveedor STT' }}
+              </button>
+              <p class="text-xs text-slate-400">Para probar la transcripción cloud, envía un comando de voz después de guardar. El selector no expone ni modifica claves.</p>
+              <p v-if="sttSuccess" class="text-sm text-green-300">{{ sttSuccess }}</p>
+              <p v-if="sttError" class="text-sm text-red-300">{{ sttError }}</p>
             </div>
           </div>
           <div>
@@ -218,6 +234,11 @@ const editConfig = ref({
 const saving = ref(false)
 const saveSuccess = ref(null)
 const saveError = ref(null)
+const sttConfig = ref({ provider: 'local', cloud_model: 'whisper-1', local_model: 'tiny', cloud_ready: false })
+const sttEdit = ref({ provider: 'local' })
+const sttSaving = ref(false)
+const sttSuccess = ref('')
+const sttError = ref('')
 
 // Available providers (should match what's in config.py)
 const availableProviders = ['groq', 'nemotron', 'openai', 'anthropic', 'local']
@@ -226,7 +247,14 @@ const loadAIConfig = async () => {
   try {
     loading.value = true
     error.value = null
-    const response = await api.get('/api/ai-config')
+    const [response, sttResponse] = await Promise.all([
+      api.get('/api/ai-config'),
+      api.get('/api/stt-config')
+    ])
+    if (sttResponse.data.status === 'ok') {
+      sttConfig.value = sttResponse.data
+      sttEdit.value.provider = sttResponse.data.provider
+    }
     if (response.data.status === 'ok') {
       aiConfig.value = {
         primary_provider: response.data.primary_provider,
@@ -256,6 +284,21 @@ const toggleFallback = (provider) => {
     editConfig.value.fallback_chain.push(provider)
   } else {
     editConfig.value.fallback_chain.splice(index, 1)
+  }
+}
+
+const saveSTTConfig = async () => {
+  try {
+    sttSaving.value = true
+    sttSuccess.value = ''
+    sttError.value = ''
+    const response = await api.put('/api/stt-config', { provider: sttEdit.value.provider })
+    sttConfig.value = response.data
+    sttSuccess.value = response.data.message || 'Proveedor de transcripción actualizado.'
+  } catch (err) {
+    sttError.value = err.response?.data?.detail || 'No se pudo guardar el proveedor STT.'
+  } finally {
+    sttSaving.value = false
   }
 }
 

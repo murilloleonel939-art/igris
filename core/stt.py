@@ -19,11 +19,21 @@ except Exception:  # pragma: no cover
 AudioInput = Union[bytes, bytearray, memoryview, io.BytesIO]
 
 _whisper_model = None
+_whisper_model_name = None
+
+
+def _settings() -> dict:
+    """Configuración STT persistente, con variables de entorno como base."""
+    try:
+        from core.settings_manager import get_settings
+        return get_settings().get_stt_config()
+    except Exception:
+        return {}
 
 
 def _language() -> str:
-    """Idioma del audio (código ISO-639-1). Se configura con IGRIS_STT_LANGUAGE."""
-    lang = os.getenv("IGRIS_STT_LANGUAGE", "es").strip().lower().split("-")[0]
+    """Idioma del audio (código ISO-639-1)."""
+    lang = (_settings().get("language") or os.getenv("IGRIS_STT_LANGUAGE", "es")).strip().lower().split("-")[0]
     return lang or "es"
 
 
@@ -42,16 +52,17 @@ def _to_bytes(audio: AudioInput) -> bytes:
 
 
 def _load_whisper_model():
-    """Carga (y cachea) un modelo de Whisper local la primera vez que se necesita."""
-    global _whisper_model
-    if _whisper_model is None:
+    """Carga y cachea el modelo local activo; recarga si se cambia desde ajustes."""
+    global _whisper_model, _whisper_model_name
+    model_name = _settings().get("local_model") or os.getenv("IGRIS_WHISPER_MODEL", "base")
+    if _whisper_model is None or _whisper_model_name != model_name:
         if whisper is None:
             raise RuntimeError(
                 "El paquete 'openai-whisper' no está instalado. "
                 "Instálalo con: pip install openai-whisper"
             )
-        model_name = os.getenv("IGRIS_WHISPER_MODEL", "base")
         _whisper_model = whisper.load_model(model_name)
+        _whisper_model_name = model_name
     return _whisper_model
 
 
@@ -63,7 +74,8 @@ def transcribe(audio: AudioInput, suffix: str = ".ogg") -> str:
     Es una función bloqueante: desde código async llámala con
     `await asyncio.to_thread(transcribe, audio)`.
     """
-    provider = os.getenv("IGRIS_STT_PROVIDER", "local").lower().strip()
+    stt_config = _settings()
+    provider = (stt_config.get("provider") or os.getenv("IGRIS_STT_PROVIDER", "local")).lower().strip()
     data = _to_bytes(audio)
 
     if provider == "openai":
@@ -72,20 +84,17 @@ def transcribe(audio: AudioInput, suffix: str = ".ogg") -> str:
                 "El paquete 'openai' no está instalado. "
                 "Instálalo con: pip install openai"
             )
-        # La clave de STT es independiente de la clave del proveedor de chat.
-        # Así Pateway puede seguir en OPENAI_API_KEY mientras Whisper usa OpenAI directo.
-        api_key = os.getenv("IGRIS_STT_API_KEY") or os.getenv("OPENAI_API_KEY")
+        # No usar OPENAI_API_KEY: en despliegues de Igris puede ser la clave Pateway.
+        api_key = os.getenv("IGRIS_STT_API_KEY")
         if not api_key:
             raise RuntimeError(
-                "Falta IGRIS_STT_API_KEY u OPENAI_API_KEY para usar Whisper en la nube."
+                "Falta IGRIS_STT_API_KEY (clave OpenAI directa) para usar Whisper en la nube."
             )
-        base_url = (
-            os.getenv("IGRIS_STT_API_BASE") or "https://api.openai.com/v1"
-        ).rstrip("/")
+        base_url = (os.getenv("IGRIS_STT_API_BASE") or "https://api.openai.com/v1").rstrip("/")
         client = OpenAI(api_key=api_key, base_url=base_url)
         try:
             resp = client.audio.transcriptions.create(
-                model=os.getenv("IGRIS_STT_MODEL", "whisper-1"),
+                model=stt_config.get("cloud_model") or os.getenv("IGRIS_STT_MODEL", "whisper-1"),
                 file=(f"audio{suffix}", data, "audio/webm" if suffix == ".webm" else "audio/ogg"),
                 language=_language(),
             )

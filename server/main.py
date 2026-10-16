@@ -316,7 +316,7 @@ async def status():
         "available_providers": config.get_available_providers(),
         "fallback_chain": config.get_fallback_chain(),
         "stt": {
-            "provider": os.environ.get("IGRIS_STT_PROVIDER", "local"),
+            "provider": get_settings().get_stt_config().get("provider", "local"),
             "enabled": True,
         },
         "tts": {
@@ -439,6 +439,68 @@ class AIConfigResponse(BaseModel):
     primary_provider: str
     fallback_chain: List[str]
     message: Optional[str] = None
+
+
+class STTConfigUpdate(BaseModel):
+    provider: str
+    cloud_model: Optional[str] = None
+    local_model: Optional[str] = None
+    language: Optional[str] = None
+
+
+class STTConfigResponse(BaseModel):
+    status: str
+    provider: str
+    cloud_model: str
+    local_model: str
+    language: str
+    cloud_ready: bool = False
+    message: Optional[str] = None
+
+
+@app.get("/api/stt-config", dependencies=[Depends(require_key)])
+async def get_stt_config():
+    settings = get_settings().get_stt_config()
+    return STTConfigResponse(
+        status="ok",
+        provider=settings.get("provider", "local"),
+        cloud_model=settings.get("cloud_model", "whisper-1"),
+        local_model=settings.get("local_model", "tiny"),
+        language=settings.get("language", "es"),
+        cloud_ready=bool(os.getenv("IGRIS_STT_API_KEY")),
+    )
+
+
+@app.put("/api/stt-config", dependencies=[Depends(require_key)])
+async def update_stt_config(update: STTConfigUpdate):
+    try:
+        settings = get_settings()
+        current = settings.get_stt_config()
+        provider = update.provider.strip().lower()
+        if provider not in {"local", "openai"}:
+            raise ValueError("Proveedor STT no válido. Usa local u openai.")
+        if provider == "openai" and not os.getenv("IGRIS_STT_API_KEY"):
+            raise ValueError("Falta IGRIS_STT_API_KEY en el backend para activar Whisper OpenAI.")
+        data = {
+            "provider": provider,
+            "cloud_model": update.cloud_model or current.get("cloud_model", "whisper-1"),
+            "local_model": update.local_model or current.get("local_model", "tiny"),
+            "language": update.language or current.get("language", "es"),
+        }
+        if not settings.set_stt_config(data):
+            raise RuntimeError("No se pudo guardar la configuración STT")
+        result = settings.get_stt_config()
+        return STTConfigResponse(
+            status="ok", provider=result["provider"], cloud_model=result.get("cloud_model", "whisper-1"),
+            local_model=result.get("local_model", "tiny"), language=result.get("language", "es"),
+            cloud_ready=bool(os.getenv("IGRIS_STT_API_KEY")),
+            message="Configuración de transcripción guardada; aplica inmediatamente.",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        logger.exception("Error guardando configuración STT")
+        raise HTTPException(status_code=500, detail="No se pudo guardar la configuración STT") from exc
 
 
 @app.get("/api/ai-config", dependencies=[Depends(require_key)])

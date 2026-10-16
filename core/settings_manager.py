@@ -101,8 +101,41 @@ class SettingsManager:
         return self.save()
 
     def get_stt_config(self) -> dict:
-        """Obtiene configuración de STT."""
-        return self.settings.get("stt", {})
+        """Resuelve overrides del panel sobre los valores base de entorno."""
+        saved = self.settings.get("stt", {})
+        saved = saved if isinstance(saved, dict) else {}
+        defaults = self.get_defaults()["stt"]
+        result = {**defaults, **saved}
+        # settings.json antiguos incluían provider/model como defaults estáticos.
+        # Solo un cambio explícito del panel debe prevalecer sobre Coolify.
+        if not saved.get("provider_override"):
+            result["provider"] = defaults["provider"]
+        if "local_model" not in saved and saved.get("model"):
+            result["local_model"] = saved["model"]
+        return result
+
+    def set_stt_config(self, config: dict) -> bool:
+        """Guarda solo overrides STT (nunca claves secretas ni defaults redundantes)."""
+        defaults = self.get_defaults()["stt"]
+        current = self.settings.get("stt", {})
+        current = dict(current) if isinstance(current, dict) else {}
+        for key in ("provider", "cloud_model", "local_model", "language"):
+            if key not in config or config[key] is None:
+                continue
+            value = str(config[key]).strip()
+            if key == "provider":
+                value = value.lower()
+                if value not in {"local", "openai"}:
+                    raise ValueError("Proveedor STT no válido")
+                current[key] = value
+                current["provider_override"] = True
+            elif key == "language":
+                value = value.lower()
+                current[key] = value
+            elif value:
+                current[key] = value
+        self.settings["stt"] = current
+        return self.save()
 
     def get_tts_config(self) -> dict:
         """Obtiene configuración de TTS."""
@@ -141,9 +174,10 @@ class SettingsManager:
                 }
             },
             "stt": {
-                "provider": "local",
-                "model": "tiny",
-                "language": "es"
+                "provider": os.getenv("IGRIS_STT_PROVIDER", "local"),
+                "cloud_model": os.getenv("IGRIS_STT_MODEL", "whisper-1"),
+                "local_model": os.getenv("IGRIS_WHISPER_MODEL", "tiny"),
+                "language": os.getenv("IGRIS_STT_LANGUAGE", "es")
             },
             "tts": {
                 "provider": "local",
