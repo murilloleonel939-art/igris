@@ -4,7 +4,7 @@
     <IgrisHero v-if="$route.name === 'Chat' || $route.name === 'UserChat'" />
 
     <!-- Navegación del espacio de trabajo, compartida y adaptada por rol -->
-    <WorkspaceNav v-if="showNav" :admin="isAdmin" :username="displayName" @logout="logout" @connections="requestConnections" @memory="requestMemory" />
+    <WorkspaceNav v-if="showNav" :admin="isAdmin" :username="displayName" @logout="logout" @connections="requestConnections" @memory="requestMemory" @perception="requestPerception" />
 
     <!-- Page Content (por encima del avatar) -->
     <div style="position: relative; z-index: 10">
@@ -37,6 +37,7 @@ const displayName = computed(() => {
   return getUser()?.username || 'Administrador'
 })
 function requestConnections() { window.dispatchEvent(new Event('igris:open-connections')) }
+function requestPerception() { window.dispatchEvent(new Event('igris:open-perception')) }
 function requestMemory() {
   if (route.name === 'UserChat' && route.query.open !== 'memory') {
     router.push({ name: 'UserChat', query: { open: 'memory' } })

@@ -59,6 +59,49 @@
       </div>
     </div>
 
+    <!-- Panel de percepción en modo lectura -->
+    <div v-if="perception.open" class="conn-backdrop" @click.self="perception.open = false">
+      <div class="conn perception-panel">
+        <header class="conn-head">
+          <div class="conn-crumbs"><span>Workspace</span><span>›</span><span>Resumen del día</span></div>
+          <h2>Resumen del día</h2>
+          <p>Información de tus fuentes conectadas. Igris no cambia nada desde aquí.</p>
+        </header>
+        <p v-if="perception.error" class="conn-error">{{ perception.error }}</p>
+        <p v-if="perception.loading" class="conn-note">Consultando tus datos…</p>
+        <template v-else>
+          <section>
+            <h3>Recordatorios pendientes</h3>
+            <div v-if="!perception.data.reminders.length" class="conn-note">No tienes recordatorios pendientes.</div>
+            <div v-for="item in perception.data.reminders" :key="`r-${item.id}`" class="perception-item">
+              <strong>{{ item.text }}</strong><span>{{ formatPerceptionDate(item.due_at) }}</span>
+            </div>
+          </section>
+          <section>
+            <h3>Calendario próximo</h3>
+            <div v-if="!perception.data.calendar.length" class="conn-note">No hay eventos en los próximos 7 días.</div>
+            <div v-for="item in perception.data.calendar" :key="`c-${item.id}`" class="perception-item">
+              <strong>{{ item.titulo }}</strong><span>{{ item.fecha }}<template v-if="item.inicio"> · {{ item.inicio }}</template></span>
+            </div>
+          </section>
+          <section>
+            <h3>Correos sin leer</h3>
+            <div v-if="!perception.data.emails.length" class="conn-note">No hay correos sin leer o Google no está conectado.</div>
+            <div v-for="item in perception.data.emails" :key="`e-${item.id}`" class="perception-item">
+              <strong>{{ item.asunto }}</strong><span>{{ item.de }} · {{ item.recibido }}</span>
+            </div>
+          </section>
+          <section>
+            <h3>Notas recientes</h3>
+            <div v-if="!perception.data.notes.length" class="conn-note">No tienes notas guardadas.</div>
+            <div v-for="item in perception.data.notes" :key="`n-${item.id}`" class="perception-item"><span>{{ item.text }}</span></div>
+          </section>
+          <p v-if="perception.data.errors.length" class="conn-error">{{ perception.data.errors.join(' ') }}</p>
+        </template>
+        <div class="conn-foot"><button class="btn ghost" @click="perception.open = false">Cerrar</button></div>
+      </div>
+    </div>
+
     <!-- Panel de conexiones: qué funciones tienes y qué te falta conectar -->
     <div v-if="conn.open || route.name === 'UserConnections'" class="conn-backdrop" :class="{ 'conn-page': route.name === 'UserConnections' }" @click.self="route.name !== 'UserConnections' && (conn.open = false)">
       <div class="conn">
@@ -612,6 +655,39 @@ function logout() {
    qué funciones tiene el usuario y le deja conectar SUS cuentas. Los permisos
    no se pueden tocar desde aquí. */
 
+const perception = ref({
+  open: false,
+  loading: false,
+  error: '',
+  data: { reminders: [], notes: [], calendar: [], emails: [], errors: [] },
+})
+
+function formatPerceptionDate(value) {
+  if (!value) return ''
+  try { return new Date(value).toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' }) } catch (e) { return value }
+}
+
+async function refreshPerception() {
+  perception.value.loading = true
+  perception.value.error = ''
+  try {
+    const res = await userApi.get('/api/user/perception')
+    perception.value.data = {
+      reminders: res.data?.reminders || [], notes: res.data?.notes || [],
+      calendar: res.data?.calendar || [], emails: res.data?.emails || [], errors: res.data?.errors || [],
+    }
+  } catch (e) {
+    perception.value.error = errorMessage(e, 'No se pudo consultar tu resumen')
+  } finally {
+    perception.value.loading = false
+  }
+}
+
+function openPerception() {
+  perception.value.open = true
+  refreshPerception()
+}
+
 const memories = ref({
   open: false,
   loading: false,
@@ -904,6 +980,7 @@ const unlock = () => {
 onMounted(() => {
   window.addEventListener('igris:open-connections', openConnections)
   window.addEventListener('igris:open-memory', openMemories)
+  window.addEventListener('igris:open-perception', openPerception)
   window.addEventListener('pointerdown', unlock, { once: true })
   window.addEventListener('keydown', unlock, { once: true })
   runHandsFree()
@@ -914,6 +991,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener('igris:open-connections', openConnections)
   window.removeEventListener('igris:open-memory', openMemories)
+  window.removeEventListener('igris:open-perception', openPerception)
   window.removeEventListener('pointerdown', unlock)
   window.removeEventListener('keydown', unlock)
   clearTimeout(noticeTimer)
@@ -1008,6 +1086,22 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
+}
+.perception-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.7rem;
+  margin: 0.45rem 0;
+  padding: 0.65rem;
+  border: 1px solid rgba(255, 255, 255, .1);
+  border-radius: .6rem;
+  background: rgba(255,255,255,.035);
+  font-size: .82rem;
+}
+.perception-item span:last-child {
+  color: #a99a94;
+  text-align: right;
+  font-size: .75rem;
 }
 .memory-item {
   display: flex;

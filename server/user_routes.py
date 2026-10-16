@@ -50,8 +50,10 @@ from core.capabilities import (
     admin_capabilities,
     capabilities_from_user,
 )
-from core.database import GoogleAccount, Profile, TelegramLink, User, UserMemory, get_db
+from core.database import GoogleAccount, Note, Profile, Reminder, TelegramLink, User, UserMemory, get_db
 from core.memory import load_memories, remember_from_text
+from core.tools import gcalendar, gmail
+from core.tools.time_tools import DEFAULT_TZ, _format
 from core import stt, voice
 
 router = APIRouter()
@@ -803,6 +805,82 @@ def delete_user_memory(
     db.delete(memory)
     db.commit()
     return {"status": "ok"}
+
+
+# ============= PERCEPCIÓN EN MODO LECTURA =============
+
+@router.get("/api/user/perception")
+async def user_perception(
+    user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+):
+    """Resume pendientes propios y conexiones, sin ejecutar cambios."""
+    caps = admin_capabilities() if user.is_admin else capabilities_from_user(user)
+    now = datetime.utcnow()
+    reminders = []
+    notes = []
+    if caps.has("reminders"):
+        reminders = [
+            {
+                "id": row.id,
+                "text": row.text,
+                "due_at": row.due_at.isoformat() if row.due_at else None,
+                "repeat": row.repeat,
+            }
+            for row in db.query(Reminder).filter(
+                Reminder.user_id == user.id,
+                Reminder.status == "pendiente",
+            ).order_by(Reminder.due_at).limit(8).all()
+        ]
+    if caps.has("notes"):
+        notes = [
+            {
+                "id": row.id,
+                "text": row.text[:240],
+                "created_at": row.created_at.isoformat() if row.created_at else None,
+            }
+            for row in db.query(Note).filter(
+                Note.user_id == user.id,
+            ).order_by(Note.created_at.desc(), Note.id.desc()).limit(8).all()
+        ]
+
+    google = db.query(GoogleAccount).filter(GoogleAccount.user_id == user.id).first()
+    telegram = db.query(TelegramLink).filter(TelegramLink.user_id == user.id).first()
+    result = {
+        "generated_at": now.isoformat(),
+        "reminders": reminders,
+        "notes": notes,
+        "calendar": [],
+        "emails": [],
+        "google_connected": google is not None,
+        "google_email": google.email if google else None,
+        "telegram_connected": bool(telegram and telegram.chat_id),
+        "errors": [],
+    }
+
+    if _sessions is None:
+        result["errors"].append("El chat no está disponible para consultar Google.")
+        return result
+
+    session = _sessions.get(_session_key(user.id, "perception"))
+    _bind_identity(session, user, db)
+    google_tasks = []
+    if caps.has("calendar") and google is not None:
+        google_tasks.append(("calendar", gcalendar.list_events(days=7, _session=session)))
+    if caps.has("email") and google is not None:
+        google_tasks.append(("emails", gmail.list_emails(unread_only=True, max_results=5, _session=session)))
+    if google_tasks:
+        values = await asyncio.gather(*(task for _, task in google_tasks), return_exceptions=True)
+        for (name, _), value in zip(google_tasks, values):
+            if isinstance(value, Exception):
+                result["errors"].append(f"No se pudo consultar {name}.")
+            elif isinstance(value, dict) and value.get("error"):
+                result["errors"].append(value["error"])
+            elif name == "calendar":
+                result["calendar"] = value.get("eventos", [])
+            elif name == "emails":
+                result["emails"] = value.get("correos", [])
+    return result
 
 
 # ============= CHAT Y VOZ DEL USUARIO =============
