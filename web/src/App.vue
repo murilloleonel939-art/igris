@@ -28,7 +28,7 @@ const router = useRouter()
 // /u de usuarios normales mantiene únicamente chat, conexiones y memoria.
 const ADMIN_ROUTES = ['Configuration', 'AdminConnections', 'AdminUsers']
 const isAdmin = computed(() => isAdminUser() || !!getKey())
-const showNav = computed(() => route.name === 'UserChat' || (route.name === 'Chat' && isAdmin.value) || (ADMIN_ROUTES.includes(route.name) && isAdmin.value))
+const showNav = computed(() => route.name === 'UserChat' || route.name === 'Chat' || (ADMIN_ROUTES.includes(route.name) && isAdmin.value))
 const displayName = computed(() => getUser()?.username || 'Administrador')
 function requestConnections() { window.dispatchEvent(new Event('igris:open-connections')) }
 function requestMemory() { window.dispatchEvent(new Event('igris:open-memory')) }
