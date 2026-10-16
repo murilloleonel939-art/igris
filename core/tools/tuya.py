@@ -7,7 +7,9 @@ import hmac
 import json
 import logging
 import os
+import re
 import time
+import unicodedata
 from typing import Any
 
 import httpx
@@ -109,6 +111,12 @@ def _allowed_device(device_id: str) -> bool:
     return bool(allowed) and device_id in allowed
 
 
+def _normalize_device_name(value: Any) -> str:
+    text = unicodedata.normalize("NFKD", str(value or ""))
+    text = "".join(char for char in text if not unicodedata.combining(char))
+    return re.sub(r"[^a-z0-9]+", " ", text.casefold()).strip()
+
+
 async def _resolve_device_id(device_ref: str) -> str | None:
     """Acepta el ID técnico o el nombre visible del dispositivo."""
     if _allowed_device(device_ref):
@@ -119,7 +127,7 @@ async def _resolve_device_id(device_ref: str) -> str | None:
             if (
                 device.get("id")
                 and _allowed_device(device["id"])
-                and str(device.get("nombre", "")).casefold() == device_ref.casefold()
+                and _normalize_device_name(device.get("nombre")) == _normalize_device_name(device_ref)
             ):
                 return device["id"]
     except Exception:
