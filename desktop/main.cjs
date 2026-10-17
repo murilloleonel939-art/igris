@@ -36,12 +36,21 @@ function createWindow() {
     return { action: 'deny' }
   })
 
+  const forceUserArea = (url) => {
+    if (!isUserUrl(url)) win.loadURL(`${APP_ORIGIN}/u`)
+  }
+
   win.webContents.on('will-navigate', (event, url) => {
     if (!isUserUrl(url)) {
       event.preventDefault()
-      if (url.startsWith('https://')) shell.openExternal(url)
+      if (url.startsWith('https://')) win.loadURL(`${APP_ORIGIN}/u`)
     }
   })
+
+  // Vue Router cambia de ruta sin navegación HTTP; este evento también cubre
+  // el redireccionamiento del login a `/` para usuarios administradores.
+  win.webContents.on('did-navigate-in-page', (_event, url) => forceUserArea(url))
+  win.webContents.on('did-navigate', (_event, url) => forceUserArea(url))
 
   win.loadURL(CHAT_URL)
 }
