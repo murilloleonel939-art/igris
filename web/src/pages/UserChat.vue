@@ -615,7 +615,6 @@ const runHandsFree = async () => {
       // capturado la voz. El backend usa Whisper para transcribir el audio.
       if (audio) {
         setIgrisState('processing')
-        setNotice('Transcribiendo con Deepgram…')
         const form = new FormData()
         form.append('audio', audio, 'voice.webm')
         form.append('session_id', sessionId)
