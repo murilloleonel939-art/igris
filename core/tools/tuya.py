@@ -604,73 +604,10 @@ async def send_tuya_command(device_id: str, code: str, value: Any) -> dict[str, 
 
 
 async def control_tuya_device(device_id: str, code: str, value: Any, _session=None) -> dict[str, Any]:
-    """Deja la orden pendiente de confirmación; no la ejecuta.
-
-    La ejecución la hace el servidor (ver `confirm_pending_command`) cuando el
-    mensaje REAL del usuario es una afirmación. Así no depende de que el modelo
-    vuelva a llamar la herramienta, que era lo que dejaba la orden bloqueada.
-    """
-    if _session is None:
-        return await send_tuya_command(device_id, code, value)
-
-    _session._tuya_pending = {
-        "device_id": device_id,
-        "code": code,
-        "value": value,
-        "turn": getattr(_session, "turn_no", 0),
-        "ts": time.time(),
-    }
-    return {
-        "requiere_confirmacion": True,
-        "device_id": device_id,
-        "code": code,
-        "value": value,
-        "mensaje": (
-            "La orden quedó pendiente. Pídele al usuario que la confirme respondiendo "
-            "«sí»; se ejecutará sola, no hace falta que vuelvas a llamar a esta herramienta."
-        ),
-    }
-
-
-def _confirmed(text: str) -> bool:
-    """Confirma la orden con un «sí» claro, aunque venga dentro de una frase corta.
-
-    Más tolerante que la confirmación de eventos porque aquí el usuario ya expresó
-    la intención antes y la orden concreta quedó fijada por el servidor: cualquier
-    respuesta con una negación o un cambio la descarta.
-    """
-    from core.tools.calendar_write import _AFFIRM, _BLOCKERS, _normalize, is_affirmative
-
-    if is_affirmative(text):
-        return True
-    normalized = _normalize(text or "")
-    if not normalized or len(normalized) > 60 or _BLOCKERS.search(normalized):
-        return False
-    return bool(_AFFIRM.search(normalized))
-
-
-async def confirm_pending_command(session) -> dict[str, Any] | None:
-    """Ejecuta la orden pendiente si el último mensaje real del usuario la confirma.
-
-    Devuelve None si no hay nada pendiente (el turno lo maneja el modelo como siempre).
-    """
-    pending = getattr(session, "_tuya_pending", None)
-    if not pending:
-        return None
-
-    from core.tools.calendar_write import PENDING_TTL
-
-    # Cualquier respuesta la consume: una orden solo se confirma en el turno siguiente.
-    session._tuya_pending = None
-
-    if time.time() - pending.get("ts", 0) > PENDING_TTL:
-        return {"error": "La orden caducó antes de confirmarse; hay que pedirla de nuevo."}
-    if getattr(session, "turn_no", 0) > pending.get("turn", 0) + 1:
-        return {"error": "La confirmación llegó tarde; la orden fue descartada."}
-    if not _confirmed(getattr(session, "last_user_text", "")):
-        return None
-
-    return await send_tuya_command(pending["device_id"], pending["code"], pending["value"])
+    """Ejecuta inmediatamente una orden explícita de Smart Life o Smart IR."""
+    # El usuario ya dio la orden en el mensaje actual. No se pide una segunda
+    # confirmación: se ejecuta directamente y se devuelve el resultado real.
+    return await send_tuya_command(device_id, code, value)
 
 
 async def list_tuya_device_status(device_id: str, _session=None) -> dict[str, Any]:

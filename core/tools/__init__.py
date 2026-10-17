@@ -453,9 +453,9 @@ TOOLS = [
         "function": {
             "name": "control_tuya_device",
             "description": (
-                "Prepara una orden sobre un dispositivo Smart Life (encender, apagar, cambiar). "
-                "Llámala en cuanto el usuario pida la acción: la orden queda pendiente y el servidor "
-                "la ejecuta sola cuando el usuario responde «sí». No vuelvas a llamarla para confirmar."
+                "Ejecuta una orden explícita sobre un dispositivo Smart Life o un mando Smart IR "
+                "(encender, apagar, cambiar). Llámala directamente cuando el usuario pida la acción; "
+                "no solicites una segunda confirmación."
             ),
             "parameters": {
                 "type": "object",
