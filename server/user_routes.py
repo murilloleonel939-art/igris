@@ -60,6 +60,41 @@ router = APIRouter()
 
 logger = logging.getLogger(__name__)
 
+DEEPGRAM_URL = "https://api.deepgram.com/v1/listen"
+
+
+async def transcribe_user_audio(data: bytes, content_type: str = "audio/webm") -> str:
+    """Transcribe audio con Deepgram cuando está configurado y usa Whisper como respaldo."""
+    api_key = os.getenv("DEEPGRAM_API_KEY", "").strip()
+    if not api_key:
+        return (await asyncio.to_thread(stt.transcribe, data, ".webm")).strip()
+
+    params = {
+        "model": os.getenv("DEEPGRAM_MODEL", "nova-3"),
+        "language": os.getenv("DEEPGRAM_LANGUAGE", "es"),
+        "smart_format": "true",
+        "punctuate": "true",
+        "utterances": "false",
+    }
+    headers = {
+        "Authorization": f"Token {api_key}",
+        "Content-Type": content_type or "audio/webm",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=45.0) as client:
+            response = await client.post(DEEPGRAM_URL, params=params, headers=headers, content=data)
+        response.raise_for_status()
+        payload = response.json()
+        channels = payload.get("results", {}).get("channels", [])
+        alternatives = channels[0].get("alternatives", []) if channels else []
+        text = alternatives[0].get("transcript", "").strip() if alternatives else ""
+        if not text:
+            raise ValueError("Deepgram no devolvió una transcripción")
+        return text
+    except Exception:
+        logger.exception("Falló la transcripción con Deepgram; se intentará Whisper local")
+        return (await asyncio.to_thread(stt.transcribe, data, ".webm")).strip()
+
 # ============= CONFIGURACIÓN =============
 
 USERNAME_RE = re.compile(r"^[A-Za-z0-9._-]{3,32}$")
@@ -1041,7 +1076,7 @@ async def user_voice_chat(
         logger.info("Usuario %s usa orden por voz sin perfil registrado", user.id)
 
     try:
-        text = (await asyncio.to_thread(stt.transcribe, data, ".webm")).strip()
+        text = await transcribe_user_audio(data, audio.content_type or "audio/webm")
     except Exception as exc:
         raise HTTPException(status_code=422, detail=f"No se pudo transcribir el audio: {exc}")
     if not text:

@@ -614,6 +614,8 @@ const runHandsFree = async () => {
       // SpeechRecognition puede no devolver texto aunque MediaRecorder sí haya
       // capturado la voz. El backend usa Whisper para transcribir el audio.
       if (audio) {
+        setIgrisState('processing')
+        setNotice('Transcribiendo con Deepgram…')
         const form = new FormData()
         form.append('audio', audio, 'voice.webm')
         form.append('session_id', sessionId)
@@ -622,6 +624,7 @@ const runHandsFree = async () => {
             headers: { 'Content-Type': 'multipart/form-data' },
           })
           if (response.data.status === 'ok') {
+            setNotice('')
             chatMessages.value.push({ from: 'user', text: response.data.text })
             chatMessages.value.push({ from: 'igris', text: response.data.reply })
             scrollToBottom()
