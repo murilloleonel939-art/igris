@@ -142,7 +142,15 @@ def _transcribe_local(tmp_path: str, settings: dict) -> str:
         return (result.get("text") or "").strip()
     if engine == "faster-whisper":
         compute_type = settings.get("local_compute_type") or os.getenv("IGRIS_STT_COMPUTE_TYPE", "int8")
-        segments, _ = _load_faster_whisper_model(model_name, compute_type).transcribe(tmp_path, language=language)
+        segments, _ = _load_faster_whisper_model(model_name, compute_type).transcribe(
+            tmp_path,
+            language=language,
+            beam_size=1,
+            best_of=1,
+            temperature=0,
+            vad_filter=True,
+            condition_on_previous_text=False,
+        )
         return " ".join(segment.text.strip() for segment in segments).strip()
     if engine == "whisper.cpp":
         return _transcribe_whisper_cpp(tmp_path, settings, language)
