@@ -70,16 +70,29 @@ def _transcribe_whisper_cpp(tmp_path: str, settings: dict, language: str) -> str
     model_path = settings.get("whisper_cpp_model") or os.getenv("IGRIS_WHISPER_CPP_MODEL")
     if not model_path:
         raise RuntimeError("Falta IGRIS_WHISPER_CPP_MODEL con la ruta del modelo GGML/GGUF.")
+    wav_path = None
     try:
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as wav_file:
+            wav_path = wav_file.name
+        subprocess.run(
+            ["ffmpeg", "-y", "-i", tmp_path, "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", wav_path],
+            capture_output=True, text=True, check=True,
+        )
         result = subprocess.run(
-            [binary, "-m", model_path, "-f", tmp_path, "-l", language, "-nt", "-np"],
+            [binary, "-m", model_path, "-f", wav_path, "-l", language, "-nt", "-np"],
             capture_output=True, text=True, check=True,
         )
     except FileNotFoundError as exc:
-        raise RuntimeError(f"No se encontró el binario de whisper.cpp: {binary}") from exc
+        raise RuntimeError(f"No se encontró ffmpeg o el binario de whisper.cpp: {exc.filename}") from exc
     except subprocess.CalledProcessError as exc:
         detail = (exc.stderr or exc.stdout or "").strip()
-        raise RuntimeError(f"whisper.cpp no pudo transcribir el audio: {detail}") from exc
+        raise RuntimeError(f"whisper.cpp no pudo procesar el audio: {detail}") from exc
+    finally:
+        if wav_path:
+            try:
+                os.remove(wav_path)
+            except OSError:
+                pass
     return (result.stdout or "").strip()
 
 
