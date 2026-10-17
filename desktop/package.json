@@ -16,7 +16,8 @@
   "build": {
     "appId": "com.zottagroup.igris",
     "productName": "Igris",
-    "files": ["main.cjs", "preload.cjs"],
+    "files": ["main.cjs", "preload.cjs", "voice_worker.py", "requirements.txt"],
+    "extraResources": ["voice_worker.exe"],
     "win": {
       "target": ["portable"]
     }

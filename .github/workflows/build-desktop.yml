@@ -27,6 +27,17 @@ jobs:
       - name: Instalar dependencias
         run: npm ci
 
+      - name: Instalar Python y dependencias de voz
+        run: |
+          py -3 -m pip install --upgrade pip
+          py -3 -m pip install -r requirements.txt pyinstaller
+
+      - name: Empaquetar motor Whisper
+        run: py -3 -m PyInstaller --onefile --name voice_worker voice_worker.py
+
+      - name: Copiar motor de voz al escritorio Electron
+        run: Copy-Item dist/voice_worker.exe voice_worker.exe
+
       - name: Construir ejecutable portable
         run: npm run dist
 
