@@ -506,6 +506,7 @@ async def update_stt_config(update: STTConfigUpdate):
             status="ok", provider=result["provider"], cloud_model=result.get("cloud_model", "whisper-1"),
             local_engine=result.get("local_engine", "whisper"),
             local_compute_type=result.get("local_compute_type", "int8"),
+            whisper_cpp_model=result.get("whisper_cpp_model", ""),
             local_model=result.get("local_model", "tiny"), language=result.get("language", "es"),
             cloud_ready=bool(os.getenv("IGRIS_STT_API_KEY")),
             message="Configuración de transcripción guardada; aplica inmediatamente.",
