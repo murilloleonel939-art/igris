@@ -17,7 +17,7 @@
  *                              deben quedar en disco ni reutilizarse sin conexión.
  *   - Cualquier otro origen    -> solo se gestiona lo propio.
  */
-const CACHE = 'igris-v2'
+const CACHE = 'igris-v3'
 
 // Mínimo imprescindible para que la app abra sin conexión.
 // Se guardan las dos pantallas de acceso y los dos manifests, porque son dos

@@ -297,7 +297,9 @@ const textInput = ref(null)
 const showInput = ref(false)
 const isListening = ref(false)
 const isBusy = ref(false)
-const handsFree = ref(true)
+// En una PWA instalada el navegador puede bloquear el micrófono si se solicita
+// durante el arranque, antes de una acción del usuario.
+const handsFree = ref(false)
 const isPlayingTTS = ref([])
 const voiceRegistered = ref(false)
 const voiceRecording = ref(false)
@@ -669,7 +671,7 @@ function reportVoiceError(error) {
     'Micrófono bloqueado. Permítelo en el candado de la barra de direcciones y pulsa "Manos libres".'
   const msgs = {
     unsupported: 'Tu navegador no soporta la voz. Usa Chrome o Edge.',
-    'not-allowed': blocked,
+    'not-allowed': `${blocked} Si abriste IGRIS desde un icono, entra una vez desde webigris.zottagroup.com y permite el micrófono; después vuelve a abrir el icono.`,
     'service-not-allowed': blocked,
     'audio-capture': 'No se detecta el micrófono. Revisa que esté conectado.',
     'start-failed': 'No se pudo iniciar el micrófono. Pulsa "Manos libres" para reintentar.',
