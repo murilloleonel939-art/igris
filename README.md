@@ -23,6 +23,10 @@
 | 🧠 **Memoria estructurada**: estado mental con memoria conversacional, personal y operativa por usuario | Funcional |
 | 🕒 Hora y fecha de Colombia | Funcional |
 | 🌦️ Clima de una ciudad | Funcional |
+| 🏠 **Dispositivos directos Smart Life/Tuya**: descubrimiento, comandos y consulta de estado | Funcional |
+| 📡 **Controles Smart IR**: aire acondicionado, TV y futuros mandos compatibles | Funcional |
+| 🔌 Órdenes Tuya ejecutadas inmediatamente, sin doble confirmación | Funcional |
+| 📊 Consulta de estado para dispositivos directos y controles infrarrojos | Funcional |
 | 📧 Gmail (lectura de la bandeja) | Funcional |
 | ✉️ **Enviar correos** con confirmación obligatoria antes de enviar | Funcional |
 | 🗑️ **Eliminar correos** (mueve a papelera, reversible desde Gmail) | Funcional |
@@ -459,6 +463,32 @@ Los **usuarios** no usan esta variable: tienen su propia cuenta (usuario y contr
 | `IGRIS_ANTHROPIC_MODEL` | Modelo del proveedor `anthropic` (opcional) | `claude-haiku-4-5-20251001` |
 | `IGRIS_LOCAL_URL` | URL de Ollama (debe ser alcanzable desde el contenedor) | `http://localhost:11434` |
 | `IGRIS_LOCAL_MODEL` | Modelo local de Ollama (opcional) | **qwen2.5:3b** |
+### Tuya, Smart Life y Smart IR
+
+Igris descubre los dispositivos autorizados de Smart Life y los controles virtuales guardados en los hubs infrarrojos. Los dispositivos directos usan la API estándar de Tuya; los mandos IR usan la API específica del hub. Las órdenes explícitas se ejecutan inmediatamente.
+
+Ejemplos de lenguaje natural:
+
+- «Prende la lámpara» o «Apaga el enchufe».
+- «Prende el televisor», «Sube el volumen» o «Cambia el canal».
+- «¿El aire está encendido?» o «¿Qué estado tiene el televisor?».
+
+Para el aire acondicionado, Igris consulta el estado específico del mando IR. Para otros dispositivos consulta el estado que reporta Smart Life o el mando virtual.
+
+Variables del backend:
+
+| Variable | Descripción | Ejemplo |
+| --- | --- | --- |
+| `TUYA_ACCESS_ID` | Access ID del proyecto Tuya | `tu_access_id` |
+| `TUYA_ACCESS_SECRET` | Access Secret del proyecto Tuya | `tu_access_secret` |
+| `TUYA_REGION` | Región de la cuenta Tuya | `us` |
+| `TUYA_ENDPOINT` | Endpoint opcional; se deriva de la región | `https://openapi.tuyaus.com` |
+| `TUYA_UID` | UID de la cuenta Smart Life | `tu_usuario_smart_life` |
+| `TUYA_DEVICE_IDS` | Lista opcional de IDs permitidos separados por comas | `id_1,id_2` |
+| `TUYA_DEVICE_ALIASES` | Alias opcionales con formato `nombre:id` | `televisor:id_tv` |
+
+También debes habilitar **IR Control Hub Open Service** en Tuya para usar mandos infrarrojos.
+
 ### Google (Gmail y Calendar)
 Las credenciales OAuth que usan `core/tools/google_client.py`, `gmail.py` y `gcalendar.py` se configuran también en el backend; consulta ese módulo para ver los nombres exactos de las variables. Para **crear eventos** el refresh token debe haberse generado con el permiso `https://www.googleapis.com/auth/calendar.events`; si no, Igris avisará de que falta el permiso de escritura.
 ### Voz
