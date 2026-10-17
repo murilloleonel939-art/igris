@@ -51,6 +51,7 @@ from core.capabilities import (
     capabilities_from_user,
 )
 from core.database import GoogleAccount, Note, Profile, Reminder, TelegramLink, User, UserMemory, get_db
+from core.settings_manager import get_settings
 from core.memory import load_memories, remember_from_text
 from core.tools import gcalendar, gmail
 from core.tools.time_tools import DEFAULT_TZ, _format
@@ -65,13 +66,15 @@ DEEPGRAM_URL = "https://api.deepgram.com/v1/listen"
 
 async def transcribe_user_audio(data: bytes, content_type: str = "audio/webm") -> str:
     """Transcribe audio con Deepgram cuando está configurado y usa Whisper como respaldo."""
+    configured = get_settings().get_stt_config()
+    provider = configured.get("provider", "deepgram")
     api_key = os.getenv("DEEPGRAM_API_KEY", "").strip()
-    if not api_key:
+    if provider != "deepgram" or not api_key:
         return (await asyncio.to_thread(stt.transcribe, data, ".webm")).strip()
 
     params = {
-        "model": os.getenv("DEEPGRAM_MODEL", "nova-3"),
-        "language": os.getenv("DEEPGRAM_LANGUAGE", "es"),
+        "model": configured.get("cloud_model") or os.getenv("DEEPGRAM_MODEL", "nova-3"),
+        "language": configured.get("language") or os.getenv("DEEPGRAM_LANGUAGE", "es"),
         "smart_format": "true",
         "punctuate": "true",
         "utterances": "false",

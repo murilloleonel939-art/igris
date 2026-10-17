@@ -13,6 +13,7 @@ from typing import Optional
 from fastapi import FastAPI, Request, Header, HTTPException, BackgroundTasks, Depends, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
+import httpx
 from jose import JWTError, jwt
 
 from core import Brain, config, stt          # ← añadido stt
@@ -34,6 +35,37 @@ from telegram.ext import Application, ContextTypes
 # Sin esto, los logger.info de core/ (brain, tools) no aparecen en los logs de Coolify
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger(__name__)
+
+
+async def transcribe_with_deepgram(data: bytes, content_type: str = "audio/webm") -> str:
+    configured = get_settings().get_stt_config()
+    provider = configured.get("provider", "deepgram")
+    api_key = os.getenv("DEEPGRAM_API_KEY", "").strip()
+    if provider != "deepgram" or not api_key:
+        return (await asyncio.to_thread(stt.transcribe, data, ".webm")).strip()
+    params = {
+        "model": configured.get("cloud_model") or os.getenv("DEEPGRAM_MODEL", "nova-3"),
+        "language": configured.get("language") or os.getenv("DEEPGRAM_LANGUAGE", "es"),
+        "smart_format": "true",
+        "punctuate": "true",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=45.0) as client:
+            response = await client.post(
+                "https://api.deepgram.com/v1/listen",
+                params=params,
+                headers={"Authorization": f"Token {api_key}", "Content-Type": content_type or "audio/webm"},
+                content=data,
+            )
+        response.raise_for_status()
+        channels = response.json().get("results", {}).get("channels", [])
+        alternatives = channels[0].get("alternatives", []) if channels else []
+        text = alternatives[0].get("transcript", "").strip() if alternatives else ""
+        if text:
+            return text
+    except Exception:
+        logger.exception("Falló Deepgram; se intentará Whisper local")
+    return (await asyncio.to_thread(stt.transcribe, data, ".webm")).strip()
 
 # Inicializar BD: crea la base de datos si falta, espera a PostgreSQL si aún
 # está arrancando y crea las tablas que falten (recordatorios y notas incluidas).
@@ -398,7 +430,7 @@ async def admin_voice_chat(
                 raise HTTPException(status_code=403, detail="Voz no reconocida")
         else:
             logger.info("Orden por voz admin sin perfil registrado")
-    text = (await asyncio.to_thread(stt.transcribe, data, ".webm")).strip()
+    text = await transcribe_with_deepgram(data, audio.content_type or "audio/webm")
     if not text:
         raise HTTPException(status_code=422, detail="No se entendió la orden")
     sid = "".join(c for c in (session_id or "") if c.isalnum() or c in "-_")[:64] or "default"
@@ -461,6 +493,8 @@ class STTConfigResponse(BaseModel):
     local_model: str
     language: str
     cloud_ready: bool = False
+    deepgram_ready: bool = False
+    openai_ready: bool = False
     message: Optional[str] = None
 
 
@@ -491,13 +525,15 @@ async def get_stt_config():
     return STTConfigResponse(
         status="ok",
         provider=settings.get("provider", "local"),
-        cloud_model=settings.get("cloud_model", "whisper-1"),
+        cloud_model=settings.get("cloud_model", os.getenv("DEEPGRAM_MODEL", "nova-3")),
         local_engine=settings.get("local_engine", "whisper"),
         local_compute_type=settings.get("local_compute_type", "int8"),
         whisper_cpp_model=settings.get("whisper_cpp_model", ""),
         local_model=settings.get("local_model", "tiny"),
         language=settings.get("language", "es"),
-        cloud_ready=bool(os.getenv("IGRIS_STT_API_KEY")),
+        cloud_ready=bool(os.getenv("DEEPGRAM_API_KEY") or os.getenv("IGRIS_STT_API_KEY")),
+        deepgram_ready=bool(os.getenv("DEEPGRAM_API_KEY")),
+        openai_ready=bool(os.getenv("IGRIS_STT_API_KEY")),
     )
 
 
@@ -507,13 +543,15 @@ async def update_stt_config(update: STTConfigUpdate):
         settings = get_settings()
         current = settings.get_stt_config()
         provider = update.provider.strip().lower()
-        if provider not in {"local", "openai"}:
-            raise ValueError("Proveedor STT no válido. Usa local u openai.")
+        if provider not in {"local", "deepgram", "openai"}:
+            raise ValueError("Proveedor STT no válido. Usa local, Deepgram u OpenAI.")
+        if provider == "deepgram" and not os.getenv("DEEPGRAM_API_KEY"):
+            raise ValueError("Falta DEEPGRAM_API_KEY en el backend para activar Deepgram.")
         if provider == "openai" and not os.getenv("IGRIS_STT_API_KEY"):
             raise ValueError("Falta IGRIS_STT_API_KEY en el backend para activar Whisper OpenAI.")
         data = {
             "provider": provider,
-            "cloud_model": update.cloud_model or current.get("cloud_model", "whisper-1"),
+            "cloud_model": update.cloud_model or current.get("cloud_model", os.getenv("DEEPGRAM_MODEL", "nova-3")),
             "local_engine": update.local_engine or current.get("local_engine", "whisper"),
             "local_compute_type": update.local_compute_type or current.get("local_compute_type", "int8"),
             "whisper_cpp_model": update.whisper_cpp_model or current.get("whisper_cpp_model", ""),
@@ -529,7 +567,9 @@ async def update_stt_config(update: STTConfigUpdate):
             local_compute_type=result.get("local_compute_type", "int8"),
             whisper_cpp_model=result.get("whisper_cpp_model", ""),
             local_model=result.get("local_model", "tiny"), language=result.get("language", "es"),
-            cloud_ready=bool(os.getenv("IGRIS_STT_API_KEY")),
+            cloud_ready=bool(os.getenv("DEEPGRAM_API_KEY") or os.getenv("IGRIS_STT_API_KEY")),
+            deepgram_ready=bool(os.getenv("DEEPGRAM_API_KEY")),
+            openai_ready=bool(os.getenv("IGRIS_STT_API_KEY")),
             message="Configuración de transcripción guardada; aplica inmediatamente.",
         )
     except ValueError as exc:
