@@ -586,65 +586,31 @@ function waitForWakeWord() {
       resolve({ ok: false, error: 'unsupported' })
       return
     }
-    let wake = null
+    const wake = new SR()
+    wake.lang = 'es-CO'
+    wake.continuous = true
+    wake.interimResults = true
     let finished = false
-    let restarting = false
-    let result = null
-    let releaseTimer = null
     const finish = (ok, error = null) => {
       if (finished) return
-      result = { ok, error }
-      try { wake?.stop() } catch (err) {}
-      // SpeechRecognition libera el micrófono de forma asíncrona. Esperamos a
-      // `onend` antes de iniciar MediaRecorder para evitar que se bloqueen.
-      releaseTimer = setTimeout(() => {
-        if (!finished) {
-          finished = true
-          resolve(result)
-        }
-      }, 1200)
+      finished = true
+      try { wake.stop() } catch (err) {}
+      resolve({ ok, error })
     }
-    const start = () => {
-      if (finished || restarting) return
-      restarting = true
-      wake = new SR()
-      wake.lang = 'es-CO'
-      wake.continuous = true
-      wake.interimResults = true
-      wake.onresult = (event) => {
-        for (let i = event.resultIndex; i < event.results.length; i++) {
-          const heard = event.results[i][0].transcript.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-          if (/\b(igris|igri|igres|igris|gris)\b/.test(heard) || /ig\s*ris/.test(heard)) {
-            finish(true)
-            return
-          }
-        }
-      }
-      wake.onerror = (event) => {
-        if (event.error === 'not-allowed' || event.error === 'service-not-allowed') finish(false, event.error)
-        else if (event.error === 'audio-capture') finish(false, event.error)
-      }
-      wake.onend = () => {
-        restarting = false
-        if (result && !finished) {
-          finished = true
-          if (releaseTimer) clearTimeout(releaseTimer)
-          resolve(result)
+    wake.onresult = (event) => {
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const heard = event.results[i][0].transcript.toLowerCase()
+        if (/\big\s*ris\b|\bigris\b/.test(heard)) {
+          finish(true)
           return
         }
-        if (!finished) setTimeout(start, 250)
-      }
-      try {
-        wake.start()
-        restarting = false
-      } catch (err) {
-        restarting = false
-        setTimeout(() => {
-          if (!finished) start()
-        }, 500)
       }
     }
-    start()
+    wake.onerror = (event) => {
+      if (event.error === 'not-allowed' || event.error === 'service-not-allowed') finish(false, event.error)
+    }
+    wake.onend = () => { if (!finished) finish(false, 'wake-ended') }
+    try { wake.start() } catch (err) { finish(false, 'start-failed') }
   })
 }
 
