@@ -522,12 +522,14 @@ function listenOnce() {
         }
         const rms = Math.sqrt(sum / samples.length)
         const now = Date.now()
-        if (rms > 0.011) {
+        // Umbral más sensible para micrófonos de portátil y voz baja.
+        if (rms > 0.006) {
           heardSpeech = true
           if (!speechStartedAt) speechStartedAt = now
           lastSpeechAt = now
         }
-        if (speechStartedAt && now - lastSpeechAt > 850 && now - speechStartedAt > 700) {
+        // No cortar frases por una pausa breve al respirar o pensar.
+        if (speechStartedAt && now - lastSpeechAt > 1400 && now - speechStartedAt > 600) {
           stopCapture?.()
           return
         }
@@ -567,8 +569,9 @@ function listenOnce() {
     }
     isListening.value = true
     setIgrisState('listening')
-    // El silencio termina una orden normal; cinco segundos siguen siendo el límite.
-    setTimeout(() => stopCapture?.(), 5000)
+    // Deja tiempo para una frase completa; el VAD corta al detectar silencio.
+    // El máximo evita mantener el micrófono abierto si el VAD no detecta la voz.
+    setTimeout(() => stopCapture?.(), 15000)
   })
 }
 
