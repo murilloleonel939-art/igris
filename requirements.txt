@@ -35,7 +35,7 @@ bcrypt==4.0.1
 pyotp
 qrcode
 pillow
-numpy
+numpy>=2.0,<3
 nemo_toolkit[asr]
 torchaudio==2.5.1
 pyjwt
