@@ -24,7 +24,7 @@ def _get_encoder():
         try:
             from nemo.collections.asr.models import EncDecSpeakerLabelModel
         except ImportError as exc:
-            raise RuntimeError("La verificación de voz requiere nemo_toolkit[asr]") from exc
+            raise RuntimeError(f"No se pudo cargar NVIDIA NeMo: {exc}") from exc
         model_name = os.getenv("IGRIS_VOICE_MODEL", "nvidia/speakerverification_en_titanet_large")
         _encoder = EncDecSpeakerLabelModel.from_pretrained(model_name=model_name)
         _encoder.eval()
