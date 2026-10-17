@@ -104,6 +104,15 @@ async def list_tuya_devices() -> dict[str, Any]:
             }
             for d in devices
         ]
+        # El hub es el único dispositivo que contiene mandos virtuales. Los
+        # añadimos al inventario para que los nuevos aparatos aparezcan solos.
+        for device in normalized_devices:
+            if device.get("categoria") == "wnykq" and device.get("id"):
+                try:
+                    device["controles_ir"] = await list_infrared_remotes(device["id"])
+                except Exception as exc:
+                    logger.warning("No se pudieron cargar controles IR de %s: %s", device["id"], exc)
+                    device["controles_ir"] = []
         logger.info("Dispositivos Tuya para búsqueda IR: %s", normalized_devices)
         return {"dispositivos": normalized_devices}
     except Exception as exc:
@@ -151,6 +160,12 @@ async def _resolve_device_id(device_ref: str) -> str | None:
         for device in listed.get("dispositivos", []):
             device_id = device.get("id")
             device_name = _normalize_device_name(device.get("nombre"))
+            product_name = _normalize_device_name(device.get("producto"))
+            category_name = _normalize_device_name(device.get("categoria"))
+            is_air_request = any(word in normalized_ref for word in ("aire", "acondicionado", "clima"))
+            is_tv_request = any(word in normalized_ref for word in ("tv", "televisor", "television"))
+            is_air_device = any(word in " ".join((device_name, product_name, category_name)) for word in ("aire", "air conditioning", "infrared ac"))
+            is_tv_device = any(word in " ".join((device_name, product_name, category_name)) for word in ("tv", "televisor", "television", "infrared tv"))
             if (
                 device_id
                 and device_name
@@ -158,8 +173,8 @@ async def _resolve_device_id(device_ref: str) -> str | None:
                     device_name == normalized_ref
                     or device_name in normalized_ref
                     or normalized_ref in device_name
-                    or ("aire" in normalized_ref and "aire" in device_name)
-                    or ("acondicionado" in normalized_ref and "aire" in device_name)
+                    or (is_air_request and is_air_device)
+                    or (is_tv_request and is_tv_device)
                 )
             ):
                 # Los dispositivos ya vienen autorizados por el proyecto Tuya.
@@ -420,6 +435,59 @@ def _power_intent(code: str, value: Any) -> bool | None:
     return None
 
 
+_IR_KEY_ALIASES = {
+    "poweron": "Power",
+    "poweroff": "Power",
+    "power": "Power",
+    "switch": "Power",
+    "encender": "Power",
+    "prender": "Power",
+    "apagar": "Power",
+    "volumenmas": "Volume+",
+    "volumenmenos": "Volume-",
+    "subirvolumen": "Volume+",
+    "bajarvolumen": "Volume-",
+    "silenciar": "Mute",
+    "mute": "Mute",
+    "canalmas": "Channel+",
+    "canalmenos": "Channel-",
+    "subircanal": "Channel+",
+    "bajarcana": "Channel-",
+    "bajarcanal": "Channel-",
+}
+
+
+def _infrared_key(code: str, value: Any) -> str:
+    normalized = _normalize_device_name(code).replace(" ", "")
+    return _IR_KEY_ALIASES.get(normalized, code)
+
+
+async def send_infrared_key(
+    infrared_id: str, remote: dict[str, Any], code: str, value: Any
+) -> dict[str, Any]:
+    """Envía una tecla a cualquier mando virtual (TV, equipo, ventilador, etc.)."""
+    key = _infrared_key(code, value)
+    payload: dict[str, Any] = {
+        "category_id": int(remote["category_id"]),
+        "key": key,
+    }
+    if remote.get("remote_index") is not None:
+        payload["remote_index"] = int(remote["remote_index"])
+    result = await _call(
+        f"/v2.0/infrareds/{infrared_id}/remotes/{remote['remote_id']}/command",
+        method="POST",
+        payload=payload,
+    )
+    logger.info("Orden IR genérica enviada a %s remote=%s payload=%s → %s", infrared_id, remote["remote_id"], payload, result)
+    return {
+        "device_id": infrared_id,
+        "via": "infrarrojos",
+        "control": remote.get("remote_name") or remote["remote_id"],
+        "tecla": key,
+        "resultado": result,
+    }
+
+
 async def send_infrared_power(infrared_id: str, remote: dict[str, Any], power_on: bool) -> dict[str, Any]:
     """Enciende o apaga el aire a través del control remoto del hub IR.
 
@@ -466,28 +534,19 @@ async def send_tuya_command(device_id: str, code: str, value: Any) -> dict[str, 
     if hub:
         hub_id, remotes = hub
         logger.info("Hub IR %s con controles: %s", hub_id, [r.get("remote_name") for r in remotes])
-        air = _find_air_conditioner(remotes)
-        power_on = _power_intent(code, value)
-        if air and power_on is not None:
+        # Solo se redirige al hub cuando el dispositivo resuelto es uno de sus
+        # mandos virtuales. Un dispositivo Wi-Fi directo nunca debe terminar
+        # enviando una orden al aire por accidente.
+        remote = next((r for r in remotes if r.get("remote_id") == device_id), None)
+        if remote:
+            power_on = _power_intent(code, value)
             try:
-                return await send_infrared_power(hub_id, air, power_on)
+                if int(remote.get("category_id", -1)) == _AC_CATEGORY_ID and power_on is not None:
+                    return await send_infrared_power(hub_id, remote, power_on)
+                return await send_infrared_key(hub_id, remote, code, value)
             except Exception as exc:
                 logger.exception("Error enviando orden IR")
                 return {"error": str(exc)}
-        if air and power_on is None:
-            return {
-                "device_id": hub_id,
-                "error": (
-                    f"La orden '{code}' no es de encendido ni apagado. Para el aire solo se "
-                    "puede encender o apagar por ahora."
-                ),
-                "controles_ir": [r.get("remote_name") for r in remotes],
-            }
-        return {
-            "device_id": hub_id,
-            "error": "Ese hub infrarrojo no tiene configurado un control de aire acondicionado.",
-            "controles_ir": [r.get("remote_name") for r in remotes],
-        }
 
     functions = await _device_functions(device_id)
     logger.info("Funciones del dispositivo %s: %s", device_id, [f.get("code") for f in functions])

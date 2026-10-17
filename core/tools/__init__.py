@@ -464,8 +464,9 @@ TOOLS = [
                     "code": {
                         "type": "string",
                         "description": (
-                            "Código de función del dispositivo (por ejemplo switch). Si no lo conoces, "
-                            "consulta primero el estado del dispositivo para ver sus códigos válidos."
+                            "Código de función o tecla. Para dispositivos directos usa el código de Smart Life "
+                            "(por ejemplo switch). Para mandos IR usa PowerOn/PowerOff, Power, Volume+, Volume-, "
+                            "Channel+, Channel-, Mute u otra tecla que acepte el mando."
                         ),
                     },
                     "value": {
