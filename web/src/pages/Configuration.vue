@@ -70,13 +70,11 @@
           </div>
           <aside class="summary-panel"><p class="eyebrow">Información</p><p class="mt-4 text-sm leading-6 text-stone-400">El cambio de proveedor de transcripción se guarda al instante. Las credenciales nunca se muestran en este panel.</p></aside>
         </section>
-      </div>
-    </section>
          <section v-else class="grid gap-10 lg:grid-cols-[minmax(0,1fr)_255px]">
            <div><h2 class="section-title">WhatsApp</h2><p class="section-description">Define el número que recibirá los mensajes de IGRIS.</p><article class="voice-panel mt-7 max-w-2xl"><label for="whatsapp-phone" class="block text-sm font-semibold text-white">Número de WhatsApp</label><p class="mt-2 text-xs text-stone-400">Usa el formato internacional, incluido el signo +.</p><input id="whatsapp-phone" v-model="whatsappEdit.phone_number" type="tel" inputmode="tel" placeholder="+573162486102" class="mt-5 w-full rounded-lg border border-white/10 bg-black/20 p-3 text-stone-200" /><div class="mt-6 flex items-center justify-between gap-4"><p v-if="whatsappError" class="text-sm text-red-300">{{ whatsappError }}</p><p v-else class="text-sm text-emerald-400">{{ whatsappSuccess }}</p><button @click="saveWhatsAppConfig" :disabled="whatsappSaving" class="save-button ml-auto">{{ whatsappSaving ? 'Guardando…' : 'Guardar número' }}</button></div></article></div><aside class="summary-panel"><p class="eyebrow">Canal de mensajes</p><p class="mt-4 text-sm leading-6 text-stone-400">Los tokens permanecen en la configuración segura del servidor y nunca se muestran aquí.</p></aside>
          </section>
-       </div>
-     </section>
+      </div>
+    </section>
    </main>
  </template>
 
