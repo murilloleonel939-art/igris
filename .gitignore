@@ -11,6 +11,9 @@ web/node_modules/
 # Build output
 dist/
 web/dist/
+desktop/node_modules/
+desktop/.cache/
+desktop/.npm-cache/
 
 # Python
 __pycache__/
