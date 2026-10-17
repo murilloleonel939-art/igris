@@ -18,7 +18,7 @@ def emit(payload):
     print(json.dumps(payload, ensure_ascii=False), flush=True)
 
 
-def listen_and_transcribe():
+def capture_audio():
     chunks = []
     started = False
     last_voice = time.monotonic()
@@ -44,11 +44,15 @@ def listen_and_transcribe():
                     break
 
     if not chunks:
-        return ""
+        return None
     audio = np.concatenate(chunks)
     if len(audio) < SAMPLE_RATE * 0.25:
         return ""
 
+    return audio
+
+
+def transcribe(audio):
     emit({"type": "state", "state": "transcribing"})
     model_size = os.environ.get("IGRIS_WHISPER_MODEL", "small")
     model = WhisperModel(model_size, device="auto", compute_type="auto")
@@ -58,8 +62,18 @@ def listen_and_transcribe():
 
 if __name__ == "__main__":
     try:
-        text = listen_and_transcribe()
-        emit({"type": "result", "text": text})
+        for attempt in range(3):
+            audio = capture_audio()
+            if audio is None:
+                emit({"type": "retry", "attempt": attempt + 1, "message": "No detecté voz; repite la orden."})
+                continue
+            text = transcribe(audio)
+            if text:
+                emit({"type": "result", "text": text})
+                break
+            emit({"type": "retry", "attempt": attempt + 1, "message": "No entendí la orden; intenta de nuevo."})
+        else:
+            emit({"type": "error", "message": "No se detectó una orden después de tres intentos."})
     except Exception as exc:
         emit({"type": "error", "message": str(exc)})
         sys.exit(1)

@@ -24,6 +24,7 @@ function installNativeVoiceButton(win) {
     }
     window.__igrisNativeVoiceEvent = async (event) => {
       if (event.type === 'state') setState(event.state === 'transcribing' ? '⏳ Transcribiendo…' : '🔴 Escuchando…', event.state === 'transcribing' ? '#92400e' : '#991b1b')
+      if (event.type === 'retry') { setState('🔴 Reintento ' + event.attempt + '/3…', '#7c2d12') }
       if (event.type === 'error') { active = false; setState('⚠️ Reintentar voz', '#7f1d1d'); alert('Voz local: ' + event.message) }
       if (event.type === 'result') {
         active = false; setState('🎙️ Voz local', '#1e293b')
