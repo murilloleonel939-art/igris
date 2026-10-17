@@ -134,6 +134,20 @@ def _allowed_device(device_id: str) -> bool:
     return not configured or device_id in configured
 
 
+class AmbiguousTuyaDeviceError(ValueError):
+    """La referencia coincide con más de un dispositivo autorizado."""
+
+    def __init__(self, reference: str, devices: list[dict[str, Any]]):
+        self.reference = reference
+        self.devices = devices
+        names = ", ".join(d.get("nombre") or d.get("id") for d in devices)
+        super().__init__(f"La referencia '{reference}' coincide con varios dispositivos: {names}.")
+
+
+def _looks_like_device_id(value: str) -> bool:
+    return bool(re.fullmatch(r"[a-z0-9]{20,32}", value.strip().casefold()))
+
+
 def _normalize_device_name(value: Any) -> str:
     text = unicodedata.normalize("NFKD", str(value or ""))
     text = "".join(char for char in text if not unicodedata.combining(char))
@@ -141,11 +155,12 @@ def _normalize_device_name(value: Any) -> str:
 
 
 async def _resolve_device_id(device_ref: str) -> str | None:
-    """Acepta ID, nombre, alias configurado o una referencia natural."""
-    if _allowed_device(device_ref):
-        return device_ref
+    """Acepta ID, alias o nombre; rechaza referencias que coincidan con varios."""
+    reference = str(device_ref or "").strip()
+    if _looks_like_device_id(reference) and _allowed_device(reference):
+        return reference
 
-    normalized_ref = _normalize_device_name(device_ref)
+    normalized_ref = _normalize_device_name(reference)
     aliases = {}
     for item in os.getenv("TUYA_DEVICE_ALIASES", "").split(","):
         if ":" in item:
@@ -157,30 +172,32 @@ async def _resolve_device_id(device_ref: str) -> str | None:
 
     try:
         listed = await list_tuya_devices()
+        matches = []
         for device in listed.get("dispositivos", []):
             device_id = device.get("id")
             device_name = _normalize_device_name(device.get("nombre"))
             product_name = _normalize_device_name(device.get("producto"))
             category_name = _normalize_device_name(device.get("categoria"))
+            searchable = " ".join((device_name, product_name, category_name))
             is_air_request = any(word in normalized_ref for word in ("aire", "acondicionado", "clima"))
             is_tv_request = any(word in normalized_ref for word in ("tv", "televisor", "television"))
-            is_air_device = any(word in " ".join((device_name, product_name, category_name)) for word in ("aire", "air conditioning", "infrared ac"))
-            is_tv_device = any(word in " ".join((device_name, product_name, category_name)) for word in ("tv", "televisor", "television", "infrared tv"))
-            if (
-                device_id
-                and device_name
-                and (
-                    device_name == normalized_ref
-                    or device_name in normalized_ref
-                    or normalized_ref in device_name
-                    or (is_air_request and is_air_device)
-                    or (is_tv_request and is_tv_device)
-                )
-            ):
-                # Los dispositivos ya vienen autorizados por el proyecto Tuya.
-                # TUYA_DEVICE_IDS, si existe, solo restringe explícitamente.
-                if _allowed_device(device_id):
-                    return device_id
+            is_air_device = any(word in searchable for word in ("aire", "air conditioning", "infrared ac"))
+            is_tv_device = any(word in searchable for word in ("tv", "televisor", "television", "infrared tv"))
+            matches_name = device_name and (
+                device_name == normalized_ref
+                or device_name in normalized_ref
+                or normalized_ref in device_name
+                or (is_air_request and is_air_device)
+                or (is_tv_request and is_tv_device)
+            )
+            if device_id and matches_name and _allowed_device(device_id):
+                matches.append(device)
+        if len(matches) == 1:
+            return matches[0]["id"]
+        if len(matches) > 1:
+            raise AmbiguousTuyaDeviceError(reference, matches)
+    except AmbiguousTuyaDeviceError:
+        raise
     except Exception:
         logger.exception("Error resolviendo nombre de dispositivo Tuya")
     return None
@@ -188,9 +205,15 @@ async def _resolve_device_id(device_ref: str) -> str | None:
 
 async def get_tuya_device_status(device_id: str) -> dict[str, Any]:
     """Consulta el estado real disponible para un dispositivo directo o mando IR."""
-    resolved_id = await _resolve_device_id(device_id)
+    try:
+        resolved_id = await _resolve_device_id(device_id)
+    except AmbiguousTuyaDeviceError as exc:
+        return {
+            "error": "Necesito que especifiques cuál dispositivo quieres consultar.",
+            "dispositivos_coincidentes": [d.get("nombre") or d.get("id") for d in exc.devices],
+        }
     if not resolved_id:
-        return {"error": "Ese dispositivo no está autorizado para Igris."}
+        return {"error": "No encontré un dispositivo único con ese nombre."}
     device_id = resolved_id
     try:
         # El estado de un aire IR se consulta en el endpoint específico del mando;
@@ -545,10 +568,16 @@ async def get_infrared_ac_status(infrared_id: str, remote_id: str) -> dict[str, 
 
 
 async def send_tuya_command(device_id: str, code: str, value: Any) -> dict[str, Any]:
-    """Envía una orden; acepta el ID técnico o el nombre visible."""
-    resolved_id = await _resolve_device_id(device_id)
+    """Envía una orden solo cuando la referencia identifica un dispositivo único."""
+    try:
+        resolved_id = await _resolve_device_id(device_id)
+    except AmbiguousTuyaDeviceError as exc:
+        return {
+            "error": "Necesito que especifiques cuál dispositivo quieres controlar.",
+            "dispositivos_coincidentes": [d.get("nombre") or d.get("id") for d in exc.devices],
+        }
     if not resolved_id:
-        return {"error": "Ese dispositivo no está autorizado para Igris."}
+        return {"error": "No encontré un dispositivo único con ese nombre."}
     device_id = resolved_id
 
     # Un hub infrarrojo necesita su propia API: el aire no es un dispositivo aparte.
