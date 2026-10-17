@@ -94,18 +94,18 @@ async def list_tuya_devices() -> dict[str, Any]:
             devices = result.get("devices", [])
         else:
             devices = []
-        return {
-            "dispositivos": [
-                {
-                    "id": d.get("id"),
-                    "nombre": d.get("name"),
-                    "producto": d.get("product_name"),
-                    "categoria": d.get("category"),
-                    "online": d.get("online"),
-                }
-                for d in devices
-            ]
-        }
+        normalized_devices = [
+            {
+                "id": d.get("id"),
+                "nombre": d.get("name"),
+                "producto": d.get("product_name"),
+                "categoria": d.get("category"),
+                "online": d.get("online"),
+            }
+            for d in devices
+        ]
+        logger.info("Dispositivos Tuya para búsqueda IR: %s", normalized_devices)
+        return {"dispositivos": normalized_devices}
     except Exception as exc:
         logger.exception("Error listando dispositivos Tuya")
         return {"error": str(exc)}
@@ -280,12 +280,36 @@ async def list_infrared_remotes(infrared_id: str) -> list[dict[str, Any]]:
     """
     result = await _call(f"/v2.0/infrareds/{infrared_id}/remotes")
     if isinstance(result, list):
-        return [r for r in result if isinstance(r, dict)]
-    if isinstance(result, dict):
-        remotes = result.get("remotes") or result.get("result") or []
-        if isinstance(remotes, list):
-            return [r for r in remotes if isinstance(r, dict)]
-    return []
+        remotes = [r for r in result if isinstance(r, dict)]
+    elif isinstance(result, dict):
+        nested = next(
+            (
+                result.get(key)
+                for key in ("remotes", "remote_list", "remoteList", "list", "data", "result")
+                if result.get(key) is not None
+            ),
+            [],
+        )
+        if isinstance(nested, dict):
+            nested = next(
+                (
+                    nested.get(key)
+                    for key in ("remotes", "remote_list", "remoteList", "list", "data")
+                    if nested.get(key) is not None
+                ),
+                [],
+            )
+        remotes = [r for r in nested if isinstance(r, dict)] if isinstance(nested, list) else []
+    else:
+        remotes = []
+    logger.info(
+        "Respuesta controles IR device=%s tipo=%s cantidad=%d datos=%s",
+        infrared_id,
+        type(result).__name__,
+        len(remotes),
+        remotes,
+    )
+    return remotes
 
 
 # En Tuya, la categoría 5 es "aire acondicionado" y la 2 "televisor".
@@ -350,8 +374,9 @@ async def _probe_infrared(candidate: str) -> tuple[str, list[dict[str, Any]]]:
     try:
         remotes = await list_infrared_remotes(candidate)
     except Exception as exc:
-        logger.debug("Sin controles IR en %s: %s", candidate, exc)
+        logger.warning("Fallo al consultar controles IR device=%s: %s", candidate, exc)
         return candidate, []
+    logger.info("Sondeo IR device=%s encontró %d controles", candidate, len(remotes))
     if remotes:
         _HUB_CACHE[candidate] = (time.time(), remotes)
     return candidate, remotes
