@@ -464,6 +464,27 @@ class STTConfigResponse(BaseModel):
     message: Optional[str] = None
 
 
+class WhatsAppConfigUpdate(BaseModel):
+    phone_number: str = ""
+
+
+@app.get("/api/whatsapp-config", dependencies=[Depends(require_key)])
+async def get_whatsapp_config():
+    """Devuelve el número configurado sin exponer tokens."""
+    settings = get_settings().get_whatsapp_config()
+    return {"status": "ok", "phone_number": settings.get("phone_number", "")}
+
+
+@app.put("/api/whatsapp-config", dependencies=[Depends(require_key)])
+async def update_whatsapp_config(update: WhatsAppConfigUpdate):
+    phone = "".join(ch for ch in update.phone_number.strip() if ch.isdigit() or ch == "+")
+    if phone and (not phone.startswith("+") or len(phone) < 10 or not phone[1:].isdigit()):
+        raise HTTPException(status_code=400, detail="Usa formato internacional, por ejemplo +573162486102.")
+    if not get_settings().set_whatsapp_config({"phone_number": phone}):
+        raise HTTPException(status_code=500, detail="No se pudo guardar el número de WhatsApp.")
+    return {"status": "ok", "phone_number": phone, "message": "Número de WhatsApp guardado correctamente."}
+
+
 @app.get("/api/stt-config", dependencies=[Depends(require_key)])
 async def get_stt_config():
     settings = get_settings().get_stt_config()

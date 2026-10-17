@@ -142,6 +142,16 @@ class SettingsManager:
         self.settings["stt"] = current
         return self.save()
 
+    def get_whatsapp_config(self) -> dict:
+        """Obtiene la configuración no secreta de WhatsApp."""
+        saved = self.settings.get("whatsapp", {})
+        return dict(saved) if isinstance(saved, dict) else {}
+
+    def set_whatsapp_config(self, config: dict) -> bool:
+        """Guarda la configuración no secreta de WhatsApp."""
+        self.settings["whatsapp"] = dict(config)
+        return self.save()
+
     def get_tts_config(self) -> dict:
         """Obtiene configuración de TTS."""
         return self.settings.get("tts", {})

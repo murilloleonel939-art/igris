@@ -13,6 +13,7 @@
         <nav class="mt-9 flex gap-7" aria-label="Secciones de configuración">
           <button class="tab-button" :class="{ active: activeTab === 'providers' }" @click="activeTab = 'providers'">✺ Proveedores</button>
           <button class="tab-button" :class="{ active: activeTab === 'voice' }" @click="activeTab = 'voice'">✦ Voz y audio</button>
+           <button class="tab-button" :class="{ active: activeTab === 'whatsapp' }" @click="activeTab = 'whatsapp'">◉ WhatsApp</button>
         </nav>
       </header>
 
@@ -58,7 +59,7 @@
           </aside>
         </div>
 
-        <section v-else class="grid gap-10 lg:grid-cols-[minmax(0,1fr)_255px]">
+        <section v-else-if="activeTab === 'voice'" class="grid gap-10 lg:grid-cols-[minmax(0,1fr)_255px]">
           <div><h2 class="section-title">Voz y audio</h2><p class="section-description">Configura cómo IGRIS transcribe y responde mediante voz.</p>
             <article class="voice-panel mt-7"><div class="flex items-start justify-between gap-5"><div><h3 class="text-base font-semibold text-white">Transcripción</h3><p class="mt-1 text-sm text-stone-400">Selecciona el motor que convierte tu voz en texto.</p></div><span class="online-label"><i class="status-dot"></i>Activo</span></div>
               <div class="mt-6 grid gap-3 sm:grid-cols-2"><button @click="sttEdit.provider = 'local'" class="voice-choice" :class="{ selected: sttEdit.provider === 'local' }"><b>Whisper local</b><span>Procesa el audio en el servidor.</span></button><button @click="sttEdit.provider = 'openai'" :disabled="!sttConfig.cloud_ready" class="voice-choice" :class="{ selected: sttEdit.provider === 'openai', disabled: !sttConfig.cloud_ready }"><b>Whisper OpenAI</b><span>{{ sttConfig.cloud_ready ? 'Transcripción cloud de OpenAI.' : 'Requiere IGRIS_STT_API_KEY en Coolify.' }}</span></button></div>
@@ -71,8 +72,13 @@
         </section>
       </div>
     </section>
-  </main>
-</template>
+         <section v-else class="grid gap-10 lg:grid-cols-[minmax(0,1fr)_255px]">
+           <div><h2 class="section-title">WhatsApp</h2><p class="section-description">Define el número que recibirá los mensajes de IGRIS.</p><article class="voice-panel mt-7 max-w-2xl"><label for="whatsapp-phone" class="block text-sm font-semibold text-white">Número de WhatsApp</label><p class="mt-2 text-xs text-stone-400">Usa el formato internacional, incluido el signo +.</p><input id="whatsapp-phone" v-model="whatsappEdit.phone_number" type="tel" inputmode="tel" placeholder="+573162486102" class="mt-5 w-full rounded-lg border border-white/10 bg-black/20 p-3 text-stone-200" /><div class="mt-6 flex items-center justify-between gap-4"><p v-if="whatsappError" class="text-sm text-red-300">{{ whatsappError }}</p><p v-else class="text-sm text-emerald-400">{{ whatsappSuccess }}</p><button @click="saveWhatsAppConfig" :disabled="whatsappSaving" class="save-button ml-auto">{{ whatsappSaving ? 'Guardando…' : 'Guardar número' }}</button></div></article></div><aside class="summary-panel"><p class="eyebrow">Canal de mensajes</p><p class="mt-4 text-sm leading-6 text-stone-400">Los tokens permanecen en la configuración segura del servidor y nunca se muestran aquí.</p></aside>
+         </section>
+       </div>
+     </section>
+   </main>
+ </template>
 
 <script setup>
 import { computed, onMounted, ref } from 'vue'
@@ -83,6 +89,7 @@ const editConfig = ref({ primary_provider: '', fallback_chain: [] })
 const saving = ref(false), saveSuccess = ref(''), saveError = ref('')
 const sttConfig = ref({ provider: 'local', local_engine: 'whisper', local_compute_type: 'int8', whisper_cpp_model: '', cloud_model: 'whisper-1', local_model: 'tiny', cloud_ready: false })
 const sttEdit = ref({ provider: 'local', local_engine: 'whisper', local_compute_type: 'int8', whisper_cpp_model: '', local_model: 'tiny' }), sttSaving = ref(false), sttSuccess = ref(''), sttError = ref('')
+const whatsappEdit = ref({ phone_number: '' }), whatsappSaving = ref(false), whatsappSuccess = ref(''), whatsappError = ref('')
 const localEngines = [{ value: 'whisper', label: 'Whisper' }, { value: 'faster-whisper', label: 'faster-whisper' }, { value: 'whisper.cpp', label: 'whisper.cpp (GGML/GGUF)' }]
 const computeTypes = [{ value: 'int8', label: 'int8 — CPU recomendado' }, { value: 'float16', label: 'float16 — GPU' }, { value: 'float32', label: 'float32 — máxima compatibilidad' }]
 const localModels = [
@@ -99,11 +106,12 @@ const providerIcon = p => ({ groq: 'g', nemotron: '✺', openai: '✧', anthropi
 const loadAIConfig = async () => {
   try {
     loading.value = true
-    const [response, sttResponse] = await Promise.all([api.get('/api/ai-config'), api.get('/api/stt-config')])
+    const [response, sttResponse, whatsappResponse] = await Promise.all([api.get('/api/ai-config'), api.get('/api/stt-config'), api.get('/api/whatsapp-config')])
     if (response.data.status !== 'ok') throw new Error(response.data.message)
     aiConfig.value = { primary_provider: response.data.primary_provider, fallback_chain: [...response.data.fallback_chain], tts: response.data.tts || { provider: 'local', enabled: true } }
     editConfig.value = { primary_provider: aiConfig.value.primary_provider, fallback_chain: [...aiConfig.value.fallback_chain] }
     if (sttResponse.data.status === 'ok') { sttConfig.value = sttResponse.data; sttEdit.value = { provider: sttResponse.data.provider, local_engine: sttResponse.data.local_engine || 'whisper', local_compute_type: sttResponse.data.local_compute_type || 'int8', whisper_cpp_model: sttResponse.data.whisper_cpp_model || '', local_model: sttResponse.data.local_model } }
+    if (whatsappResponse.data.status === 'ok') whatsappEdit.value.phone_number = whatsappResponse.data.phone_number || ''
   } catch (err) { error.value = err.response?.data?.detail || 'No se pudo cargar la configuración.' } finally { loading.value = false }
 }
 const setPrimary = p => { editConfig.value.primary_provider = p; if (!editConfig.value.fallback_chain.includes(p)) editConfig.value.fallback_chain.unshift(p) }
@@ -111,6 +119,7 @@ const toggleFallback = p => { const i = editConfig.value.fallback_chain.indexOf(
 const moveFallback = (i, d) => { const target = i + d; if (target < 0 || target >= editConfig.value.fallback_chain.length) return; const list = editConfig.value.fallback_chain; [list[i], list[target]] = [list[target], list[i]] }
 const resetProviderEdits = () => { editConfig.value = { primary_provider: aiConfig.value.primary_provider, fallback_chain: [...aiConfig.value.fallback_chain] }; saveError.value = ''; saveSuccess.value = '' }
 const saveConfig = async () => { if (!editConfig.value.primary_provider || !editConfig.value.fallback_chain.length) { saveError.value = 'Selecciona un proveedor y al menos un respaldo.'; return }; try { saving.value = true; saveError.value = ''; saveSuccess.value = ''; const response = await api.put('/api/ai-config', editConfig.value); if (response.data.status !== 'ok') throw new Error(response.data.message); aiConfig.value.primary_provider = editConfig.value.primary_provider; aiConfig.value.fallback_chain = [...editConfig.value.fallback_chain]; saveSuccess.value = response.data.message || 'Configuración guardada correctamente.' } catch (err) { saveError.value = err.response?.data?.detail || err.message || 'No se pudo guardar la configuración.' } finally { saving.value = false } }
+const saveWhatsAppConfig = async () => { try { whatsappSaving.value = true; whatsappError.value = ''; whatsappSuccess.value = ''; const response = await api.put('/api/whatsapp-config', whatsappEdit.value); whatsappEdit.value.phone_number = response.data.phone_number || ''; whatsappSuccess.value = response.data.message || 'Número de WhatsApp guardado.' } catch (err) { whatsappError.value = err.response?.data?.detail || 'No se pudo guardar el número de WhatsApp.' } finally { whatsappSaving.value = false } }
 const saveSTTConfig = async () => { try { sttSaving.value = true; sttError.value = ''; sttSuccess.value = ''; const response = await api.put('/api/stt-config', { provider: sttEdit.value.provider, local_engine: sttEdit.value.local_engine, local_compute_type: sttEdit.value.local_compute_type, whisper_cpp_model: sttEdit.value.whisper_cpp_model, local_model: sttEdit.value.local_model }); sttConfig.value = response.data; sttEdit.value.local_engine = response.data.local_engine; sttEdit.value.local_compute_type = response.data.local_compute_type; sttEdit.value.whisper_cpp_model = response.data.whisper_cpp_model; sttEdit.value.local_model = response.data.local_model; sttSuccess.value = response.data.message || 'Configuración de voz guardada.' } catch (err) { sttError.value = err.response?.data?.detail || 'No se pudo guardar la configuración de voz.' } finally { sttSaving.value = false } }
 onMounted(loadAIConfig)
 </script>

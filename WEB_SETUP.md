@@ -40,6 +40,12 @@ IGRIS_STT_PROVIDER=local
 IGRIS_TTS_PROVIDER=local
 IGRIS_STT_MODEL=tiny
 
+# WhatsApp Cloud API de Meta (nunca subir estos valores al repositorio)
+WHATSAPP_TOKEN=tu_token_de_acceso_permanente
+WHATSAPP_PHONE_NUMBER_ID=1437003389487811
+WHATSAPP_BUSINESS_ACCOUNT_ID=936702885750828
+WHATSAPP_TEST_TO=+573504807732
+
 # Zona horaria
 IGRIS_TZ=America/Bogota
 ```
