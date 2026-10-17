@@ -22,7 +22,7 @@ const app = express();
 app.use((req, res, next) => {
   res.setHeader(
     "Content-Security-Policy",
-    "default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; " +
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; " +
       "img-src 'self' data: blob:; media-src 'self' blob:; " +
       "connect-src 'self' https://igris.zottagroup.com http://localhost:8000 http://127.0.0.1:8000; " +
       "worker-src 'self' blob:; manifest-src 'self';"
