@@ -10,7 +10,7 @@
       worker-src y manifest-src son necesarios para la PWA: sin ellos el
       navegador bloquea sw.js y el manifest, y la app deja de ser instalable.
     -->
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https://igris.zottagroup.com wss://igris.zottagroup.com; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob: data:; worker-src 'self' blob:; manifest-src 'self';">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https://igris.zottagroup.com wss://igris.zottagroup.com; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob: data:; worker-src 'self' blob:; manifest-src 'self';">
     <title>IGRIS</title>
 
     <!-- PWA.
