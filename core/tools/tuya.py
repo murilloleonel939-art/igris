@@ -187,15 +187,38 @@ async def _resolve_device_id(device_ref: str) -> str | None:
 
 
 async def get_tuya_device_status(device_id: str) -> dict[str, Any]:
-    """Consulta el estado actual de un dispositivo por su id o nombre."""
+    """Consulta el estado real disponible para un dispositivo directo o mando IR."""
     resolved_id = await _resolve_device_id(device_id)
     if not resolved_id:
         return {"error": "Ese dispositivo no está autorizado para Igris."}
     device_id = resolved_id
     try:
+        # El estado de un aire IR se consulta en el endpoint específico del mando;
+        # el endpoint genérico solo refleja el dispositivo virtual y puede mentir.
+        hub = await _find_infrared_hub(device_id)
+        if hub:
+            hub_id, remotes = hub
+            remote = next((r for r in remotes if r.get("remote_id") == device_id), None)
+            if remote and int(remote.get("category_id", -1)) == _AC_CATEGORY_ID:
+                status = await get_infrared_ac_status(hub_id, device_id)
+                return {
+                    "device_id": device_id,
+                    "hub_id": hub_id,
+                    "control": remote.get("remote_name"),
+                    "tipo": "infrarrojos",
+                    "estado": status,
+                    "verificado_por": "estado del aire en Smart IR",
+                }
+
         status = await _call(f"/v1.0/iot-03/devices/{device_id}/status")
         functions = await _device_functions(device_id)
         response: dict[str, Any] = {"device_id": device_id, "estado": status}
+        if hub:
+            response["tipo"] = "infrarrojos"
+            response["verificado_por"] = "estado reportado por el mando virtual"
+        else:
+            response["tipo"] = "dispositivo_directo"
+            response["verificado_por"] = "estado reportado por Smart Life"
         if functions:
             # Se le dicen al modelo los códigos válidos para que no los invente.
             response["funciones"] = [
