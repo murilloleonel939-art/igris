@@ -494,7 +494,9 @@ let wakeOutput = null
 let wakeResolve = null
 let wakeReject = null
 let wakeLoading = null
-const WAKE_MODEL_URL = '/models/vosk-model-es.tar.gz'
+const WAKE_MODEL_URL = typeof window !== 'undefined'
+  ? new URL('/models/vosk-model-es.tar.gz', window.location.origin).href
+  : '/models/vosk-model-es.tar.gz'
 
 async function loadWakeModel() {
   if (wakeModel?.ready) return wakeModel
