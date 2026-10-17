@@ -264,10 +264,11 @@
 
       <!-- Controles -->
       <div class="controls">
-        <button class="pill" :class="{ on: handsFree }" @click="toggleHandsFree">
+        <button class="pill" :class="{ on: handsFree }" @click="toggleHandsFree" :aria-busy="handsFree && !!wakeLoading">
           <span class="dot" :class="{ live: isListening }"></span>
           {{ handsFree ? 'Manos libres: activo' : 'Manos libres: pausado' }}
         </button>
+        <span v-if="handsFree && voiceStepLabel" class="conn-note voice-step">{{ voiceStepLabel }}</span>
         <button v-if="!showInput" class="pill" @click="openInput">✉️ Enviar</button>
       </div>
     </div>
@@ -502,6 +503,9 @@ async function loadWakeModel() {
     wakeLoading = createModel(WAKE_MODEL_URL, -1).then((model) => {
       wakeModel = model
       return model
+    }).catch((err) => {
+      console.error('No se pudo cargar el detector local:', err)
+      throw new Error('model-load-failed')
     }).finally(() => {
       wakeLoading = null
     })
@@ -564,7 +568,9 @@ function waitForWakeWord() {
       if (wakeContext.state === 'suspended') await wakeContext.resume()
       voiceStepLabel.value = 'Esperando “Igris”…'
     } catch (err) {
-      finishWake(false, err?.name === 'NotAllowedError' ? 'not-allowed' : 'start-failed')
+      finishWake(false, err?.message === 'model-load-failed'
+        ? 'model-load-failed'
+        : (err?.name === 'NotAllowedError' ? 'not-allowed' : 'start-failed'))
     }
   })
 }
@@ -663,7 +669,7 @@ function listenOnce() {
   })
 }
 
-const FATAL = ['unsupported', 'not-allowed', 'service-not-allowed', 'audio-capture', 'start-failed']
+const FATAL = ['unsupported', 'not-allowed', 'service-not-allowed', 'audio-capture', 'start-failed', 'model-load-failed']
 
 function reportVoiceError(error) {
   if (!error || error === 'no-speech' || error === 'aborted') return false
@@ -675,6 +681,7 @@ function reportVoiceError(error) {
     'service-not-allowed': blocked,
     'audio-capture': 'No se detecta el micrófono. Revisa que esté conectado.',
     'start-failed': 'No se pudo iniciar el micrófono. Pulsa "Manos libres" para reintentar.',
+    'model-load-failed': 'No se pudo descargar el detector local. Revisa tu conexión y pulsa "Manos libres" otra vez.',
   }
   setNotice(msgs[error] || `Error de voz: ${error}`)
   return FATAL.includes(error)
