@@ -264,11 +264,10 @@
 
       <!-- Controles -->
       <div class="controls">
-        <button class="pill" :class="{ on: handsFree }" @click="toggleHandsFree" :aria-busy="handsFree && !!wakeLoading">
+        <button class="pill" :class="{ on: handsFree }" @click="toggleHandsFree">
           <span class="dot" :class="{ live: isListening }"></span>
           {{ handsFree ? 'Manos libres: activo' : 'Manos libres: pausado' }}
         </button>
-        <span v-if="handsFree && voiceStepLabel" class="conn-note voice-step">{{ voiceStepLabel }}</span>
         <button v-if="!showInput" class="pill" @click="openInput">✉️ Enviar</button>
       </div>
     </div>
@@ -277,7 +276,6 @@
 
 <script setup>
 import { ref, computed, nextTick, onMounted, onBeforeUnmount, watch } from 'vue'
-import { createModel } from 'vosk-browser'
 import { useRoute, useRouter } from 'vue-router'
 import userApi, { getUser, clearSession, errorMessage } from '../userApi'
 import { getKey } from '../api'
@@ -298,9 +296,7 @@ const textInput = ref(null)
 const showInput = ref(false)
 const isListening = ref(false)
 const isBusy = ref(false)
-// En una PWA instalada el navegador puede bloquear el micrófono si se solicita
-// durante el arranque, antes de una acción del usuario.
-const handsFree = ref(false)
+const handsFree = ref(true)
 const isPlayingTTS = ref([])
 const voiceRegistered = ref(false)
 const voiceRecording = ref(false)
@@ -484,102 +480,6 @@ const sendChat = async () => {
 
 /* ───────────── Reconocimiento de voz ───────────── */
 let recognition = null
-let wakeModel = null
-let wakeRecognizer = null
-let wakeStream = null
-let wakeContext = null
-let wakeSource = null
-let wakeProcessor = null
-let wakeOutput = null
-let wakeResolve = null
-let wakeReject = null
-let wakeLoading = null
-const WAKE_MODEL_URL = typeof window !== 'undefined'
-  ? new URL('/models/vosk-model-es.tar.gz', window.location.origin).href
-  : '/models/vosk-model-es.tar.gz'
-
-async function loadWakeModel() {
-  if (wakeModel?.ready) return wakeModel
-  if (!wakeLoading) {
-    voiceStepLabel.value = 'Descargando detector local (38 MB)…'
-    const modelPromise = createModel(WAKE_MODEL_URL, -1)
-    const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error('model-load-timeout')), 120000)
-    })
-    wakeLoading = Promise.race([modelPromise, timeoutPromise]).then((model) => {
-      wakeModel = model
-      return model
-    }).catch((err) => {
-      console.error('No se pudo cargar el detector local:', err)
-      throw new Error(err?.message === 'model-load-timeout' ? 'model-load-timeout' : 'model-load-failed')
-    }).finally(() => {
-      wakeLoading = null
-    })
-  }
-  return wakeLoading
-}
-
-function stopWakeDetector() {
-  if (wakeProcessor) wakeProcessor.disconnect()
-  if (wakeSource) wakeSource.disconnect()
-  if (wakeOutput) wakeOutput.disconnect()
-  if (wakeContext && wakeContext.state !== 'closed') wakeContext.close()
-  if (wakeStream) wakeStream.getTracks().forEach((track) => track.stop())
-  try { wakeRecognizer?.remove() } catch (err) {}
-  wakeProcessor = null
-  wakeSource = null
-  wakeContext = null
-  wakeStream = null
-  wakeRecognizer = null
-  wakeOutput = null
-}
-
-function finishWake(ok, error = null) {
-  const resolve = wakeResolve
-  wakeResolve = null
-  wakeReject = null
-  stopWakeDetector()
-  if (resolve) resolve({ ok, error })
-}
-
-function waitForWakeWord() {
-  return new Promise(async (resolve) => {
-    wakeResolve = resolve
-    try {
-      const model = await loadWakeModel()
-      if (!handsFree.value) return finishWake(false, 'wake-ended')
-      wakeStream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
-      })
-      wakeContext = new (window.AudioContext || window.webkitAudioContext)()
-      wakeSource = wakeContext.createMediaStreamSource(wakeStream)
-      wakeProcessor = wakeContext.createScriptProcessor(4096, 1, 1)
-      // La gramática reduce falsos positivos producidos por el televisor.
-      wakeRecognizer = new model.KaldiRecognizer(16000, JSON.stringify(['igris', 'igri', 'igres', '[unk]']))
-      const heardWake = (event) => {
-        const text = (event?.result?.text || event?.result?.partial || '').toLowerCase()
-          .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-        if (/\b(igris|igri|igres)\b/.test(text) || /ig\s*ris/.test(text)) finishWake(true)
-      }
-      wakeRecognizer.on('result', heardWake)
-      wakeRecognizer.on('partialresult', heardWake)
-      wakeProcessor.onaudioprocess = (event) => {
-        if (wakeRecognizer) wakeRecognizer.acceptWaveformFloat(event.inputBuffer.getChannelData(0), wakeContext.sampleRate)
-      }
-      wakeOutput = wakeContext.createGain()
-      wakeOutput.gain.value = 0
-      wakeSource.connect(wakeProcessor)
-      wakeProcessor.connect(wakeOutput)
-      wakeOutput.connect(wakeContext.destination)
-      if (wakeContext.state === 'suspended') await wakeContext.resume()
-      voiceStepLabel.value = 'Esperando “Igris”…'
-    } catch (err) {
-      finishWake(false, err?.message === 'model-load-failed'
-        ? 'model-load-failed'
-        : (err?.name === 'NotAllowedError' ? 'not-allowed' : 'start-failed'))
-    }
-  })
-}
 
 function listenOnce() {
   return new Promise(async (resolve) => {
@@ -675,7 +575,78 @@ function listenOnce() {
   })
 }
 
-const FATAL = ['unsupported', 'not-allowed', 'service-not-allowed', 'audio-capture', 'start-failed', 'model-load-failed']
+const FATAL = ['unsupported', 'not-allowed', 'service-not-allowed', 'audio-capture', 'start-failed']
+
+// En reposo solo se usa el reconocedor del navegador para detectar la palabra de activación.
+// El audio completo se graba y se envía al backend únicamente después de oír "Igris".
+function waitForWakeWord() {
+  return new Promise((resolve) => {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition
+    if (!SR) {
+      resolve({ ok: false, error: 'unsupported' })
+      return
+    }
+    let wake = null
+    let finished = false
+    let restarting = false
+    let result = null
+    let releaseTimer = null
+    const finish = (ok, error = null) => {
+      if (finished) return
+      result = { ok, error }
+      try { wake?.stop() } catch (err) {}
+      // SpeechRecognition libera el micrófono de forma asíncrona. Esperamos a
+      // `onend` antes de iniciar MediaRecorder para evitar que se bloqueen.
+      releaseTimer = setTimeout(() => {
+        if (!finished) {
+          finished = true
+          resolve(result)
+        }
+      }, 1200)
+    }
+    const start = () => {
+      if (finished || restarting) return
+      restarting = true
+      wake = new SR()
+      wake.lang = 'es-CO'
+      wake.continuous = true
+      wake.interimResults = true
+      wake.onresult = (event) => {
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const heard = event.results[i][0].transcript.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+          if (/\b(igris|igri|igres|igris|gris)\b/.test(heard) || /ig\s*ris/.test(heard)) {
+            finish(true)
+            return
+          }
+        }
+      }
+      wake.onerror = (event) => {
+        if (event.error === 'not-allowed' || event.error === 'service-not-allowed') finish(false, event.error)
+        else if (event.error === 'audio-capture') finish(false, event.error)
+      }
+      wake.onend = () => {
+        restarting = false
+        if (result && !finished) {
+          finished = true
+          if (releaseTimer) clearTimeout(releaseTimer)
+          resolve(result)
+          return
+        }
+        if (!finished) setTimeout(start, 250)
+      }
+      try {
+        wake.start()
+        restarting = false
+      } catch (err) {
+        restarting = false
+        setTimeout(() => {
+          if (!finished) start()
+        }, 500)
+      }
+    }
+    start()
+  })
+}
 
 function reportVoiceError(error) {
   if (!error || error === 'no-speech' || error === 'aborted') return false
@@ -683,12 +654,10 @@ function reportVoiceError(error) {
     'Micrófono bloqueado. Permítelo en el candado de la barra de direcciones y pulsa "Manos libres".'
   const msgs = {
     unsupported: 'Tu navegador no soporta la voz. Usa Chrome o Edge.',
-    'not-allowed': `${blocked} Si abriste IGRIS desde un icono, entra una vez desde webigris.zottagroup.com y permite el micrófono; después vuelve a abrir el icono.`,
+    'not-allowed': blocked,
     'service-not-allowed': blocked,
     'audio-capture': 'No se detecta el micrófono. Revisa que esté conectado.',
     'start-failed': 'No se pudo iniciar el micrófono. Pulsa "Manos libres" para reintentar.',
-    'model-load-failed': 'No se pudo descargar el detector local. Revisa tu conexión y pulsa "Manos libres" otra vez.',
-    'model-load-timeout': 'La descarga del detector está tardando demasiado. Revisa la conexión y pulsa "Manos libres" otra vez.',
   }
   setNotice(msgs[error] || `Error de voz: ${error}`)
   return FATAL.includes(error)
@@ -764,7 +733,6 @@ const toggleHandsFree = () => {
   if (handsFree.value) {
     handsFree.value = false
     if (recognition) recognition.abort()
-    finishWake(false, 'wake-ended')
     return
   }
   setNotice('')
@@ -1149,9 +1117,6 @@ onBeforeUnmount(() => {
   clearInterval(proactiveTimer)
   handsFree.value = false
   if (recognition) recognition.abort()
-  finishWake(false, 'wake-ended')
-  wakeModel?.terminate()
-  wakeModel = null
   stopSpeaking()
   stopLevelMeter()
   setIgrisState('idle')
