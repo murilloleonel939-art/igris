@@ -499,13 +499,17 @@ const WAKE_MODEL_URL = '/models/vosk-model-es.tar.gz'
 async function loadWakeModel() {
   if (wakeModel?.ready) return wakeModel
   if (!wakeLoading) {
-    voiceStepLabel.value = 'Descargando detector local…'
-    wakeLoading = createModel(WAKE_MODEL_URL, -1).then((model) => {
+    voiceStepLabel.value = 'Descargando detector local (38 MB)…'
+    const modelPromise = createModel(WAKE_MODEL_URL, -1)
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('model-load-timeout')), 120000)
+    })
+    wakeLoading = Promise.race([modelPromise, timeoutPromise]).then((model) => {
       wakeModel = model
       return model
     }).catch((err) => {
       console.error('No se pudo cargar el detector local:', err)
-      throw new Error('model-load-failed')
+      throw new Error(err?.message === 'model-load-timeout' ? 'model-load-timeout' : 'model-load-failed')
     }).finally(() => {
       wakeLoading = null
     })
@@ -682,6 +686,7 @@ function reportVoiceError(error) {
     'audio-capture': 'No se detecta el micrófono. Revisa que esté conectado.',
     'start-failed': 'No se pudo iniciar el micrófono. Pulsa "Manos libres" para reintentar.',
     'model-load-failed': 'No se pudo descargar el detector local. Revisa tu conexión y pulsa "Manos libres" otra vez.',
+    'model-load-timeout': 'La descarga del detector está tardando demasiado. Revisa la conexión y pulsa "Manos libres" otra vez.',
   }
   setNotice(msgs[error] || `Error de voz: ${error}`)
   return FATAL.includes(error)
