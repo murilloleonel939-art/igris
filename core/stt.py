@@ -71,29 +71,43 @@ def _transcribe_whisper_cpp(tmp_path: str, settings: dict, language: str) -> str
     if not model_path:
         raise RuntimeError("Falta IGRIS_WHISPER_CPP_MODEL con la ruta del modelo GGML/GGUF.")
     wav_path = None
+    output_prefix = None
+    output_path = None
     try:
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as wav_file:
             wav_path = wav_file.name
+        with tempfile.NamedTemporaryFile(prefix="igris-whisper-cpp-", delete=False) as output_file:
+            output_prefix = output_file.name
+        output_path = f"{output_prefix}.txt"
+        os.remove(output_prefix)
         subprocess.run(
             ["ffmpeg", "-y", "-i", tmp_path, "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", wav_path],
             capture_output=True, text=True, check=True,
         )
         result = subprocess.run(
-            [binary, "-m", model_path, "-f", wav_path, "-l", language, "-nt", "-np"],
+            [binary, "-m", model_path, "-f", wav_path, "-l", language, "-nt", "-np", "-otxt", "-of", output_prefix],
             capture_output=True, text=True, check=True,
         )
+        if os.path.isfile(output_path):
+            with open(output_path, encoding="utf-8") as transcript_file:
+                transcript = transcript_file.read().strip()
+        else:
+            transcript = (result.stdout or "").strip()
+        if not transcript:
+            raise RuntimeError("whisper.cpp terminó sin generar texto. Comprueba el volumen y que el audio contenga voz.")
+        return transcript
     except FileNotFoundError as exc:
         raise RuntimeError(f"No se encontró ffmpeg o el binario de whisper.cpp: {exc.filename}") from exc
     except subprocess.CalledProcessError as exc:
         detail = (exc.stderr or exc.stdout or "").strip()
         raise RuntimeError(f"whisper.cpp no pudo procesar el audio: {detail}") from exc
     finally:
-        if wav_path:
-            try:
-                os.remove(wav_path)
-            except OSError:
-                pass
-    return (result.stdout or "").strip()
+        for temporary_path in (wav_path, output_prefix, output_path):
+            if temporary_path:
+                try:
+                    os.remove(temporary_path)
+                except OSError:
+                    pass
 
 
 def _load_whisper_model(model_name: str):
