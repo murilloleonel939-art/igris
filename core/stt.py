@@ -27,6 +27,7 @@ _whisper_model = None
 _whisper_model_name = None
 _faster_whisper_model = None
 _faster_whisper_model_name = None
+_faster_whisper_compute_type = None
 
 
 def _settings() -> dict:
@@ -73,14 +74,15 @@ def _load_whisper_model(model_name: str):
     return _whisper_model
 
 
-def _load_faster_whisper_model(model_name: str):
-    """Carga y cachea faster-whisper en CPU con cuantización int8."""
-    global _faster_whisper_model, _faster_whisper_model_name
-    if _faster_whisper_model is None or _faster_whisper_model_name != model_name:
+def _load_faster_whisper_model(model_name: str, compute_type: str):
+    """Carga y cachea faster-whisper con el tipo de cómputo elegido."""
+    global _faster_whisper_model, _faster_whisper_model_name, _faster_whisper_compute_type
+    if _faster_whisper_model is None or _faster_whisper_model_name != model_name or _faster_whisper_compute_type != compute_type:
         if WhisperModel is None:
             raise RuntimeError("El paquete 'faster-whisper' no está instalado.")
-        _faster_whisper_model = WhisperModel(model_name, device="cpu", compute_type="int8")
+        _faster_whisper_model = WhisperModel(model_name, device="cpu", compute_type=compute_type)
         _faster_whisper_model_name = model_name
+        _faster_whisper_compute_type = compute_type
     return _faster_whisper_model
 
 
@@ -92,7 +94,8 @@ def _transcribe_local(tmp_path: str, settings: dict) -> str:
         result = _load_whisper_model(model_name).transcribe(tmp_path, fp16=False, language=language)
         return (result.get("text") or "").strip()
     if engine == "faster-whisper":
-        segments, _ = _load_faster_whisper_model(model_name).transcribe(tmp_path, language=language)
+        compute_type = settings.get("local_compute_type") or os.getenv("IGRIS_STT_COMPUTE_TYPE", "int8")
+        segments, _ = _load_faster_whisper_model(model_name, compute_type).transcribe(tmp_path, language=language)
         return " ".join(segment.text.strip() for segment in segments).strip()
     raise RuntimeError("Motor local STT desconocido. Usa whisper o faster-whisper.")
 

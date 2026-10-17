@@ -118,7 +118,7 @@ class SettingsManager:
         defaults = self.get_defaults()["stt"]
         current = self.settings.get("stt", {})
         current = dict(current) if isinstance(current, dict) else {}
-        for key in ("provider", "cloud_model", "local_engine", "local_model", "language"):
+        for key in ("provider", "cloud_model", "local_engine", "local_model", "local_compute_type", "language"):
             if key not in config or config[key] is None:
                 continue
             value = str(config[key]).strip()
@@ -136,6 +136,8 @@ class SettingsManager:
                     raise ValueError("Motor local no válido. Usa whisper o faster-whisper.")
                 if key == "local_model" and value not in {"tiny", "base", "small", "medium"}:
                     raise ValueError("Modelo local no válido. Usa tiny, base, small o medium.")
+                if key == "local_compute_type" and value not in {"int8", "float16", "float32"}:
+                    raise ValueError("Tipo de cómputo no válido. Usa int8, float16 o float32.")
                 current[key] = value
         self.settings["stt"] = current
         return self.save()
@@ -180,6 +182,7 @@ class SettingsManager:
                 "provider": os.getenv("IGRIS_STT_PROVIDER", "local"),
                 "cloud_model": os.getenv("IGRIS_STT_MODEL", "whisper-1"),
                 "local_engine": os.getenv("IGRIS_STT_LOCAL_ENGINE", "whisper"),
+                "local_compute_type": os.getenv("IGRIS_STT_COMPUTE_TYPE", "int8"),
                 "local_model": os.getenv("IGRIS_WHISPER_MODEL", "tiny"),
                 "language": os.getenv("IGRIS_STT_LANGUAGE", "es")
             },
