@@ -444,6 +444,7 @@ class AIConfigResponse(BaseModel):
 class STTConfigUpdate(BaseModel):
     provider: str
     cloud_model: Optional[str] = None
+    local_engine: Optional[str] = None
     local_model: Optional[str] = None
     language: Optional[str] = None
 
@@ -452,6 +453,7 @@ class STTConfigResponse(BaseModel):
     status: str
     provider: str
     cloud_model: str
+    local_engine: str
     local_model: str
     language: str
     cloud_ready: bool = False
@@ -465,6 +467,7 @@ async def get_stt_config():
         status="ok",
         provider=settings.get("provider", "local"),
         cloud_model=settings.get("cloud_model", "whisper-1"),
+        local_engine=settings.get("local_engine", "whisper"),
         local_model=settings.get("local_model", "tiny"),
         language=settings.get("language", "es"),
         cloud_ready=bool(os.getenv("IGRIS_STT_API_KEY")),
@@ -484,6 +487,7 @@ async def update_stt_config(update: STTConfigUpdate):
         data = {
             "provider": provider,
             "cloud_model": update.cloud_model or current.get("cloud_model", "whisper-1"),
+            "local_engine": update.local_engine or current.get("local_engine", "whisper"),
             "local_model": update.local_model or current.get("local_model", "tiny"),
             "language": update.language or current.get("language", "es"),
         }

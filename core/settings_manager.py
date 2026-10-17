@@ -106,12 +106,11 @@ class SettingsManager:
         saved = saved if isinstance(saved, dict) else {}
         defaults = self.get_defaults()["stt"]
         result = {**defaults, **saved}
-        # settings.json antiguos incluían provider/model como defaults estáticos.
         # Solo un cambio explícito del panel debe prevalecer sobre Coolify.
+        # La clave legacy "model" se ignora: podía dejar tiny fijo aunque el
+        # administrador hubiera configurado otro modelo en el entorno.
         if not saved.get("provider_override"):
             result["provider"] = defaults["provider"]
-        if "local_model" not in saved and saved.get("model"):
-            result["local_model"] = saved["model"]
         return result
 
     def set_stt_config(self, config: dict) -> bool:
@@ -119,7 +118,7 @@ class SettingsManager:
         defaults = self.get_defaults()["stt"]
         current = self.settings.get("stt", {})
         current = dict(current) if isinstance(current, dict) else {}
-        for key in ("provider", "cloud_model", "local_model", "language"):
+        for key in ("provider", "cloud_model", "local_engine", "local_model", "language"):
             if key not in config or config[key] is None:
                 continue
             value = str(config[key]).strip()
@@ -133,6 +132,10 @@ class SettingsManager:
                 value = value.lower()
                 current[key] = value
             elif value:
+                if key == "local_engine" and value not in {"whisper", "faster-whisper"}:
+                    raise ValueError("Motor local no válido. Usa whisper o faster-whisper.")
+                if key == "local_model" and value not in {"tiny", "base", "small", "medium"}:
+                    raise ValueError("Modelo local no válido. Usa tiny, base, small o medium.")
                 current[key] = value
         self.settings["stt"] = current
         return self.save()
@@ -176,6 +179,7 @@ class SettingsManager:
             "stt": {
                 "provider": os.getenv("IGRIS_STT_PROVIDER", "local"),
                 "cloud_model": os.getenv("IGRIS_STT_MODEL", "whisper-1"),
+                "local_engine": os.getenv("IGRIS_STT_LOCAL_ENGINE", "whisper"),
                 "local_model": os.getenv("IGRIS_WHISPER_MODEL", "tiny"),
                 "language": os.getenv("IGRIS_STT_LANGUAGE", "es")
             },

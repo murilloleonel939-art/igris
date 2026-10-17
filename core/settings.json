@@ -18,7 +18,6 @@
   },
   "stt": {
     "provider": "local",
-    "model": "tiny",
     "language": "es"
   },
   "tts": {

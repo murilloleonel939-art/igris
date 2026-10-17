@@ -62,7 +62,7 @@
           <div><h2 class="section-title">Voz y audio</h2><p class="section-description">Configura cómo IGRIS transcribe y responde mediante voz.</p>
             <article class="voice-panel mt-7"><div class="flex items-start justify-between gap-5"><div><h3 class="text-base font-semibold text-white">Transcripción</h3><p class="mt-1 text-sm text-stone-400">Selecciona el motor que convierte tu voz en texto.</p></div><span class="online-label"><i class="status-dot"></i>Activo</span></div>
               <div class="mt-6 grid gap-3 sm:grid-cols-2"><button @click="sttEdit.provider = 'local'" class="voice-choice" :class="{ selected: sttEdit.provider === 'local' }"><b>Whisper local</b><span>Procesa el audio en el servidor.</span></button><button @click="sttEdit.provider = 'openai'" :disabled="!sttConfig.cloud_ready" class="voice-choice" :class="{ selected: sttEdit.provider === 'openai', disabled: !sttConfig.cloud_ready }"><b>Whisper OpenAI</b><span>{{ sttConfig.cloud_ready ? 'Transcripción cloud de OpenAI.' : 'Requiere IGRIS_STT_API_KEY en Coolify.' }}</span></button></div>
-              <div class="mt-5 rounded-lg border border-white/10 bg-black/15 p-4 text-sm text-stone-400"><span v-if="sttEdit.provider === 'local'">Modelo local activo: <b class="text-stone-200">{{ sttConfig.local_model }}</b></span><span v-else>Modelo cloud activo: <b class="text-stone-200">{{ sttConfig.cloud_model }}</b>. La clave permanece segura en Coolify.</span></div>
+              <div v-if="sttEdit.provider === 'local'" class="mt-5 rounded-lg border border-white/10 bg-black/15 p-4 text-sm text-stone-400"><label for="local-stt-engine">Motor local:</label><select id="local-stt-engine" v-model="sttEdit.local_engine" class="ml-2 rounded border border-white/10 bg-black/20 p-1 text-stone-200"><option v-for="engine in localEngines" :key="engine.value" :value="engine.value">{{ engine.label }}</option></select><label class="ml-4" for="local-whisper-model">Modelo:</label><select id="local-whisper-model" v-model="sttEdit.local_model" class="ml-2 rounded border border-white/10 bg-black/20 p-1 text-stone-200"><option v-for="model in localModels" :key="model.value" :value="model.value">{{ model.label }}</option></select></div><div v-else class="mt-5 rounded-lg border border-white/10 bg-black/15 p-4 text-sm text-stone-400">Modelo cloud activo: <b class="text-stone-200">{{ sttConfig.cloud_model }}</b>. La clave permanece segura en Coolify.</div>
               <div class="mt-6 flex items-center justify-between gap-4"><p v-if="sttError" class="text-sm text-red-300">{{ sttError }}</p><p v-else class="text-sm text-emerald-400">{{ sttSuccess }}</p><button @click="saveSTTConfig" :disabled="sttSaving || (sttEdit.provider === 'openai' && !sttConfig.cloud_ready)" class="save-button ml-auto">{{ sttSaving ? 'Guardando…' : 'Guardar voz y audio' }}</button></div>
             </article>
             <article class="voice-panel mt-5"><h3 class="text-base font-semibold text-white">Síntesis de voz</h3><p class="mt-2 text-sm text-stone-400">Proveedor actual: <b class="text-stone-200">{{ aiConfig.tts.provider || 'local' }}</b>. La voz se reproduce automáticamente tras cada respuesta.</p></article>
@@ -81,8 +81,15 @@ import api from '../api'
 const loading = ref(true), error = ref(null), activeTab = ref('providers'), aiConfig = ref(null)
 const editConfig = ref({ primary_provider: '', fallback_chain: [] })
 const saving = ref(false), saveSuccess = ref(''), saveError = ref('')
-const sttConfig = ref({ provider: 'local', cloud_model: 'whisper-1', local_model: 'tiny', cloud_ready: false })
-const sttEdit = ref({ provider: 'local' }), sttSaving = ref(false), sttSuccess = ref(''), sttError = ref('')
+const sttConfig = ref({ provider: 'local', local_engine: 'whisper', cloud_model: 'whisper-1', local_model: 'tiny', cloud_ready: false })
+const sttEdit = ref({ provider: 'local', local_engine: 'whisper', local_model: 'tiny' }), sttSaving = ref(false), sttSuccess = ref(''), sttError = ref('')
+const localEngines = [{ value: 'whisper', label: 'Whisper' }, { value: 'faster-whisper', label: 'faster-whisper' }]
+const localModels = [
+  { value: 'tiny', label: 'Tiny — más rápido' },
+  { value: 'base', label: 'Base — equilibrio' },
+  { value: 'small', label: 'Small — más precisión' },
+  { value: 'medium', label: 'Medium — máxima precisión local' },
+]
 const availableProviders = ['groq', 'nemotron', 'openai', 'anthropic', 'local']
 const inactiveProviders = computed(() => availableProviders.filter(p => !editConfig.value.fallback_chain.includes(p)))
 const providerLabel = p => ({ groq: 'Groq', nemotron: 'Nemotron', openai: 'OpenAI', anthropic: 'Anthropic', local: 'Local' }[p] || p)
@@ -95,7 +102,7 @@ const loadAIConfig = async () => {
     if (response.data.status !== 'ok') throw new Error(response.data.message)
     aiConfig.value = { primary_provider: response.data.primary_provider, fallback_chain: [...response.data.fallback_chain], tts: response.data.tts || { provider: 'local', enabled: true } }
     editConfig.value = { primary_provider: aiConfig.value.primary_provider, fallback_chain: [...aiConfig.value.fallback_chain] }
-    if (sttResponse.data.status === 'ok') { sttConfig.value = sttResponse.data; sttEdit.value.provider = sttResponse.data.provider }
+    if (sttResponse.data.status === 'ok') { sttConfig.value = sttResponse.data; sttEdit.value = { provider: sttResponse.data.provider, local_engine: sttResponse.data.local_engine || 'whisper', local_model: sttResponse.data.local_model } }
   } catch (err) { error.value = err.response?.data?.detail || 'No se pudo cargar la configuración.' } finally { loading.value = false }
 }
 const setPrimary = p => { editConfig.value.primary_provider = p; if (!editConfig.value.fallback_chain.includes(p)) editConfig.value.fallback_chain.unshift(p) }
@@ -103,7 +110,7 @@ const toggleFallback = p => { const i = editConfig.value.fallback_chain.indexOf(
 const moveFallback = (i, d) => { const target = i + d; if (target < 0 || target >= editConfig.value.fallback_chain.length) return; const list = editConfig.value.fallback_chain; [list[i], list[target]] = [list[target], list[i]] }
 const resetProviderEdits = () => { editConfig.value = { primary_provider: aiConfig.value.primary_provider, fallback_chain: [...aiConfig.value.fallback_chain] }; saveError.value = ''; saveSuccess.value = '' }
 const saveConfig = async () => { if (!editConfig.value.primary_provider || !editConfig.value.fallback_chain.length) { saveError.value = 'Selecciona un proveedor y al menos un respaldo.'; return }; try { saving.value = true; saveError.value = ''; saveSuccess.value = ''; const response = await api.put('/api/ai-config', editConfig.value); if (response.data.status !== 'ok') throw new Error(response.data.message); aiConfig.value.primary_provider = editConfig.value.primary_provider; aiConfig.value.fallback_chain = [...editConfig.value.fallback_chain]; saveSuccess.value = response.data.message || 'Configuración guardada correctamente.' } catch (err) { saveError.value = err.response?.data?.detail || err.message || 'No se pudo guardar la configuración.' } finally { saving.value = false } }
-const saveSTTConfig = async () => { try { sttSaving.value = true; sttError.value = ''; sttSuccess.value = ''; const response = await api.put('/api/stt-config', { provider: sttEdit.value.provider }); sttConfig.value = response.data; sttSuccess.value = response.data.message || 'Configuración de voz guardada.' } catch (err) { sttError.value = err.response?.data?.detail || 'No se pudo guardar la configuración de voz.' } finally { sttSaving.value = false } }
+const saveSTTConfig = async () => { try { sttSaving.value = true; sttError.value = ''; sttSuccess.value = ''; const response = await api.put('/api/stt-config', { provider: sttEdit.value.provider, local_engine: sttEdit.value.local_engine, local_model: sttEdit.value.local_model }); sttConfig.value = response.data; sttEdit.value.local_engine = response.data.local_engine; sttEdit.value.local_model = response.data.local_model; sttSuccess.value = response.data.message || 'Configuración de voz guardada.' } catch (err) { sttError.value = err.response?.data?.detail || 'No se pudo guardar la configuración de voz.' } finally { sttSaving.value = false } }
 onMounted(loadAIConfig)
 </script>
 

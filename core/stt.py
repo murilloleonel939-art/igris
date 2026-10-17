@@ -16,10 +16,17 @@ try:
 except Exception:  # pragma: no cover
     whisper = None  # type: ignore
 
+try:
+    from faster_whisper import WhisperModel  # type: ignore
+except Exception:  # pragma: no cover
+    WhisperModel = None  # type: ignore
+
 AudioInput = Union[bytes, bytearray, memoryview, io.BytesIO]
 
 _whisper_model = None
 _whisper_model_name = None
+_faster_whisper_model = None
+_faster_whisper_model_name = None
 
 
 def _settings() -> dict:
@@ -51,19 +58,43 @@ def _to_bytes(audio: AudioInput) -> bytes:
     raise TypeError(f"Tipo de audio no soportado: {type(audio).__name__}")
 
 
-def _load_whisper_model():
-    """Carga y cachea el modelo local activo; recarga si se cambia desde ajustes."""
+def _local_engine(settings: dict) -> str:
+    return (settings.get("local_engine") or os.getenv("IGRIS_STT_LOCAL_ENGINE", "whisper")).strip().lower()
+
+
+def _load_whisper_model(model_name: str):
+    """Carga y cachea el modelo openai-whisper seleccionado."""
     global _whisper_model, _whisper_model_name
-    model_name = _settings().get("local_model") or os.getenv("IGRIS_WHISPER_MODEL", "base")
     if _whisper_model is None or _whisper_model_name != model_name:
         if whisper is None:
-            raise RuntimeError(
-                "El paquete 'openai-whisper' no está instalado. "
-                "Instálalo con: pip install openai-whisper"
-            )
+            raise RuntimeError("El paquete 'openai-whisper' no está instalado.")
         _whisper_model = whisper.load_model(model_name)
         _whisper_model_name = model_name
     return _whisper_model
+
+
+def _load_faster_whisper_model(model_name: str):
+    """Carga y cachea faster-whisper en CPU con cuantización int8."""
+    global _faster_whisper_model, _faster_whisper_model_name
+    if _faster_whisper_model is None or _faster_whisper_model_name != model_name:
+        if WhisperModel is None:
+            raise RuntimeError("El paquete 'faster-whisper' no está instalado.")
+        _faster_whisper_model = WhisperModel(model_name, device="cpu", compute_type="int8")
+        _faster_whisper_model_name = model_name
+    return _faster_whisper_model
+
+
+def _transcribe_local(tmp_path: str, settings: dict) -> str:
+    model_name = settings.get("local_model") or os.getenv("IGRIS_WHISPER_MODEL", "base")
+    engine = _local_engine(settings)
+    language = _language()
+    if engine == "whisper":
+        result = _load_whisper_model(model_name).transcribe(tmp_path, fp16=False, language=language)
+        return (result.get("text") or "").strip()
+    if engine == "faster-whisper":
+        segments, _ = _load_faster_whisper_model(model_name).transcribe(tmp_path, language=language)
+        return " ".join(segment.text.strip() for segment in segments).strip()
+    raise RuntimeError("Motor local STT desconocido. Usa whisper o faster-whisper.")
 
 
 def transcribe(audio: AudioInput, suffix: str = ".ogg") -> str:
@@ -109,9 +140,7 @@ def transcribe(audio: AudioInput, suffix: str = ".ogg") -> str:
             tmp_path = tmp.name
 
         try:
-            model = _load_whisper_model()
-            result = model.transcribe(tmp_path, fp16=False, language=_language())
-            return (result.get("text") or "").strip()
+            return _transcribe_local(tmp_path, stt_config)
         finally:
             try:
                 os.remove(tmp_path)

@@ -17,6 +17,7 @@ python-telegram-bot==20.6
 # --------------------------------------------------------------
 torch==2.5.1                     # <-- requerido por SpeechBrain/torchaudio (CPU‑only)
 git+https://github.com/openai/whisper.git  # <-- instala Whisper directamente desde su repo
+faster-whisper==1.1.1            # motor Whisper local optimizado para CPU
 openai==1.35.0                   # SDK usado por todos los proveedores de IA (APIs compatibles con OpenAI)
 
 # --------------------------------------------------------------
