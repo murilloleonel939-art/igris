@@ -27,6 +27,7 @@
 | 📡 **Controles Smart IR**: aire acondicionado, TV y futuros mandos compatibles | Funcional |
 | 🔌 Órdenes Tuya ejecutadas inmediatamente, sin doble confirmación | Funcional |
 | 📊 Consulta de estado para dispositivos directos y controles infrarrojos | Funcional |
+| 🛡️ Protección contra órdenes ambiguas: exige identificar el dispositivo exacto | Funcional |
 | 📧 Gmail (lectura de la bandeja) | Funcional |
 | ✉️ **Enviar correos** con confirmación obligatoria antes de enviar | Funcional |
 | 🗑️ **Eliminar correos** (mueve a papelera, reversible desde Gmail) | Funcional |
@@ -474,6 +475,8 @@ Ejemplos de lenguaje natural:
 - «¿El aire está encendido?» o «¿Qué estado tiene el televisor?».
 
 Para el aire acondicionado, Igris consulta el estado específico del mando IR. Para otros dispositivos consulta el estado que reporta Smart Life o el mando virtual.
+
+Si una referencia coincide con varios dispositivos, Igris no ejecuta la orden ni consulta un dispositivo al azar: muestra los nombres coincidentes y pide especificar uno, por ejemplo «aire de la pieza», «aire de la sala» o «televisor de la habitación». Los alias configurados con `TUYA_DEVICE_ALIASES` también identifican directamente cada dispositivo.
 
 Variables del backend:
 
