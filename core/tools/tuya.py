@@ -107,7 +107,7 @@ async def list_tuya_devices() -> dict[str, Any]:
         # El hub es el único dispositivo que contiene mandos virtuales. Los
         # añadimos al inventario para que los nuevos aparatos aparezcan solos.
         for device in normalized_devices:
-            if device.get("categoria") == "wnykq" and device.get("id"):
+            if _looks_like_hub(device) and device.get("id"):
                 try:
                     device["controles_ir"] = await list_infrared_remotes(device["id"])
                 except Exception as exc:
