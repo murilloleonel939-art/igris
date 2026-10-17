@@ -446,6 +446,7 @@ class STTConfigUpdate(BaseModel):
     cloud_model: Optional[str] = None
     local_engine: Optional[str] = None
     local_compute_type: Optional[str] = None
+    whisper_cpp_model: Optional[str] = None
     local_model: Optional[str] = None
     language: Optional[str] = None
 
@@ -456,6 +457,7 @@ class STTConfigResponse(BaseModel):
     cloud_model: str
     local_engine: str
     local_compute_type: str
+    whisper_cpp_model: str
     local_model: str
     language: str
     cloud_ready: bool = False
@@ -471,6 +473,7 @@ async def get_stt_config():
         cloud_model=settings.get("cloud_model", "whisper-1"),
         local_engine=settings.get("local_engine", "whisper"),
         local_compute_type=settings.get("local_compute_type", "int8"),
+        whisper_cpp_model=settings.get("whisper_cpp_model", ""),
         local_model=settings.get("local_model", "tiny"),
         language=settings.get("language", "es"),
         cloud_ready=bool(os.getenv("IGRIS_STT_API_KEY")),
@@ -492,6 +495,7 @@ async def update_stt_config(update: STTConfigUpdate):
             "cloud_model": update.cloud_model or current.get("cloud_model", "whisper-1"),
             "local_engine": update.local_engine or current.get("local_engine", "whisper"),
             "local_compute_type": update.local_compute_type or current.get("local_compute_type", "int8"),
+            "whisper_cpp_model": update.whisper_cpp_model or current.get("whisper_cpp_model", ""),
             "local_model": update.local_model or current.get("local_model", "tiny"),
             "language": update.language or current.get("language", "es"),
         }

@@ -118,7 +118,7 @@ class SettingsManager:
         defaults = self.get_defaults()["stt"]
         current = self.settings.get("stt", {})
         current = dict(current) if isinstance(current, dict) else {}
-        for key in ("provider", "cloud_model", "local_engine", "local_model", "local_compute_type", "language"):
+        for key in ("provider", "cloud_model", "local_engine", "local_model", "local_compute_type", "whisper_cpp_model", "language"):
             if key not in config or config[key] is None:
                 continue
             value = str(config[key]).strip()
@@ -132,8 +132,8 @@ class SettingsManager:
                 value = value.lower()
                 current[key] = value
             elif value:
-                if key == "local_engine" and value not in {"whisper", "faster-whisper"}:
-                    raise ValueError("Motor local no válido. Usa whisper o faster-whisper.")
+                if key == "local_engine" and value not in {"whisper", "faster-whisper", "whisper.cpp"}:
+                    raise ValueError("Motor local no válido. Usa whisper, faster-whisper o whisper.cpp.")
                 if key == "local_model" and value not in {"tiny", "base", "small", "medium"}:
                     raise ValueError("Modelo local no válido. Usa tiny, base, small o medium.")
                 if key == "local_compute_type" and value not in {"int8", "float16", "float32"}:
@@ -183,6 +183,7 @@ class SettingsManager:
                 "cloud_model": os.getenv("IGRIS_STT_MODEL", "whisper-1"),
                 "local_engine": os.getenv("IGRIS_STT_LOCAL_ENGINE", "whisper"),
                 "local_compute_type": os.getenv("IGRIS_STT_COMPUTE_TYPE", "int8"),
+                "whisper_cpp_model": os.getenv("IGRIS_WHISPER_CPP_MODEL", ""),
                 "local_model": os.getenv("IGRIS_WHISPER_MODEL", "tiny"),
                 "language": os.getenv("IGRIS_STT_LANGUAGE", "es")
             },

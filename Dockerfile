@@ -11,6 +11,11 @@ FROM python:3.12-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
         git \
         ffmpeg \
+        build-essential \
+        cmake \
+        && git clone --depth 1 https://github.com/ggerganov/whisper.cpp.git /opt/whisper.cpp \
+        && cmake -S /opt/whisper.cpp -B /opt/whisper.cpp/build -DWHISPER_BUILD_TESTS=OFF -DWHISPER_BUILD_EXAMPLES=ON \
+        && cmake --build /opt/whisper.cpp/build --config Release -j2 \
         && rm -rf /var/lib/apt/lists/*
 
 # --------------------------------------------------------------
@@ -59,7 +64,8 @@ EXPOSE 8000
 # --------------------------------------------------------------
 # Variables de entorno de tiempo de ejecución
 # --------------------------------------------------------------
-ENV PYTHONUNBUFFERED=1
+ENV PYTHONUNBUFFERED=1 \
+    IGRIS_WHISPER_CPP_BINARY=/opt/whisper.cpp/build/bin/whisper-cli
 
 # --------------------------------------------------------------
 # Comando de arranque

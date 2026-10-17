@@ -1,6 +1,7 @@
 # core/stt.py
 import io
 import os
+import subprocess
 import tempfile
 from typing import Union
 
@@ -63,6 +64,25 @@ def _local_engine(settings: dict) -> str:
     return (settings.get("local_engine") or os.getenv("IGRIS_STT_LOCAL_ENGINE", "whisper")).strip().lower()
 
 
+def _transcribe_whisper_cpp(tmp_path: str, settings: dict, language: str) -> str:
+    """Transcribe con whisper.cpp usando un modelo GGML/GGUF local."""
+    binary = settings.get("whisper_cpp_binary") or os.getenv("IGRIS_WHISPER_CPP_BINARY", "whisper-cli")
+    model_path = settings.get("whisper_cpp_model") or os.getenv("IGRIS_WHISPER_CPP_MODEL")
+    if not model_path:
+        raise RuntimeError("Falta IGRIS_WHISPER_CPP_MODEL con la ruta del modelo GGML/GGUF.")
+    try:
+        result = subprocess.run(
+            [binary, "-m", model_path, "-f", tmp_path, "-l", language, "-nt", "-np"],
+            capture_output=True, text=True, check=True,
+        )
+    except FileNotFoundError as exc:
+        raise RuntimeError(f"No se encontró el binario de whisper.cpp: {binary}") from exc
+    except subprocess.CalledProcessError as exc:
+        detail = (exc.stderr or exc.stdout or "").strip()
+        raise RuntimeError(f"whisper.cpp no pudo transcribir el audio: {detail}") from exc
+    return (result.stdout or "").strip()
+
+
 def _load_whisper_model(model_name: str):
     """Carga y cachea el modelo openai-whisper seleccionado."""
     global _whisper_model, _whisper_model_name
@@ -97,7 +117,9 @@ def _transcribe_local(tmp_path: str, settings: dict) -> str:
         compute_type = settings.get("local_compute_type") or os.getenv("IGRIS_STT_COMPUTE_TYPE", "int8")
         segments, _ = _load_faster_whisper_model(model_name, compute_type).transcribe(tmp_path, language=language)
         return " ".join(segment.text.strip() for segment in segments).strip()
-    raise RuntimeError("Motor local STT desconocido. Usa whisper o faster-whisper.")
+    if engine == "whisper.cpp":
+        return _transcribe_whisper_cpp(tmp_path, settings, language)
+    raise RuntimeError("Motor local STT desconocido. Usa whisper, faster-whisper o whisper.cpp.")
 
 
 def transcribe(audio: AudioInput, suffix: str = ".ogg") -> str:
