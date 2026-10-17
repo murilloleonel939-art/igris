@@ -124,8 +124,8 @@ class SettingsManager:
             value = str(config[key]).strip()
             if key == "provider":
                 value = value.lower()
-                if value not in {"local", "openai"}:
-                    raise ValueError("Proveedor STT no válido")
+                if value not in {"local", "deepgram", "openai"}:
+                    raise ValueError("Proveedor STT no válido. Usa local, deepgram u openai.")
                 current[key] = value
                 current["provider_override"] = True
             elif key == "language":
