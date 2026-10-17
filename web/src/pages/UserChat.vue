@@ -523,14 +523,13 @@ function listenOnce() {
         const rms = Math.sqrt(sum / samples.length)
         const now = Date.now()
         // Umbral más sensible para micrófonos de portátil y voz baja.
-        if (rms > 0.004) {
+        if (rms > 0.006) {
           heardSpeech = true
           if (!speechStartedAt) speechStartedAt = now
           lastSpeechAt = now
         }
         // No cortar frases por una pausa breve al respirar o pensar.
-        // No enviar silencios largos: evitan timeouts y falsas órdenes del STT.
-        if (speechStartedAt && now - lastSpeechAt > 900 && now - speechStartedAt > 600) {
+        if (speechStartedAt && now - lastSpeechAt > 1400 && now - speechStartedAt > 600) {
           stopCapture?.()
           return
         }
@@ -570,49 +569,13 @@ function listenOnce() {
     }
     isListening.value = true
     setIgrisState('listening')
-    // El VAD termina al detectar silencio; este límite es solo protección.
-    setTimeout(() => stopCapture?.(), 8000)
+    // Deja tiempo para una frase completa; el VAD corta al detectar silencio.
+    // El máximo evita mantener el micrófono abierto si el VAD no detecta la voz.
+    setTimeout(() => stopCapture?.(), 15000)
   })
 }
 
 const FATAL = ['unsupported', 'not-allowed', 'service-not-allowed', 'audio-capture', 'start-failed']
-
-// En reposo solo se usa el reconocedor del navegador para detectar la palabra de activación.
-// El audio completo se graba y se envía al backend únicamente después de oír "Igris".
-function waitForWakeWord() {
-  return new Promise((resolve) => {
-    const SR = window.SpeechRecognition || window.webkitSpeechRecognition
-    if (!SR) {
-      resolve({ ok: false, error: 'unsupported' })
-      return
-    }
-    const wake = new SR()
-    wake.lang = 'es-CO'
-    wake.continuous = true
-    wake.interimResults = true
-    let finished = false
-    const finish = (ok, error = null) => {
-      if (finished) return
-      finished = true
-      try { wake.stop() } catch (err) {}
-      resolve({ ok, error })
-    }
-    wake.onresult = (event) => {
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const heard = event.results[i][0].transcript.toLowerCase()
-        if (/\big\s*ris\b|\bigris\b/.test(heard)) {
-          finish(true)
-          return
-        }
-      }
-    }
-    wake.onerror = (event) => {
-      if (event.error === 'not-allowed' || event.error === 'service-not-allowed') finish(false, event.error)
-    }
-    wake.onend = () => { if (!finished) finish(false, 'wake-ended') }
-    try { wake.start() } catch (err) { finish(false, 'start-failed') }
-  })
-}
 
 function reportVoiceError(error) {
   if (!error || error === 'no-speech' || error === 'aborted') return false
@@ -642,30 +605,14 @@ const runHandsFree = async () => {
         await sleep(200)
         continue
       }
-      // En reposo el televisor y las conversaciones no llegan al STT.
-      setIgrisState('idle')
-      const wake = await waitForWakeWord()
-      if (!handsFree.value) break
-      if (!wake.ok) {
-        if (wake.error === 'wake-ended') {
-          await sleep(300)
-          continue
-        }
-        if (reportVoiceError(wake.error)) {
-          handsFree.value = false
-          break
-        }
-        await sleep(500)
-        continue
-      }
-      // La palabra "Igris" activa una única ventana de grabación.
       const { text, audio, error } = await listenOnce()
       if (!handsFree.value) break
       if (reportVoiceError(error)) {
         handsFree.value = false
         break
       }
-      // El backend usa Whisper para transcribir el audio de la orden.
+      // SpeechRecognition puede no devolver texto aunque MediaRecorder sí haya
+      // capturado la voz. El backend usa Whisper para transcribir el audio.
       if (audio) {
         const form = new FormData()
         form.append('audio', audio, 'voice.webm')
