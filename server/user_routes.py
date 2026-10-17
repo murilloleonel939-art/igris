@@ -997,8 +997,8 @@ async def register_voice_profile(
     """Registra o reemplaza la huella de voz del usuario."""
     samples = [await item.read() for item in audio]
     samples = [item for item in samples if len(item) >= 10_000]
-    if len(samples) < 3:
-        raise HTTPException(status_code=422, detail="Necesitas al menos 3 muestras de voz válidas")
+    if len(samples) < 6:
+        raise HTTPException(status_code=422, detail="Necesitas 6 muestras de voz válidas")
     try:
         vector = await asyncio.to_thread(voice.average_embedding, samples, ".webm")
         encoded = voice.serialize(vector)
@@ -1066,17 +1066,16 @@ async def user_voice_chat(
         Profile.is_authorized.is_(True),
     ).first()
     score: float | None = None
-    if profile is not None and profile.voice_print:
-        try:
-            verified, score = await asyncio.to_thread(voice.verify, data, profile.voice_print, ".webm")
-        except Exception as exc:
-            logger.exception("Falló la verificación de voz")
-            raise HTTPException(status_code=500, detail=f"No se pudo verificar la voz: {exc}")
-        if not verified:
-            logger.warning("Voz no reconocida para usuario %s: score=%.4f threshold=%s", user.id, score, os.getenv("IGRIS_VOICE_THRESHOLD", "0.40"))
-            raise HTTPException(status_code=403, detail=f"Voz no reconocida (similitud {score:.2f})")
-    else:
-        logger.info("Usuario %s usa orden por voz sin perfil registrado", user.id)
+    if profile is None or not profile.voice_print or not profile.is_authorized:
+        raise HTTPException(status_code=403, detail="Registra tu perfil de voz antes de usar comandos por voz")
+    try:
+        verified, score = await asyncio.to_thread(voice.verify, data, profile.voice_print, ".webm")
+    except Exception as exc:
+        logger.exception("Falló la verificación de voz")
+        raise HTTPException(status_code=500, detail=f"No se pudo verificar la voz: {exc}")
+    if not verified:
+        logger.warning("Voz no reconocida para usuario %s: score=%.4f threshold=%s", user.id, score, os.getenv("IGRIS_VOICE_THRESHOLD", "0.40"))
+        raise HTTPException(status_code=403, detail=f"Voz no reconocida (similitud {score:.2f})")
 
     try:
         text = await transcribe_user_audio(data, audio.content_type or "audio/webm")

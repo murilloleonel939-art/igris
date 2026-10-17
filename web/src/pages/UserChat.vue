@@ -612,7 +612,7 @@ const runHandsFree = async () => {
         break
       }
       // SpeechRecognition puede no devolver texto aunque MediaRecorder sí haya
-      // capturado la voz. El backend usa Whisper para transcribir el audio.
+      // capturado la voz. El backend verifica la voz localmente y luego transcribe.
       if (audio) {
         setIgrisState('processing')
         const form = new FormData()
@@ -889,10 +889,12 @@ async function registerVoice() {
   try {
     const samples = []
     const steps = [
-      'Paso 1 de 4: habla con tu volumen normal, cerca del micrófono.',
-      'Paso 2 de 4: aléjate aproximadamente un metro y habla con volumen normal.',
-      'Paso 3 de 4: vuelve cerca del micrófono y habla un poco más bajo, sin susurrar.',
-      'Paso 4 de 4: mantén la distancia y habla un poco más alto, sin gritar.',
+      'Paso 1 de 6: habla con tu volumen normal, cerca del micrófono.',
+      'Paso 2 de 6: aléjate aproximadamente un metro y habla con volumen normal.',
+      'Paso 3 de 6: vuelve cerca del micrófono y habla un poco más bajo, sin susurrar.',
+      'Paso 4 de 6: mantén la distancia y habla un poco más alto, sin gritar.',
+      'Paso 5 de 6: habla espontáneamente con ruido de fondo moderado.',
+      'Paso 6 de 6: cambia ligeramente de posición y di otra frase espontánea.',
     ]
     for (let index = 0; index < steps.length; index += 1) {
       voiceStepLabel.value = `${steps[index]} Preparando grabación…`
@@ -904,13 +906,13 @@ async function registerVoice() {
         await sleep(5000)
       }
     }
-    voiceStepLabel.value = 'Procesando tus cuatro muestras…'
+    voiceStepLabel.value = 'Procesando tus seis muestras…'
     const form = new FormData()
     samples.forEach((sample) => form.append('audio', sample, 'voice.webm'))
     await userApi.post('/api/user/voice-profile', form, { headers: { 'Content-Type': 'multipart/form-data' } })
     voiceRegistered.value = true
-    voiceStepLabel.value = 'Registro completado: Igris guardó tus cuatro muestras.'
-    setNotice('Voz registrada con 4 muestras.', 5000)
+    voiceStepLabel.value = 'Registro completado: Igris guardó tus seis muestras.'
+    setNotice('Voz registrada con 6 muestras.', 5000)
   } catch (e) {
     voiceStepLabel.value = ''
     voiceError.value = errorMessage(e, 'No se pudo registrar la voz')

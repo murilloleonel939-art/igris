@@ -13,9 +13,9 @@ httpx==0.25.2          # <-- versión existente y compatible con python‑telegr
 python-telegram-bot==20.6
 
 # --------------------------------------------------------------
-# STT – Whisper local (instalado desde el repo oficial)
+# STT – Whisper local y biometría NVIDIA NeMo/TitaNet
 # --------------------------------------------------------------
-torch==2.5.1                     # <-- requerido por SpeechBrain/torchaudio (CPU‑only)
+torch==2.5.1                     # <-- requerido por NVIDIA NeMo/torchaudio (CPU‑only)
 git+https://github.com/openai/whisper.git  # <-- instala Whisper directamente desde su repo
 faster-whisper==1.1.1            # motor Whisper local optimizado para CPU
 av==14.0.1                       # versión compatible con metadata_errors de faster-whisper
@@ -36,7 +36,7 @@ pyotp
 qrcode
 pillow
 numpy
-speechbrain
+nemo_toolkit[asr]
 torchaudio==2.5.1
 pyjwt
 email-validator

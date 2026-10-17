@@ -344,8 +344,8 @@ La pantalla del chat del administrador funciona como un asistente de voz:
 - Se recuerdan los últimos 6 turnos (`IGRIS_HISTORY_TURNS`). Las sesiones expiran tras 2 horas sin uso y hay un máximo de 200.
 - **Viven en memoria:** se pierden al reiniciar o redesplegar el backend (también una propuesta de evento pendiente de confirmar). Funciona con un solo worker de Uvicorn. Las cuentas de usuario, los recordatorios y las notas sí se guardan en la base de datos.
 ### Voz
-- **Web (entrada):** el área de usuarios graba audio con `MediaRecorder`, corta automáticamente cuando detecta silencio y lo envía al backend. Si existe perfil registrado, `core/voice.py` limpia el audio con ffmpeg, normaliza volumen, calcula embeddings con SpeechBrain ECAPA-TDNN y compara contra ese perfil antes de transcribir. Si no hay perfil, la orden pasa directo a Whisper sin validación de hablante.
-- **Perfil de voz:** se registra desde `/conexiones` con varias muestras guiadas variando distancia y volumen (cuatro pasos: cerca, a un metro, más bajo y más alto). El usuario puede borrar su perfil con **Borrar grabaciones** para desactivar esa validación. El panel del administrador muestra si cada cuenta tiene la voz registrada, y su botón lleva a la misma pantalla personal.
+- **Web (entrada):** el área de usuarios graba audio con `MediaRecorder`, corta automáticamente cuando detecta silencio y lo envía al backend. Si existe un perfil registrado, `core/voice.py` limpia el audio con ffmpeg, calcula embeddings locales con NVIDIA NeMo/TitaNet y compara contra ese perfil antes de enviarlo a transcripción.
+- **Perfil de voz:** se registra desde `/conexiones` con seis muestras guiadas que varían distancia, volumen, posición y ruido ambiental. El usuario puede borrar su perfil con **Borrar grabaciones** para desactivar esa validación. El panel del administrador muestra si cada cuenta tiene la voz registrada, y su botón lleva a la misma pantalla personal.
 - **STT en el backend:** el proveedor (Whisper local u OpenAI cloud) se selecciona desde Configuración del panel admin y se aplica inmediatamente; las variables de Coolify son valores base. Whisper cloud necesita una clave OpenAI directa `IGRIS_STT_API_KEY`; no comparte la clave de Pateway.
 - **TTS (texto a voz):** `core/tts.py`, expuesto en `POST /api/tts`. La web lo reproduce automáticamente tras cada respuesta y mide su volumen con la Web Audio API para animar al avatar.
 ### Configuración de IA
@@ -685,7 +685,7 @@ curl -i -X OPTIONS $API/api/chat \
 ### Recomendación: caché del modelo de Whisper
 La primera nota de voz tras un despliegue descarga el modelo de Whisper (unos 140 MB para `base`). Para no repetirlo en cada redeploy, monta un volumen persistente en `/root/.cache/whisper` (Coolify → backend → Storages).
 ### PyTorch solo CPU
-El servidor no tiene GPU, así que el `Dockerfile` instala `torch==2.5.1` y `torchaudio==2.5.1` desde el índice de CPU de PyTorch **antes** de `requirements.txt`. Así `openai-whisper` y SpeechBrain encuentran PyTorch ya instalado y no descargan la versión con CUDA (varios GB). La versión del `Dockerfile` debe coincidir con la de `requirements.txt`. Para comprobarlo dentro del contenedor del backend: `pip list | grep -i -E "^(torch|torchaudio|nvidia)"` debe mostrar Torch/Torchaudio CPU y no paquetes CUDA.
+El servidor no tiene GPU, así que el `Dockerfile` instala `torch==2.5.1` y `torchaudio==2.5.1` desde el índice de CPU de PyTorch **antes** de `requirements.txt`. Así `openai-whisper` y NVIDIA NeMo encuentran PyTorch ya instalado y no descargan la versión con CUDA (varios GB). La versión del `Dockerfile` debe coincidir con la de `requirements.txt`. Para comprobarlo dentro del contenedor del backend: `pip list | grep -i -E "^(torch|torchaudio|nvidia)"` debe mostrar Torch/Torchaudio CPU y no paquetes CUDA.
 ---
 ## 🩺 Solución de problemas
 | Síntoma | Causa probable | Solución |

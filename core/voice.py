@@ -1,4 +1,4 @@
-"""Verificación de hablante mediante embeddings ECAPA-TDNN."""
+"""Verificación local de hablante mediante embeddings NVIDIA NeMo/TitaNet."""
 from __future__ import annotations
 
 import base64
@@ -22,13 +22,12 @@ def _get_encoder():
     global _encoder
     if _encoder is None:
         try:
-            from speechbrain.inference.speaker import SpeakerRecognition
+            from nemo.collections.asr.models import EncDecSpeakerLabelModel
         except ImportError as exc:
-            raise RuntimeError("La verificación de voz requiere speechbrain") from exc
-        _encoder = SpeakerRecognition.from_hparams(
-            source="speechbrain/spkrec-ecapa-voxceleb",
-            savedir=os.getenv("IGRIS_VOICE_MODEL_DIR", "/tmp/igris-voice-model"),
-        )
+            raise RuntimeError("La verificación de voz requiere nemo_toolkit[asr]") from exc
+        model_name = os.getenv("IGRIS_VOICE_MODEL", "nvidia/speakerverification_en_titanet_large")
+        _encoder = EncDecSpeakerLabelModel.from_pretrained(model_name=model_name)
+        _encoder.eval()
     return _encoder
 
 
@@ -61,14 +60,12 @@ def embedding(audio: bytes, suffix: str = ".ogg") -> np.ndarray:
     wav = _wav_bytes(audio, suffix)
     signal, sample_rate = torchaudio.load(io.BytesIO(wav))
     signal = signal.mean(dim=0, keepdim=True)
-    # Reduce differences caused by microphone distance and speaking volume.
-    peak = signal.abs().max()
-    if peak > 1e-4:
-        signal = signal / peak
-    if sample_rate != 16000:
-        signal = torchaudio.functional.resample(signal, sample_rate, 16000)
+    signal_length = torch.tensor([signal.shape[1]], dtype=torch.long)
     with torch.no_grad():
-        vector = _get_encoder().encode_batch(signal)
+        vector = _get_encoder().get_embedding(
+            audio_signal=signal,
+            audio_signal_len=signal_length,
+        )
     return vector.squeeze().detach().cpu().numpy().astype(np.float32)
 
 
@@ -113,8 +110,8 @@ def verify(audio: bytes, stored: str, suffix: str = ".ogg") -> tuple[bool, float
 
 def available() -> bool:
     try:
-        import speechbrain  # noqa: F401
-        import torchaudio  # noqa: F401
+        import nemo.collections.asr  # noqa: F401
+        import torch  # noqa: F401
         return True
     except ImportError:
         return False
