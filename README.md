@@ -40,6 +40,7 @@
 | 🔗 **Google por usuario**: cada cuenta conecta su propio Gmail/Calendar desde `/u`; al terminar, el callback del backend devuelve al usuario a la pantalla de Conexiones | Funcional |
 | 🔌 **Pantalla de Conexiones propia** (`/conexiones`): página completa con el diseño del workspace, no un cuadro emergente sobre el chat. Reúne Google, voz y Telegram en tarjetas | Funcional |
 | 📲 **Telegram por usuario**: cada cuenta vincula su propio chat con un código de 6 dígitos | Funcional |
+| 🟢 **WhatsApp Cloud API de Meta**: envío directo mediante el canal configurado por el administrador | Funcional |
 | 🛡️ **Admin puede desvincular Telegram de cualquier usuario** desde el panel | Funcional |
 | 🧬 **Perfil de voz por usuario**: registro guiado con varias muestras, validación antes de transcribir y opción de borrar grabaciones | Funcional |
 | 🧪 Suite de pruebas end-to-end (226 comprobaciones, reejecutable) | Funcional |
@@ -171,6 +172,26 @@ Es una **pantalla completa**, no un cuadro emergente sobre el chat: se entra des
 | Tu cuenta de Google | Conectar, reconectar o desconectar tu Gmail/Calendar |
 | Reconocimiento de voz | Registrar la voz con muestras guiadas, o borrar las grabaciones |
 | Tu Telegram | Pedir el código de vinculación y desvincular |
+
+### WhatsApp Cloud API (administrador)
+
+WhatsApp se configura desde **Panel admin → Conexiones → WhatsApp**, junto a Google, Telegram y voz. El panel guarda únicamente el número de destino en `core/settings.json`; el token de Meta y los identificadores de la cuenta permanecen en las variables de entorno del backend.
+
+Variables requeridas:
+
+| Variable | Descripción |
+| --- | --- |
+| `WHATSAPP_TOKEN` | Token de acceso de Meta; nunca debe exponerse en el frontend |
+| `WHATSAPP_PHONE_NUMBER_ID` | ID del número de teléfono de WhatsApp Business |
+| `WHATSAPP_BUSINESS_ACCOUNT_ID` | ID de la cuenta de WhatsApp Business (WABA) |
+| `WHATSAPP_TEST_TO` | Destinatario internacional para mensajes de prueba |
+
+Endpoints administrativos protegidos:
+
+- `GET /api/whatsapp-config`: obtiene el número configurado.
+- `PUT /api/whatsapp-config`: valida y guarda el número en formato internacional.
+
+La implementación usa directamente `core/whatsapp.py` y la Graph API de Meta. No requiere MessageBird ni otro intermediario.
 
 Solo aparecen las tarjetas que hacen falta: a quien no tiene correo ni calendario habilitados no se le pide conectar Google, y a quien no tiene recordatorios no se le pide Telegram.
 
@@ -533,6 +554,19 @@ IGRIS_STT_MODEL=whisper-1
 | `IGRIS_TTS_INSTRUCTIONS` | Instrucciones de estilo para la voz (en proveedores que lo soporten) | texto libre |
 | `IGRIS_PIPER_VOICE` | Voz del modelo Piper (cuando se usa Piper) | según modelo instalado |
 > Los valores aceptados por las variables `IGRIS_TTS_*` y `IGRIS_PIPER_VOICE` los define `core/tts.py`; revísalo antes de cambiarlos.
+### WhatsApp Cloud API de Meta
+
+La integración usa la API oficial de Meta directamente para enviar mensajes de texto. Configura estas variables en el servicio backend de Coolify y reinicia o redepliega después de cambiarlas:
+
+| Variable | Descripción | Ejemplo |
+| --- | --- | --- |
+| `WHATSAPP_TOKEN` | Token permanente o de sistema de Meta | `EAAB...` |
+| `WHATSAPP_PHONE_NUMBER_ID` | Identificador del número de WhatsApp Business | `123456789012345` |
+| `WHATSAPP_BUSINESS_ACCOUNT_ID` | Identificador de la cuenta WABA | `123456789012345` |
+| `WHATSAPP_TEST_TO` | Número de prueba en formato internacional | `+573000000000` |
+
+El administrador puede editar el número receptor en **Conexiones → WhatsApp**. El valor se valida, se limita a dígitos y el signo `+`, y se guarda en `core/settings.json`. Los tokens no se guardan en ese archivo ni se muestran en la interfaz.
+
 ### Telegram
 | Variable | Descripción |
 | --- | --- |
