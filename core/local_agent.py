@@ -20,9 +20,15 @@ class LocalAgentHub:
         self.programs: list[dict[str, str]] = []
         self.owner_user_id: int | None = None
         self.owner_token_id: int | None = None
+        self.allowed_programs: set[str] = set()
 
     async def enqueue(self, action: str, **params: Any) -> dict[str, Any]:
         requested_user = params.pop("user_id", None)
+        if action == "launch_program":
+            program = str(params.get("program", "")).strip().lower()
+            allowed = {name.lower() for name in self.allowed_programs}
+            if program not in allowed:
+                return {"ok": False, "error": "La aplicación no está autorizada en la configuración del equipo."}
         if self.owner_user_id is not None and requested_user not in {None, self.owner_user_id}:
             return {"ok": False, "error": "El agente está vinculado a otro usuario."}
         command_id = secrets.token_urlsafe(18)
@@ -43,6 +49,7 @@ class LocalAgentHub:
             if isinstance(item, dict) and item.get("name") and item.get("path"):
                 clean.append({"name": str(item["name"])[:120], "path": str(item["path"])[:1000]})
         self.programs = clean
+        self.allowed_programs.intersection_update({item["name"] for item in clean})
         db = None
         try:
             db = SessionLocal()
@@ -61,6 +68,24 @@ class LocalAgentHub:
                     db.close()
                 except Exception:
                     pass
+
+    def set_allowed_programs(self, names: list[str]) -> list[str]:
+        available = {item["name"] for item in self.programs}
+        self.allowed_programs = {str(name) for name in names if str(name) in available}
+        db = None
+        try:
+            db = SessionLocal()
+            row = db.get(GlobalSetting, "windows.allowed_programs")
+            value = json.dumps(sorted(self.allowed_programs), ensure_ascii=False)
+            if row is None:
+                db.add(GlobalSetting(key="windows.allowed_programs", value=value))
+            else:
+                row.value = value
+            db.commit()
+        finally:
+            if db is not None:
+                db.close()
+        return sorted(self.allowed_programs)
 
     async def next_command(self) -> dict[str, Any]:
         self.connected = True
@@ -100,6 +125,11 @@ class LocalAgentHub:
                 saved = json.loads(row.value)
                 if isinstance(saved, list):
                     self.programs = saved
+            permissions = db.get(GlobalSetting, "windows.allowed_programs")
+            if permissions:
+                saved_permissions = json.loads(permissions.value)
+                if isinstance(saved_permissions, list):
+                    self.allowed_programs = {str(name) for name in saved_permissions}
             db.close()
         except Exception:
             if db is not None:

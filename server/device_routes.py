@@ -13,6 +13,10 @@ from pydantic import BaseModel, Field
 from core.database import AgentToken, SessionLocal, User
 from core.local_agent import hub
 
+
+class ProgramAccessUpdate(BaseModel):
+    allowed_programs: list[str] = Field(default_factory=list, max_length=500)
+
 router = APIRouter()
 
 
@@ -50,6 +54,16 @@ async def device_programs(q: str = "") -> dict:
     query = q.strip().lower()
     programs = hub.programs if not query else [item for item in hub.programs if query in item.get("name", "").lower()]
     return {"programs": programs, "count": len(programs), "connected": hub.connected}
+
+
+@router.get("/api/device/programs/access", dependencies=[Depends(_require_catalog_access)])
+async def device_program_access() -> dict:
+    return {"allowed_programs": sorted(hub.allowed_programs)}
+
+
+@router.put("/api/device/programs/access", dependencies=[Depends(_require_catalog_access)])
+async def update_device_program_access(payload: ProgramAccessUpdate) -> dict:
+    return {"allowed_programs": hub.set_allowed_programs(payload.allowed_programs)}
 
 
 @router.post("/api/device/programs/sync", dependencies=[Depends(_require_catalog_access)])
