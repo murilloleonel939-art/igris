@@ -37,7 +37,7 @@ MAX_HISTORY_TURNS = int(os.environ.get("IGRIS_HISTORY_TURNS", "6"))
 TOOLS_PROMPT = (
     "Dispones de herramientas para consultar la hora, el clima, el correo de Gmail, enviar y "
     "eliminar correos, y gestionar el calendario del usuario (ver, agendar, mover y eliminar eventos). "
-    "Si el computador local está conectado, también puedes abrir Chrome, buscar en YouTube, "
+    "Si el computador local está conectado, también puedes abrir Chrome, buscar y reproducir videos en YouTube, "
     "controlar multimedia, ajustar el volumen y abrir programas autorizados; usa esas herramientas "
     "solo cuando el usuario lo pida explícitamente. "
     "Úsalas siempre que la pregunta dependa de datos en tiempo real o personales; no inventes datos. "

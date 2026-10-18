@@ -45,6 +45,7 @@ import ctypes
 import json
 import os
 import subprocess
+import time
 import webbrowser
 from urllib.parse import urlparse
 
@@ -75,6 +76,18 @@ def execute(command: dict) -> dict:
         else:
             webbrowser.get("windows-default").open(url)
         return {"ok": True}
+    if action == "chrome_play_url":
+        url = params.get("url", "")
+        if not isinstance(url, str) or not url.startswith("https://www.youtube.com/watch?"):
+            return {"ok": False, "error": "Video de YouTube no permitido"}
+        chrome = PROGRAMS["chrome"]
+        if os.path.isfile(chrome):
+            subprocess.Popen([chrome, url], shell=False)
+        else:
+            webbrowser.get("windows-default").open(url)
+        # autoplay=1 inicia el video; no enviamos una tecla adicional que pudiera pausarlo.
+        time.sleep(3)
+        return {"ok": True, "url": url, "message": "Video abierto con reproducción solicitada."}
     if action.startswith("media_"):
         if action not in {"media_play_pause", "media_next", "media_previous"}:
             return {"ok": False, "error": "Acción no permitida"}

@@ -435,8 +435,8 @@ TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "search_youtube", "description": "Busca música o videos en YouTube en Chrome.",
-            "parameters": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]},
+            "name": "search_youtube", "description": "Busca un video en YouTube y abre el primer resultado para reproducirlo. Úsala cuando el usuario pida poner, reproducir o buscar una canción o video.",
+            "parameters": {"type": "object", "properties": {"query": {"type": "string"}, "play": {"type": "boolean", "description": "Abrir el primer resultado para reproducirlo; por defecto true."}}, "required": ["query"]},
         },
     },
     {
