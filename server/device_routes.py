@@ -5,7 +5,7 @@ import json
 import os
 import secrets
 
-from fastapi import APIRouter, Header, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, Header, HTTPException, WebSocket, WebSocketDisconnect
 
 from core.local_agent import hub
 
@@ -26,14 +26,14 @@ async def device_status() -> dict:
     return hub.status()
 
 
-@router.get("/api/device/programs", dependencies=[_require_catalog_access])
+@router.get("/api/device/programs", dependencies=[Depends(_require_catalog_access)])
 async def device_programs(q: str = "") -> dict:
     query = q.strip().lower()
     programs = hub.programs if not query else [item for item in hub.programs if query in item.get("name", "").lower()]
     return {"programs": programs, "count": len(programs), "connected": hub.connected}
 
 
-@router.post("/api/device/programs/sync", dependencies=[_require_catalog_access])
+@router.post("/api/device/programs/sync", dependencies=[Depends(_require_catalog_access)])
 async def sync_device_programs() -> dict:
     if not hub.connected:
         raise HTTPException(status_code=409, detail="El agente Windows no está conectado")
