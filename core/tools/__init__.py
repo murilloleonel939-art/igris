@@ -442,6 +442,34 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "list_windows", "description": "Lista las ventanas visibles del computador Windows.",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "focus_window", "description": "Activa una ventana por parte de su título o por su identificador.",
+            "parameters": {"type": "object", "properties": {"title": {"type": "string"}, "hwnd": {"type": "integer"}}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "click_screen", "description": "Hace clic en una coordenada de la pantalla del computador Windows.",
+            "parameters": {"type": "object", "properties": {"x": {"type": "integer"}, "y": {"type": "integer"}}, "required": ["x", "y"]},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "press_key", "description": "Presiona una tecla permitida en la ventana activa.",
+            "parameters": {"type": "object", "properties": {"key": {"type": "string", "description": "Una letra, número, ENTER, ESC, TAB, SPACE, BACKSPACE, UP, DOWN, LEFT o RIGHT."}}, "required": ["key"]},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "media_control", "description": "Controla reproducir/pausar o cambiar de pista en el computador local.",
             "parameters": {"type": "object", "properties": {"action": {"type": "string", "enum": ["play_pause", "next", "previous"]}}, "required": ["action"]},
         },
@@ -587,6 +615,10 @@ _HANDLERS = {
     "delete_note": notes.delete_note,
     "open_chrome": device.open_chrome,
     "search_youtube": device.search_youtube,
+    "list_windows": device.list_windows,
+    "focus_window": device.focus_window,
+    "click_screen": device.click_screen,
+    "press_key": device.press_key,
     "media_control": device.media_control,
     "volume_control": device.volume_control,
     "launch_program": device.launch_program,

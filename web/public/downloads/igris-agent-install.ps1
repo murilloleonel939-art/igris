@@ -81,6 +81,46 @@ def enumerate_programs() -> list[dict[str, str]]:
 DYNAMIC_PROGRAMS: dict[str, str] = {}
 
 
+def _window_text(hwnd: int) -> str:
+    length = ctypes.windll.user32.GetWindowTextLengthW(hwnd)
+    buffer = ctypes.create_unicode_buffer(length + 1)
+    ctypes.windll.user32.GetWindowTextW(hwnd, buffer, length + 1)
+    return buffer.value.strip()
+
+
+def enumerate_windows() -> list[dict[str, str | int]]:
+    windows: list[dict[str, str | int]] = []
+    callback_type = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
+
+    def callback(hwnd, _lparam):
+        if ctypes.windll.user32.IsWindowVisible(hwnd):
+            title = _window_text(hwnd)
+            if title:
+                windows.append({"hwnd": int(hwnd), "title": title[:240]})
+        return True
+
+    ctypes.windll.user32.EnumWindows(callback_type(callback), 0)
+    return windows[:100]
+
+
+def _find_window(title: str = "", hwnd_value: int = 0):
+    if hwnd_value:
+        hwnd = ctypes.c_void_p(hwnd_value)
+        if ctypes.windll.user32.IsWindow(hwnd):
+            return hwnd
+    wanted = title.strip().lower()
+    if not wanted:
+        return ctypes.windll.user32.GetForegroundWindow()
+    for item in enumerate_windows():
+        if wanted in str(item["title"]).lower():
+            return ctypes.c_void_p(int(item["hwnd"]))
+    return None
+
+
+def _key_event(vk: int, flags: int = 0) -> None:
+    ctypes.windll.user32.keybd_event(vk, 0, flags, 0)
+
+
 PROGRAMS = {
     "chrome": [os.path.join(os.environ.get("PROGRAMFILES", r"C:\\Program Files"), "Google", "Chrome", "Application", "chrome.exe"), os.path.join(os.environ.get("PROGRAMFILES(X86)", r"C:\\Program Files (x86)"), "Google", "Chrome", "Application", "chrome.exe")],
     "edge": [os.path.join(os.environ.get("PROGRAMFILES", r"C:\\Program Files"), "Microsoft", "Edge", "Application", "msedge.exe")],
@@ -97,6 +137,38 @@ PROGRAMS = {
 def execute(command: dict) -> dict:
     action = command.get("action")
     params = command.get("params") or {}
+    if action == "list_windows":
+        return {"ok": True, "windows": enumerate_windows()}
+    if action == "focus_window":
+        hwnd = _find_window(str(params.get("title", "")), int(params.get("hwnd") or 0))
+        if not hwnd:
+            return {"ok": False, "error": "No encontré esa ventana"}
+        ctypes.windll.user32.ShowWindow(hwnd, 9)
+        ctypes.windll.user32.SetForegroundWindow(hwnd)
+        return {"ok": True}
+    if action == "click":
+        try:
+            x, y = int(params.get("x")), int(params.get("y"))
+        except (TypeError, ValueError):
+            return {"ok": False, "error": "Coordenadas inválidas"}
+        if not (0 <= x <= 10000 and 0 <= y <= 10000):
+            return {"ok": False, "error": "Coordenadas fuera de rango"}
+        ctypes.windll.user32.SetCursorPos(x, y)
+        ctypes.windll.user32.mouse_event(2, 0, 0, 0, 0)
+        ctypes.windll.user32.mouse_event(4, 0, 0, 0, 0)
+        return {"ok": True, "x": x, "y": y}
+    if action == "press_key":
+        key = str(params.get("key", "")).strip().upper()
+        keys = {"ENTER": 0x0D, "ESC": 0x1B, "TAB": 0x09, "SPACE": 0x20, "BACKSPACE": 0x08, "UP": 0x26, "DOWN": 0x28, "LEFT": 0x25, "RIGHT": 0x27, "CTRL": 0x11, "ALT": 0x12, "SHIFT": 0x10}
+        if len(key) == 1 and key.isalnum():
+            vk = ord(key)
+        else:
+            vk = keys.get(key)
+        if vk is None:
+            return {"ok": False, "error": "Tecla no permitida"}
+        _key_event(vk)
+        _key_event(vk, 2)
+        return {"ok": True, "key": key}
     if action == "chrome_open_url":
         url = params.get("url", "")
         if not isinstance(url, str) or not url.startswith("https://"):

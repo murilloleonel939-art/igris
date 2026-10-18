@@ -61,6 +61,30 @@ async def search_youtube(query: str, play: bool = True) -> dict:
     return result
 
 
+async def list_windows() -> dict:
+    return await run_local_action("list_windows")
+
+
+async def focus_window(title: str = "", hwnd: int = 0) -> dict:
+    if not isinstance(title, str) or len(title) > 240:
+        return {"error": "Título de ventana no válido."}
+    if not isinstance(hwnd, int) or hwnd < 0:
+        return {"error": "Identificador de ventana no válido."}
+    return await run_local_action("focus_window", title=title, hwnd=hwnd)
+
+
+async def click_screen(x: int, y: int) -> dict:
+    if not isinstance(x, int) or not isinstance(y, int) or not 0 <= x <= 10000 or not 0 <= y <= 10000:
+        return {"error": "Coordenadas inválidas."}
+    return await run_local_action("click", x=x, y=y)
+
+
+async def press_key(key: str) -> dict:
+    if not isinstance(key, str) or len(key.strip()) > 20:
+        return {"error": "Tecla no válida."}
+    return await run_local_action("press_key", key=key.strip())
+
+
 async def media_control(action: str) -> dict:
     allowed = {"play_pause", "next", "previous"}
     if action not in allowed:
