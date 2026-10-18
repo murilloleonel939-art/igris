@@ -546,7 +546,18 @@ IGRIS_STT_MODEL=whisper-1
 - Las variables actúan como valores base; la selección hecha en el panel se guarda de forma persistente y tiene prioridad sobre `IGRIS_STT_PROVIDER`.
 - Si se agregan o cambian variables en Coolify, hay que redeplegar el backend para que las lea.
 
+#### Verificar la biometría con NVIDIA NeMo/TitaNet
+
+La verificación de voz funciona localmente con el modelo indicado en `IGRIS_VOICE_MODEL`; no depende del proveedor de IA ni de Whisper. Para probarla:
+
+1. En el chat de usuario, registra el perfil con las **6 muestras guiadas**. La primera carga puede tardar porque descarga el modelo.
+2. Graba una orden de 2–3 segundos manteniendo una distancia y un volumen parecidos a los del registro.
+3. El backend debe aceptar la orden y registrar la similitud en los logs. Una persona distinta debe recibir `Voz no reconocida`.
+4. Si la misma persona falla con valores cercanos a `0.40` (por ejemplo `0.35–0.39`), baja temporalmente `IGRIS_VOICE_THRESHOLD` a `0.30` y redepliega el backend. Si aún falla, prueba `0.25`; si acepta voces ajenas, vuelve a subir el umbral.
+5. Si se cambia el umbral o el modelo en Coolify, hay que redeplegar el backend. Para comprobar que NeMo está instalado, el log no debe mostrar `No se pudo cargar NVIDIA NeMo`.
+
 | `IGRIS_VOICE_THRESHOLD` | Umbral mínimo de similitud para aceptar al hablante registrado | `0.40` |
+| `IGRIS_VOICE_MODEL` | Modelo NVIDIA NeMo/TitaNet para verificación del hablante | `nvidia/speakerverification_en_titanet_large` |
 | `IGRIS_TTS_PROVIDER` | Proveedor de síntesis de voz | `local` |
 | `IGRIS_TTS_VOICE` | Voz a usar (los valores válidos dependen del proveedor de TTS) | según proveedor |
 | `IGRIS_TTS_RATE` | Velocidad de la voz | según proveedor |
