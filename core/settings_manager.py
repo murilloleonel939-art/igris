@@ -4,6 +4,8 @@ import json
 import os
 from pathlib import Path
 
+from core.database import GlobalSetting, SessionLocal
+
 SETTINGS_FILE = Path(__file__).parent / "settings.json"
 
 # Proveedores válidos (deben coincidir con core/config.py y PROVIDERS de core/brain.py)
@@ -143,14 +145,62 @@ class SettingsManager:
         return self.save()
 
     def get_whatsapp_config(self) -> dict:
-        """Obtiene la configuración no secreta de WhatsApp."""
+        """Obtiene la configuración global de WhatsApp desde la base de datos."""
+        db = SessionLocal()
+        try:
+            row = db.get(GlobalSetting, "whatsapp")
+            if row is not None:
+                try:
+                    value = json.loads(row.value)
+                    return value if isinstance(value, dict) else {}
+                except (TypeError, json.JSONDecodeError):
+                    return {}
+        except Exception as exc:
+            print(f"⚠️ Error leyendo la configuración de WhatsApp: {exc}")
+        finally:
+            db.close()
+
+        # Compatibilidad con instalaciones antiguas: migra el valor del archivo a la BD.
         saved = self.settings.get("whatsapp", {})
-        return dict(saved) if isinstance(saved, dict) else {}
+        saved = dict(saved) if isinstance(saved, dict) else {}
+        if saved:
+            db = None
+            try:
+                row = GlobalSetting(key="whatsapp", value=json.dumps(saved, ensure_ascii=False))
+                db = SessionLocal()
+                db.add(row)
+                db.commit()
+                db.close()
+            except Exception as exc:
+                try:
+                    if db is not None:
+                        db.rollback()
+                        db.close()
+                except Exception:
+                    pass
+                print(f"⚠️ No se pudo migrar la configuración de WhatsApp: {exc}")
+        return saved
 
     def set_whatsapp_config(self, config: dict) -> bool:
-        """Guarda la configuración no secreta de WhatsApp."""
-        self.settings["whatsapp"] = dict(config)
-        return self.save()
+        """Guarda la configuración global de WhatsApp en la base de datos."""
+        db = SessionLocal()
+        try:
+            row = db.get(GlobalSetting, "whatsapp")
+            encoded = json.dumps(dict(config), ensure_ascii=False)
+            if row is None:
+                row = GlobalSetting(key="whatsapp", value=encoded)
+                db.add(row)
+            else:
+                row.value = encoded
+            db.commit()
+            self.settings["whatsapp"] = dict(config)
+            return True
+        except Exception as exc:
+            db.rollback()
+            print(f"✗ Error al guardar la configuración de WhatsApp: {exc}")
+            return False
+        finally:
+            db.close()
 
     def get_tts_config(self) -> dict:
         """Obtiene configuración de TTS."""

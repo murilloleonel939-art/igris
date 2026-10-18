@@ -188,6 +188,15 @@ class Profile(Base):
     user = relationship("User", back_populates="profiles")
 
 
+class GlobalSetting(Base):
+    """Configuración global persistente de la instalación."""
+    __tablename__ = "global_settings"
+
+    key = Column(String(100), primary_key=True)
+    value = Column(Text, nullable=False, default="")
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class AIConfig(Base):
     """Configuración de proveedores AI por usuario"""
     __tablename__ = "ai_config"
