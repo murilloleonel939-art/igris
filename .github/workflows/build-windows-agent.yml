@@ -3,6 +3,10 @@ name: Build Windows agent installer
 on:
   workflow_dispatch:
   push:
+    branches: [main]
+    paths:
+      - 'windows_agent/**'
+      - '.github/workflows/build-windows-agent.yml'
     tags: ['agent-v*']
 
 permissions:
