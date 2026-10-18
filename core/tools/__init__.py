@@ -13,7 +13,7 @@ import logging
 
 from core.capabilities import denial_message
 from core.local_agent import reset_agent_user, set_agent_user
-from core.tools import calendar_write, device, gcalendar, gmail, notes, reminders, time_tools, tuya, weather
+from core.tools import calendar_write, device, gcalendar, gmail, notes, reminders, time_tools, tuya, weather, youtube
 
 logger = logging.getLogger(__name__)
 
@@ -520,6 +520,34 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "list_youtube_playlists", "description": "Lista las listas de reproducción propias de YouTube.",
+            "parameters": {"type": "object", "properties": {"page_token": {"type": "string"}}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_youtube_playlist", "description": "Crea una lista de reproducción de YouTube. Pide confirmación al usuario antes de crearla.",
+            "parameters": {"type": "object", "properties": {"title": {"type": "string"}, "description": {"type": "string"}, "privacy_status": {"type": "string", "enum": ["private", "unlisted", "public"]}}, "required": ["title"]},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "add_video_to_youtube_playlist", "description": "Añade un video o URL de YouTube a una lista existente.",
+            "parameters": {"type": "object", "properties": {"playlist_id": {"type": "string"}, "video_id": {"type": "string"}}, "required": ["playlist_id", "video_id"]},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "remove_video_from_youtube_playlist", "description": "Quita un video de una lista propia de YouTube. Usa item_id si ya lo tienes; si no, indica playlist_id y video_id.",
+            "parameters": {"type": "object", "properties": {"item_id": {"type": "string"}, "playlist_id": {"type": "string"}, "video_id": {"type": "string"}}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "search_spotify", "description": "Busca en Spotify y, si play=true, intenta reproducir el resultado.",
             "parameters": {"type": "object", "properties": {"query": {"type": "string"}, "play": {"type": "boolean"}}, "required": ["query"]},
         },
@@ -630,6 +658,10 @@ _HANDLERS = {
     "delete_note": notes.delete_note,
     "open_chrome": device.open_chrome,
     "search_youtube": device.search_youtube,
+    "list_youtube_playlists": youtube.list_youtube_playlists,
+    "create_youtube_playlist": youtube.create_youtube_playlist,
+    "add_video_to_youtube_playlist": youtube.add_video_to_youtube_playlist,
+    "remove_video_from_youtube_playlist": youtube.remove_video_from_youtube_playlist,
     "capture_screen": device.capture_screen,
     "list_windows": device.list_windows,
     "focus_window": device.focus_window,
@@ -662,6 +694,7 @@ _SESSION_TOOLS = {
     "create_reminder", "list_reminders", "delete_reminder",
     "add_note", "list_notes", "search_notes", "delete_note",
     "list_emails", "read_email", "list_events",
+    "list_youtube_playlists", "create_youtube_playlist", "add_video_to_youtube_playlist", "remove_video_from_youtube_playlist",
     "list_tuya_devices", "get_tuya_device_status", "control_tuya_device",
 }
 

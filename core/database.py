@@ -138,6 +138,7 @@ class User(Base):
     can_use_email_write = Column(Boolean, default=False, nullable=False)
     can_use_calendar = Column(Boolean, default=False, nullable=False)
     can_use_calendar_write = Column(Boolean, default=False, nullable=False)
+    can_use_youtube = Column(Boolean, default=False, nullable=False)
     can_use_notes = Column(Boolean, default=False, nullable=False)
     can_use_reminders = Column(Boolean, default=False, nullable=False)
     can_use_tuya = Column(Boolean, default=False, nullable=False)
@@ -449,6 +450,7 @@ def _run_migrations(engine) -> None:
             ("can_use_email_write", "FALSE"),
             ("can_use_calendar", "FALSE"),
             ("can_use_calendar_write", "FALSE"),
+            ("can_use_youtube", "FALSE"),
             ("can_use_notes", "FALSE"),
             ("can_use_reminders", "FALSE"),
             ("can_use_tuya", "FALSE"),

@@ -159,6 +159,20 @@
             </template>
           </section>
 
+          <section v-if="conn.youtube && conn.youtube.needs_youtube">
+            <h3>YouTube</h3>
+            <p v-if="conn.youtube.connected" class="conn-ok">Conectado a YouTube{{ conn.youtube.email ? `: ${conn.youtube.email}` : '' }}.</p>
+            <p v-if="conn.youtube.error" class="conn-error">YouTube dio un error: {{ conn.youtube.error }}</p>
+            <p v-if="!conn.youtube.app_configured" class="conn-note">El administrador todavía no ha configurado YouTube.</p>
+            <template v-else>
+              <p class="conn-note">Igris usará tu propia cuenta para consultar y administrar tus listas.</p>
+              <div class="conn-actions">
+                <button class="btn primary" @click="connectYouTube">{{ conn.youtube.connected ? 'Volver a conectar' : 'Conectar mi YouTube' }}</button>
+                <button v-if="conn.youtube.connected" class="btn ghost" @click="disconnectYouTube">Desconectar</button>
+              </div>
+            </template>
+          </section>
+
           <section>
             <h3>Reconocimiento de voz</h3>
             <p class="conn-note">
@@ -826,6 +840,7 @@ const conn = ref({
   error: '',
   features: [],
   google: null,
+  youtube: null,
   telegram: { linked: false, username: null },
   telegramCode: '',
   telegramCodeMinutes: 15,
@@ -838,6 +853,7 @@ function featureLabel(key) {
     email: 'Leer correo',
     calendar: 'Ver calendario',
     calendar_write: 'Agendar eventos',
+    youtube: 'Administrar listas de YouTube',
     notes: 'Notas',
     reminders: 'Recordatorios',
   }
@@ -928,6 +944,7 @@ async function refreshConnections() {
     const res = await userApi.get('/api/user/connections')
     conn.value.features = res.data?.features || []
     conn.value.google = res.data?.google || null
+    conn.value.youtube = res.data?.youtube || null
     conn.value.telegram = res.data?.telegram || { linked: false, username: null }
     // El código caduca: si el usuario ya se vinculó, se deja de mostrar.
     if (conn.value.telegram.linked) conn.value.telegramCode = ''
@@ -971,6 +988,28 @@ async function connectGoogle() {
     window.location.href = url
   } catch (e) {
     conn.value.error = errorMessage(e, 'No se pudo iniciar la conexión con Google')
+  }
+}
+
+async function connectYouTube() {
+  conn.value.error = ''
+  try {
+    const res = await userApi.get('/api/user/youtube/start')
+    const url = res.data?.auth_url
+    if (!url) throw new Error('El servidor no devolvió la dirección de YouTube')
+    window.location.href = url
+  } catch (e) {
+    conn.value.error = errorMessage(e, 'No se pudo iniciar la conexión con YouTube')
+  }
+}
+
+async function disconnectYouTube() {
+  if (!window.confirm('¿Desconectar tu cuenta de Google? También se desconectará el acceso a YouTube.')) return
+  try {
+    await userApi.delete('/api/user/youtube')
+    await refreshConnections()
+  } catch (e) {
+    conn.value.error = errorMessage(e, 'No se pudo desconectar YouTube')
   }
 }
 

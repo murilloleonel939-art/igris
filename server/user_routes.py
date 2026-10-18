@@ -1235,10 +1235,19 @@ def user_connections(
     """
     caps = admin_capabilities() if user.is_admin else capabilities_from_user(user)
     link = db.query(TelegramLink).filter(TelegramLink.user_id == user.id).first()
+    account = db.query(GoogleAccount).filter(GoogleAccount.user_id == user.id).first()
+    from core.tools import google_client
 
     return {
         "features": sorted(caps.features, key=FEATURE_ORDER.index),
         "google": _google_status(user, db),
+        "youtube": {
+            "app_configured": google_client.oauth_configured(),
+            "connected": account is not None,
+            "email": account.email if account is not None else None,
+            "error": account.last_error if account is not None else None,
+            "needs_youtube": caps.has("youtube"),
+        },
         "telegram": {
             "linked": bool(link and link.chat_id),
             "username": link.username if link else None,
@@ -1271,12 +1280,12 @@ def google_start(user: User = Depends(require_user), db: Session = Depends(get_d
 
     caps = admin_capabilities() if user.is_admin else capabilities_from_user(user)
     scopes = google_client.scopes_for(caps.features)
-    if not any(caps.has(f) for f in ("email", "calendar", "calendar_write")):
+    if not any(caps.has(f) for f in ("email", "calendar", "calendar_write", "youtube")):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
                 "No tienes ninguna función de Google habilitada. "
-                "Pídele al administrador que te active el correo o el calendario."
+                "Pídele al administrador que te active correo, calendario o YouTube."
             ),
         )
 
@@ -1447,7 +1456,22 @@ async def google_callback(
     # Las herramientas leen la cuenta de la base en cada llamada, pero el access
     # token cacheado de la cuenta anterior podría seguir vivo: se descarta.
     google_client.forget_token(user.id)
-    return _page("Cuenta conectada", f"Ya puedes pedirle a Igris tu correo y tu calendario.", True)
+    return _page("Cuenta conectada", f"Ya puedes pedirle a Igris administrar tu correo, calendario y listas de YouTube.", True)
+
+
+@router.get("/api/user/youtube/start")
+def youtube_start(user: User = Depends(require_user), db: Session = Depends(get_db)):
+    """Inicia el mismo consentimiento OAuth con el alcance de YouTube habilitado."""
+    caps = admin_capabilities() if user.is_admin else capabilities_from_user(user)
+    if not caps.has("youtube"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="YouTube no está habilitado para tu usuario.")
+    return google_start(user, db)
+
+
+@router.delete("/api/user/youtube")
+def youtube_disconnect(user: User = Depends(require_user), db: Session = Depends(get_db)):
+    """Desconecta la cuenta de Google usada por YouTube y las demás funciones Google."""
+    return google_disconnect(user, db)
 
 
 @router.delete("/api/user/google")

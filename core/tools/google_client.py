@@ -42,6 +42,7 @@ SCOPE_EMAIL_SEND = "https://www.googleapis.com/auth/gmail.send"
 SCOPE_EMAIL_MODIFY = "https://www.googleapis.com/auth/gmail.modify"
 SCOPE_CALENDAR_READ = "https://www.googleapis.com/auth/calendar.readonly"
 SCOPE_CALENDAR_WRITE = "https://www.googleapis.com/auth/calendar.events"
+SCOPE_YOUTUBE = "https://www.googleapis.com/auth/youtube"
 
 # Identidad de la cuenta autorizada: permite mostrarle al usuario qué correo
 # conectó. No da acceso a nada más.
@@ -71,6 +72,8 @@ def scopes_for(features) -> list:
     if "calendar_write" in features:
         # calendar.events cubre leer, crear, modificar y borrar eventos.
         scopes.append(SCOPE_CALENDAR_WRITE)
+    if "youtube" in features:
+        scopes.append(SCOPE_YOUTUBE)
     return scopes
 
 

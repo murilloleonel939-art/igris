@@ -78,7 +78,7 @@ TOOLS_PROMPT = (
     "También puedes abrir Chrome y Edge, buscar y reproducir videos en YouTube, "
     "abrir y buscar en Spotify o Steam, abrir el Explorador, buscar y abrir archivos, y abrir Word o Excel. Cuando el usuario pida poner, buscar o escuchar una canción en Spotify, usa siempre search_spotify; no abras open_chrome_url ni la versión web de Spotify "
     "para escribir el texto que el usuario dicte, y suspender o reiniciar el equipo. Cuando el usuario diga reproducir, poner o escuchar una canción de YouTube, debes usar search_youtube con play=true y esperar el resultado; no basta con abrir resultados; usa esas herramientas "
-    "solo cuando el usuario lo pida explícitamente. "
+    "solo cuando el usuario lo pida explícitamente. Para YouTube puedes listar listas, crear una lista, añadir videos y quitar videos; antes de crear una lista o quitar un video confirma la acción con el usuario. "
     "Úsalas siempre que la pregunta dependa de datos en tiempo real o personales; no inventes datos. "
     "Solo tienes las herramientas que se te han dado: si alguna no está en tu lista, el "
     "usuario no la tiene habilitada, y se lo dices con naturalidad en lugar de intentar "
@@ -225,12 +225,12 @@ def _facts_block(session) -> str:
             "notas o recordatorios, dile que se lo pida al administrador. No intentes "
             "resolverlo de otra forma."
         )
-    if any(caps.has(f) for f in ("email", "calendar", "calendar_write")):
+    if any(caps.has(f) for f in ("email", "calendar", "calendar_write", "youtube")):
         if linked:
             lines.append(f"Su cuenta de Google ya está conectada ({linked}).")
         else:
             lines.append(
-                "Todavía NO ha conectado su cuenta de Google: si pide correo o calendario, "
+                "Todavía NO ha conectado su cuenta de Google: si pide correo, calendario o listas de YouTube, "
                 "pídele que la conecte en la sección «Conexiones» de su página de Igris."
             )
     if caps.has("reminders"):
