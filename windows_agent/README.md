@@ -2,7 +2,17 @@
 
 El agente se conecta hacia el backend por WebSocket seguro. El PC debe estar encendido; al apagarlo se desconecta y al iniciar sesión vuelve a conectarse.
 
-## Instalación
+## Instalación sencilla
+
+Desde PowerShell puedes ejecutar el instalador directamente, sin descargar el repositorio completo:
+
+```powershell
+irm https://raw.githubusercontent.com/murilloleonel939-art/igris/main/windows_agent/install.ps1 | iex
+```
+
+El instalador te pedirá la URL WebSocket y el `NODE_TOKEN`, instalará la dependencia y configurará el inicio automático.
+
+## Instalación manual
 
 1. Instala Python 3.11+ en Windows.
 2. Abre PowerShell en esta carpeta y ejecuta `py -m pip install websockets`.
