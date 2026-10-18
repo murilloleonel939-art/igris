@@ -13,6 +13,12 @@
       <a href="/downloads/igris-agent-install.ps1" download class="agent-download">Descargar agente Windows <span>↓</span></a>
     </section>
     <section class="agent-manual">
+      <div><span class="agent-kicker">Aplicaciones detectadas</span><h2>Catálogo del computador</h2><button class="connect" :disabled="programsLoading" @click="syncPrograms">{{ programsLoading ? 'Sincronizando…' : 'Sincronizar programas' }}</button></div>
+      <p v-if="programsError" class="agent-note">{{ programsError }}</p>
+      <div v-else-if="programs.length" class="mt-4 grid gap-2 sm:grid-cols-2"><div v-for="program in programs" :key="program.path" class="rounded border border-white/10 px-3 py-2 text-xs"><b class="text-stone-200">{{ program.name }}</b><span class="block truncate text-stone-500">{{ program.path }}</span></div></div>
+      <p v-else class="agent-note">Conecta el agente y sincroniza para ver las aplicaciones disponibles.</p>
+    </section>
+    <section class="agent-manual">
       <div><span class="agent-kicker">Manual rápido</span><h2>Cómo instalarlo y conectarlo</h2></div>
       <ol>
         <li><b>Descarga el instalador.</b> Pulsa el botón anterior y guarda el archivo <code>igris-agent-install.ps1</code>.</li>
@@ -21,7 +27,7 @@
         <li><b>Deja el agente abierto.</b> Cuando aparezca <em>Agente local IGRIS conectado</em>, el computador ya está disponible.</li>
         <li><b>Prueba una orden.</b> Por ejemplo: “abre el Explorador de archivos” o “abre Spotify y busca música”.</li>
       </ol>
-      <p class="agent-note"><b>Si no conecta:</b> revisa que el computador tenga Internet, que el agente siga abierto y que Windows no haya bloqueado PowerShell. Para actualizarlo, descarga e instala nuevamente la versión más reciente.</p>
+      <p class="agent-note"><b>Si no conecta:</b> revisa que el computador tenga Internet, que el agente siga abierto y que Windows no haya bloqueado PowerShell. Para incorporar programas nuevos, pulsa «Sincronizar programas».</p>
     </section>
     </template>
     <p v-if="error && tab === 'cuentas'" class="mb-5 rounded-lg border border-red-500/25 bg-red-950/30 px-4 py-3 text-sm text-red-200">{{ error }}</p>
@@ -65,6 +71,9 @@ const whatsappEdit = ref({ phone_number: '' })
 const whatsappSaving = ref(false)
 const whatsappSuccess = ref('')
 const whatsappError = ref('')
+const programs = ref([])
+const programsLoading = ref(false)
+const programsError = ref('')
 
 async function loadWhatsAppConfig() {
   try {
@@ -87,6 +96,28 @@ async function saveWhatsAppConfig() {
     whatsappError.value = errorMessage(e, 'No se pudo guardar el número de WhatsApp')
   } finally {
     whatsappSaving.value = false
+  }
+}
+
+async function syncPrograms() {
+  programsLoading.value = true
+  programsError.value = ''
+  try {
+    const res = await api.post('/api/device/programs/sync')
+    programs.value = res.data?.programs || []
+  } catch (e) {
+    programsError.value = errorMessage(e, 'No se pudo sincronizar el catálogo')
+  } finally {
+    programsLoading.value = false
+  }
+}
+
+async function loadPrograms() {
+  try {
+    const res = await api.get('/api/device/programs')
+    programs.value = res.data?.programs || []
+  } catch (e) {
+    programsError.value = errorMessage(e, 'No se pudo cargar el catálogo')
   }
 }
 
@@ -154,7 +185,7 @@ async function unlinkTelegram(user) {
   }
 }
 
-onMounted(() => { load(); loadWhatsAppConfig() })
+onMounted(() => { load(); loadWhatsAppConfig(); loadPrograms() })
 </script>
 
 <style scoped>

@@ -47,6 +47,7 @@ import os
 import subprocess
 import time
 import webbrowser
+import socket
 from pathlib import Path
 from urllib.parse import quote, urlparse
 
@@ -54,6 +55,31 @@ import websockets
 
 
 ALLOWED_HOSTS = {"www.google.com", "google.com", "www.youtube.com", "youtube.com", "open.spotify.com", "www.spotify.com", "store.steampowered.com", "www.bing.com"}
+
+def enumerate_programs() -> list[dict[str, str]]:
+    """Obtiene aplicaciones ejecutables desde accesos directos del menú Inicio."""
+    roots = [
+        Path(os.environ.get("PROGRAMDATA", "")) / "Microsoft/Windows/Start Menu/Programs",
+        Path(os.environ.get("APPDATA", "")) / "Microsoft/Windows/Start Menu/Programs",
+    ]
+    found: dict[str, dict[str, str]] = {}
+    for root in roots:
+        if not root.is_dir():
+            continue
+        try:
+            for shortcut in root.rglob("*"):
+                if shortcut.suffix.lower() not in {".lnk", ".exe"} or not shortcut.is_file():
+                    continue
+                name = shortcut.stem.strip()
+                if name and name.lower() not in found:
+                    found[name.lower()] = {"name": name, "path": str(shortcut)}
+        except (OSError, PermissionError):
+            continue
+    return sorted(found.values(), key=lambda item: item["name"].lower())[:500]
+
+
+DYNAMIC_PROGRAMS: dict[str, str] = {}
+
 
 PROGRAMS = {
     "chrome": [os.path.join(os.environ.get("PROGRAMFILES", r"C:\\Program Files"), "Google", "Chrome", "Application", "chrome.exe"), os.path.join(os.environ.get("PROGRAMFILES(X86)", r"C:\\Program Files (x86)"), "Google", "Chrome", "Application", "chrome.exe")],
@@ -99,8 +125,8 @@ def execute(command: dict) -> dict:
         url = params.get("url", "")
         if not isinstance(url, str) or not url.startswith("https://"):
             return {"ok": False, "error": "URL no permitida"}
-        edge = PROGRAMS["edge"]
-        if os.path.isfile(edge):
+        edge = next((candidate for candidate in PROGRAMS["edge"] if os.path.isfile(candidate)), None)
+        if edge:
             subprocess.Popen([edge, url], shell=False)
         else:
             return {"ok": False, "error": "Microsoft Edge no está instalado"}
@@ -192,8 +218,17 @@ def execute(command: dict) -> dict:
         ctypes.windll.user32.keybd_event(vk, 0, 2, 0)
         return {"ok": True}
     if action == "launch_program":
-        program = params.get("program")
+        program = str(params.get("program", "")).strip().lower()
+        dynamic_path = DYNAMIC_PROGRAMS.get(program)
         paths = PROGRAMS.get(program)
+        if dynamic_path:
+            if not os.path.isfile(dynamic_path) or Path(dynamic_path).suffix.lower() not in {".exe", ".lnk"}:
+                return {"ok": False, "error": "La aplicación ya no está disponible"}
+            if Path(dynamic_path).suffix.lower() == ".lnk":
+                os.startfile(dynamic_path)
+            else:
+                subprocess.Popen([dynamic_path], shell=False)
+            return {"ok": True, "program": program}
         if not paths:
             return {"ok": False, "error": "Programa no autorizado"}
         path = next((candidate for candidate in paths if os.path.isfile(candidate)), paths[0])
@@ -220,10 +255,28 @@ async def main() -> None:
     while True:
         try:
             async with websockets.connect(url, additional_headers={"Authorization": f"Bearer {token}"}, ping_interval=20, ping_timeout=20) as ws:
+                await ws.send(json.dumps({
+                    "type": "hello",
+                    "agent_version": "2.0",
+                    "machine_id": socket.gethostname(),
+                    "hostname": socket.gethostname(),
+                    "programs": enumerate_programs(),
+                }))
+                hello_result = json.loads(await ws.recv())
+                if hello_result.get("type") != "hello_ack":
+                    raise RuntimeError("El servidor no aceptó el agente")
+                DYNAMIC_PROGRAMS.clear()
+                DYNAMIC_PROGRAMS.update({item["name"].lower(): item["path"] for item in enumerate_programs()})
                 print("Agente local IGRIS conectado")
                 while True:
                     raw = await ws.recv()
                     command = json.loads(raw)
+                    if command.get("action") == "sync_programs":
+                        programs = enumerate_programs()
+                        DYNAMIC_PROGRAMS.clear()
+                        DYNAMIC_PROGRAMS.update({item["name"].lower(): item["path"] for item in programs})
+                        await ws.send(json.dumps({"id": command.get("id"), "result": {"ok": True, "programs": programs}}))
+                        continue
                     result = await asyncio.to_thread(execute, command)
                     await ws.send(json.dumps({"id": command.get("id"), "result": result}))
         except Exception as exc:

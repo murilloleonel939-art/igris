@@ -6,7 +6,7 @@ from urllib.parse import parse_qs, quote, urlparse
 
 import httpx
 
-from core.local_agent import run_local_action
+from core.local_agent import hub, run_local_action
 
 ALLOWED_HOSTS = {"www.google.com", "google.com", "www.youtube.com", "youtube.com"}
 
@@ -79,9 +79,10 @@ async def launch_program(program: str) -> dict:
     if not isinstance(program, str):
         return {"error": "Falta el nombre del programa."}
     program = program.strip().lower()
-    allowed = {"chrome", "edge", "spotify", "steam", "explorer", "word", "excel", "notepad", "calculator"}
-    if program not in allowed:
-        return {"error": "Ese programa no está autorizado."}
+    built_in = {"chrome", "edge", "spotify", "steam", "explorer", "word", "excel", "notepad", "calculator"}
+    discovered = {item.get("name", "").strip().lower() for item in hub.programs if isinstance(item, dict)}
+    if program not in built_in and program not in discovered:
+        return {"error": "Ese programa no aparece en el catálogo del agente."}
     return await run_local_action("launch_program", program=program)
 
 

@@ -456,8 +456,8 @@ TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "launch_program", "description": "Abre una aplicación autorizada en Windows: Chrome, Edge, Spotify, Steam, Explorador, Word, Excel, bloc de notas o calculadora.",
-            "parameters": {"type": "object", "properties": {"program": {"type": "string", "enum": ["chrome", "edge", "spotify", "steam", "explorer", "word", "excel", "notepad", "calculator"]}}, "required": ["program"]},
+            "name": "launch_program", "description": "Abre una aplicación autorizada en Windows por su nombre. Incluye las aplicaciones integradas y las descubiertas por el catálogo del agente.",
+            "parameters": {"type": "object", "properties": {"program": {"type": "string", "description": "Nombre exacto o aproximado de una aplicación del catálogo del agente."}}, "required": ["program"]},
         },
     },
     {
