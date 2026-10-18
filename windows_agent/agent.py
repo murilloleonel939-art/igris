@@ -232,18 +232,22 @@ def execute(command: dict) -> dict:
         query = str(params.get("query", "")).strip()
         if not query:
             return {"ok": False, "error": "Falta la búsqueda de Spotify"}
-        spotify = DYNAMIC_PROGRAMS.get("spotify") or next((candidate for candidate in PROGRAMS["spotify"] if os.path.isfile(candidate)), None)
-        if spotify:
-            if Path(spotify).suffix.lower() == ".lnk":
-                os.startfile(spotify)
-            else:
-                subprocess.Popen([spotify], shell=False)
-            time.sleep(2)
-            # La aplicación de Spotify acepta búsquedas mediante su URI interna.
+        spotify = DYNAMIC_PROGRAMS.get("spotify") or next(
+            (path for name, path in DYNAMIC_PROGRAMS.items() if "spotify" in name),
+            None,
+        ) or next((candidate for candidate in PROGRAMS["spotify"] if os.path.isfile(candidate)), None)
+        try:
+            if spotify:
+                if Path(spotify).suffix.lower() == ".lnk":
+                    os.startfile(spotify)
+                else:
+                    subprocess.Popen([spotify], shell=False)
+                time.sleep(2)
+            # El protocolo spotify: abre la aplicación instalada, sin pasar por Chrome.
             os.startfile("spotify:search:" + quote(query))
             return {"ok": True, "query": query, "application": "spotify"}
-        url = "https://open.spotify.com/search/" + quote(query)
-        return execute({"action": "chrome_open_url", "params": {"url": url}})
+        except OSError:
+            return {"ok": False, "error": "No se encontró la aplicación de Spotify instalada."}
     if action == "steam_search":
         query = params.get("query", "")
         url = "https://store.steampowered.com/search/?term=" + quote(str(query).strip())
