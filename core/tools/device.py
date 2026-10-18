@@ -8,7 +8,7 @@ import httpx
 
 from core.local_agent import hub, run_local_action
 
-ALLOWED_HOSTS = {"www.google.com", "google.com", "www.youtube.com", "youtube.com"}
+ALLOWED_HOSTS = {"www.google.com", "google.com", "www.youtube.com", "youtube.com", "quotex.com", "www.quotex.com", "open.spotify.com", "www.spotify.com", "store.steampowered.com", "www.bing.com"}
 
 
 async def open_chrome(url: str = "https://www.google.com") -> dict:

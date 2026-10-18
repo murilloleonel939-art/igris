@@ -429,7 +429,7 @@ TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "open_chrome", "description": "Abre una página permitida en Chrome. Si el usuario pide buscar y reproducir un video de YouTube, usa search_youtube; esta herramienta convierte automáticamente una URL de resultados de YouTube en el primer video.",
+            "name": "open_chrome", "description": "Abre una página https permitida en Chrome, incluyendo quotex.com. Si el usuario pide buscar y reproducir un video de YouTube, usa search_youtube.",
             "parameters": {"type": "object", "properties": {"url": {"type": "string"}}, "required": []},
         },
     },

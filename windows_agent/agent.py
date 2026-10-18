@@ -18,7 +18,7 @@ from urllib.parse import quote, urlparse
 import websockets
 
 
-ALLOWED_HOSTS = {"www.google.com", "google.com", "www.youtube.com", "youtube.com", "open.spotify.com", "www.spotify.com", "store.steampowered.com", "www.bing.com"}
+ALLOWED_HOSTS = {"www.google.com", "google.com", "www.youtube.com", "youtube.com", "open.spotify.com", "www.spotify.com", "store.steampowered.com", "www.bing.com", "quotex.com", "www.quotex.com"}
 
 def enumerate_programs() -> list[dict[str, str]]:
     """Obtiene aplicaciones ejecutables desde accesos directos del menú Inicio."""
@@ -335,6 +335,9 @@ def execute(command: dict) -> dict:
         program = str(params.get("program", "")).strip().lower()
         dynamic_path = DYNAMIC_PROGRAMS.get(program)
         paths = PROGRAMS.get(program)
+        builtin_paths = {"calculator": "calc.exe", "calculadora": "calc.exe", "notepad": "notepad.exe", "bloc de notas": "notepad.exe", "chrome": "chrome.exe"}
+        if not dynamic_path and not paths and program in builtin_paths:
+            paths = [builtin_paths[program]]
         if dynamic_path:
             if not os.path.isfile(dynamic_path) or Path(dynamic_path).suffix.lower() not in {".exe", ".lnk"}:
                 return {"ok": False, "error": "La aplicación ya no está disponible"}
