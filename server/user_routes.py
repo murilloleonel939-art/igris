@@ -50,7 +50,7 @@ from core.capabilities import (
     admin_capabilities,
     capabilities_from_user,
 )
-from core.database import GoogleAccount, Note, Profile, Reminder, TelegramLink, User, UserMemory, get_db
+from core.database import GoogleAccount, Note, Profile, Reminder, SpotifyAccount, TelegramLink, User, UserMemory, get_db
 from core.settings_manager import get_settings
 from core.memory import load_memories, remember_from_text
 from core.tools import gcalendar, gmail
@@ -982,6 +982,8 @@ def _bind_identity(session, user: User, db: Session) -> None:
 
     account = db.query(GoogleAccount).filter(GoogleAccount.user_id == user.id).first()
     session.google_linked = account.email if account is not None else None
+    spotify_account = db.query(SpotifyAccount).filter(SpotifyAccount.user_id == user.id).first()
+    session.spotify_linked = (spotify_account.display_name or spotify_account.email) if spotify_account is not None else None
 
     link = db.query(TelegramLink).filter(TelegramLink.user_id == user.id).first()
     session.telegram_linked = bool(link and link.chat_id)
@@ -1173,6 +1175,7 @@ async def user_tts(payload: TtsIn, user: User = Depends(require_user)):
 OAUTH_STATE_TTL = 600
 
 _oauth_states: dict[str, tuple] = {}
+_spotify_oauth_states: dict[str, tuple] = {}
 _oauth_lock = Lock()
 
 TELEGRAM_CODE_TTL = 900  # 15 minutos para usar el código de vinculación
@@ -1190,6 +1193,25 @@ def _issue_oauth_state(user_id: int) -> str:
     with _oauth_lock:
         _prune_oauth_states()
         _oauth_states[state] = (user_id, time.time())
+    return state
+
+
+def _consume_spotify_oauth_state(state: str) -> Optional[int]:
+    with _oauth_lock:
+        now = time.time()
+        for key, (_, created) in list(_spotify_oauth_states.items()):
+            if now - created > OAUTH_STATE_TTL:
+                _spotify_oauth_states.pop(key, None)
+        entry = _spotify_oauth_states.pop(state or "", None)
+    if entry is None or time.time() - entry[1] > OAUTH_STATE_TTL:
+        return None
+    return entry[0]
+
+
+def _issue_spotify_oauth_state(user_id: int) -> str:
+    state = secrets.token_urlsafe(32)
+    with _oauth_lock:
+        _spotify_oauth_states[state] = (user_id, time.time())
     return state
 
 
@@ -1236,7 +1258,8 @@ def user_connections(
     caps = admin_capabilities() if user.is_admin else capabilities_from_user(user)
     link = db.query(TelegramLink).filter(TelegramLink.user_id == user.id).first()
     account = db.query(GoogleAccount).filter(GoogleAccount.user_id == user.id).first()
-    from core.tools import google_client
+    spotify_account = db.query(SpotifyAccount).filter(SpotifyAccount.user_id == user.id).first()
+    from core.tools import google_client, spotify
 
     return {
         "features": sorted(caps.features, key=FEATURE_ORDER.index),
@@ -1247,6 +1270,14 @@ def user_connections(
             "email": account.email if account is not None else None,
             "error": account.last_error if account is not None else None,
             "needs_youtube": caps.has("youtube"),
+        },
+        "spotify": {
+            "app_configured": spotify.oauth_configured(),
+            "connected": spotify_account is not None,
+            "email": spotify_account.email if spotify_account is not None else None,
+            "display_name": spotify_account.display_name if spotify_account is not None else None,
+            "error": spotify_account.last_error if spotify_account is not None else None,
+            "needs_spotify": caps.has("spotify"),
         },
         "telegram": {
             "linked": bool(link and link.chat_id),
@@ -1486,6 +1517,83 @@ def google_disconnect(user: User = Depends(require_user), db: Session = Depends(
     google_client.forget_token(user.id)
     logger.info("Cuenta de Google desconectada por el usuario %s", user.id)
     return {"success": True, "message": "Cuenta de Google desconectada"}
+
+
+@router.get("/api/user/spotify/start")
+def spotify_start(user: User = Depends(require_user)):
+    from core.tools import spotify
+    caps = admin_capabilities() if user.is_admin else capabilities_from_user(user)
+    if not caps.has("spotify"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Spotify no está habilitado para tu usuario.")
+    if not spotify.oauth_configured():
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Spotify no está configurado en el servidor.")
+    return {"auth_url": spotify.authorization_url(_issue_spotify_oauth_state(user.id))}
+
+
+@router.get("/api/user/spotify/callback")
+async def spotify_callback(code: Optional[str] = None, state: Optional[str] = None, error: Optional[str] = None, db: Session = Depends(get_db)):
+    from core import crypto
+    from core.tools import spotify
+    from fastapi.responses import HTMLResponse
+    from html import escape
+
+    def page(title: str, detail: str, ok: bool):
+        redirect = "" if not ok else '<meta http-equiv="refresh" content="3;url=https://webigris.zottagroup.com/?open=connections">'
+        return HTMLResponse(f"<!doctype html><html lang='es'><head><meta charset='utf-8'><title>IGRIS</title>{redirect}</head><body style='font-family:system-ui;background:#0f172a;color:#e2e8f0;display:flex;justify-content:center;align-items:center;height:100vh'><main style='text-align:center;max-width:32rem'><h1>{escape(title)}</h1><p>{escape(detail)}</p></main></body></html>")
+    if error:
+        return page("No se conectó Spotify", error, False)
+    user_id = _consume_spotify_oauth_state(state or "")
+    if not code or user_id is None:
+        return page("Solicitud caducada", "Vuelve a intentarlo desde Conexiones.", False)
+    user = db.query(User).filter(User.id == user_id, User.is_active == True).first()
+    if user is None:
+        return page("Cuenta no válida", "Tu usuario ya no está disponible.", False)
+    client_id, client_secret = spotify.client_config()
+    basic = __import__("base64").b64encode(f"{client_id}:{client_secret}".encode()).decode()
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            response = await client.post(spotify.TOKEN_URL, data={"grant_type": "authorization_code", "code": code, "redirect_uri": spotify.redirect_uri()}, headers={"Authorization": f"Basic {basic}"})
+            payload = response.json()
+            if response.status_code != 200:
+                return page("Spotify rechazó la autorización", payload.get("error_description") or payload.get("error") or str(response.status_code), False)
+            access = payload.get("access_token")
+            profile = await client.get("https://api.spotify.com/v1/me", headers={"Authorization": f"Bearer {access}"})
+            profile_data = profile.json() if profile.status_code == 200 else {}
+    except Exception as exc:
+        logger.exception("Fallo al conectar Spotify")
+        return page("No hubo conexión con Spotify", str(exc), False)
+    refresh_token = payload.get("refresh_token")
+    if not refresh_token:
+        return page("Spotify no entregó refresh token", "Vuelve a autorizar la aplicación desde Spotify.", False)
+    try:
+        encrypted = crypto.encrypt(refresh_token)
+    except Exception:
+        return page("No se pudo guardar la conexión", "El servidor no pudo cifrar el permiso de Spotify.", False)
+    account = db.query(SpotifyAccount).filter(SpotifyAccount.user_id == user.id).first()
+    if account is None:
+        account = SpotifyAccount(user_id=user.id, refresh_token_enc=encrypted)
+        db.add(account)
+    else:
+        account.refresh_token_enc = encrypted
+        account.last_error = None
+    account.email = profile_data.get("email")
+    account.display_name = profile_data.get("display_name")
+    account.spotify_user_id = profile_data.get("id")
+    account.scopes = payload.get("scope", spotify.SCOPES)
+    db.commit()
+    spotify.forget_token(user.id)
+    return page("Spotify conectado", "Ya puedes pedirle a Igris buscar música y administrar tus playlists.", True)
+
+
+@router.delete("/api/user/spotify")
+def spotify_disconnect(user: User = Depends(require_user), db: Session = Depends(get_db)):
+    from core.tools import spotify
+    account = db.query(SpotifyAccount).filter(SpotifyAccount.user_id == user.id).first()
+    if account is not None:
+        db.delete(account)
+        db.commit()
+    spotify.forget_token(user.id)
+    return {"success": True, "message": "Cuenta de Spotify desconectada"}
 
 
 @router.post("/api/user/telegram/code")

@@ -139,6 +139,7 @@ class User(Base):
     can_use_calendar = Column(Boolean, default=False, nullable=False)
     can_use_calendar_write = Column(Boolean, default=False, nullable=False)
     can_use_youtube = Column(Boolean, default=False, nullable=False)
+    can_use_spotify = Column(Boolean, default=False, nullable=False)
     can_use_notes = Column(Boolean, default=False, nullable=False)
     can_use_reminders = Column(Boolean, default=False, nullable=False)
     can_use_tuya = Column(Boolean, default=False, nullable=False)
@@ -152,6 +153,7 @@ class User(Base):
     profiles = relationship("Profile", back_populates="user", cascade="all, delete-orphan")
     ai_config = relationship("AIConfig", back_populates="user", uselist=False, cascade="all, delete-orphan")
     google_account = relationship("GoogleAccount", back_populates="user", uselist=False, cascade="all, delete-orphan")
+    spotify_account = relationship("SpotifyAccount", back_populates="user", uselist=False, cascade="all, delete-orphan")
     telegram_link = relationship("TelegramLink", back_populates="user", uselist=False, cascade="all, delete-orphan")
     memories = relationship("UserMemory", back_populates="user", cascade="all, delete-orphan")
 
@@ -325,6 +327,24 @@ class GoogleAccount(Base):
     user = relationship("User", back_populates="google_account")
 
 
+class SpotifyAccount(Base):
+    """Cuenta de Spotify autorizada por un usuario."""
+    __tablename__ = "spotify_accounts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, unique=True, index=True)
+    email = Column(String(255), nullable=True)
+    display_name = Column(String(255), nullable=True)
+    spotify_user_id = Column(String(255), nullable=True)
+    refresh_token_enc = Column(Text, nullable=False)
+    scopes = Column(Text, nullable=True)
+    last_error = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
+
+    user = relationship("User", back_populates="spotify_account")
+
+
 class TelegramLink(Base):
     """Vinculación entre un usuario de Igris y su chat de Telegram.
 
@@ -451,6 +471,7 @@ def _run_migrations(engine) -> None:
             ("can_use_calendar", "FALSE"),
             ("can_use_calendar_write", "FALSE"),
             ("can_use_youtube", "FALSE"),
+            ("can_use_spotify", "FALSE"),
             ("can_use_notes", "FALSE"),
             ("can_use_reminders", "FALSE"),
             ("can_use_tuya", "FALSE"),

@@ -293,6 +293,8 @@ def _bind_admin_identity_from_bearer(session, authorization: Optional[str], text
     with database.SessionLocal() as db:
         account = db.query(GoogleAccount).filter(GoogleAccount.user_id == user.id).first()
         session.google_linked = account.email if account is not None else None
+        spotify_account = db.query(database.SpotifyAccount).filter(database.SpotifyAccount.user_id == user.id).first()
+        session.spotify_linked = (spotify_account.display_name or spotify_account.email) if spotify_account is not None else None
         link = db.query(TelegramLink).filter(TelegramLink.user_id == user.id).first()
         session.telegram_linked = bool(link and link.chat_id)
         if text:

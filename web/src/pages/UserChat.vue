@@ -159,6 +159,20 @@
             </template>
           </section>
 
+          <section v-if="conn.spotify && conn.spotify.needs_spotify">
+            <h3>Spotify</h3>
+            <p v-if="conn.spotify.connected" class="conn-ok">Conectado{{ conn.spotify.display_name ? `: ${conn.spotify.display_name}` : '' }}{{ conn.spotify.email ? ` (${conn.spotify.email})` : '' }}.</p>
+            <p v-if="conn.spotify.error" class="conn-error">Spotify dio un error: {{ conn.spotify.error }}</p>
+            <p v-if="!conn.spotify.app_configured" class="conn-note">El administrador todavía no ha configurado Spotify.</p>
+            <template v-else>
+              <p class="conn-note">Igris usará tu propia cuenta de Spotify mediante su API oficial.</p>
+              <div class="conn-actions">
+                <button class="btn primary" @click="connectSpotify">{{ conn.spotify.connected ? 'Volver a conectar' : 'Conectar mi Spotify' }}</button>
+                <button v-if="conn.spotify.connected" class="btn ghost" @click="disconnectSpotify">Desconectar</button>
+              </div>
+            </template>
+          </section>
+
           <section v-if="conn.youtube && conn.youtube.needs_youtube">
             <h3>YouTube</h3>
             <p v-if="conn.youtube.connected" class="conn-ok">Conectado a YouTube{{ conn.youtube.email ? `: ${conn.youtube.email}` : '' }}.</p>
@@ -841,6 +855,7 @@ const conn = ref({
   features: [],
   google: null,
   youtube: null,
+  spotify: null,
   telegram: { linked: false, username: null },
   telegramCode: '',
   telegramCodeMinutes: 15,
@@ -854,6 +869,7 @@ function featureLabel(key) {
     calendar: 'Ver calendario',
     calendar_write: 'Agendar eventos',
     youtube: 'Administrar listas de YouTube',
+    spotify: 'Spotify',
     notes: 'Notas',
     reminders: 'Recordatorios',
   }
@@ -945,6 +961,7 @@ async function refreshConnections() {
     conn.value.features = res.data?.features || []
     conn.value.google = res.data?.google || null
     conn.value.youtube = res.data?.youtube || null
+    conn.value.spotify = res.data?.spotify || null
     conn.value.telegram = res.data?.telegram || { linked: false, username: null }
     // El código caduca: si el usuario ya se vinculó, se deja de mostrar.
     if (conn.value.telegram.linked) conn.value.telegramCode = ''
@@ -988,6 +1005,28 @@ async function connectGoogle() {
     window.location.href = url
   } catch (e) {
     conn.value.error = errorMessage(e, 'No se pudo iniciar la conexión con Google')
+  }
+}
+
+async function connectSpotify() {
+  conn.value.error = ''
+  try {
+    const res = await userApi.get('/api/user/spotify/start')
+    const url = res.data?.auth_url
+    if (!url) throw new Error('El servidor no devolvió la dirección de Spotify')
+    window.location.href = url
+  } catch (e) {
+    conn.value.error = errorMessage(e, 'No se pudo iniciar la conexión con Spotify')
+  }
+}
+
+async function disconnectSpotify() {
+  if (!window.confirm('¿Desconectar tu cuenta de Spotify?')) return
+  try {
+    await userApi.delete('/api/user/spotify')
+    await refreshConnections()
+  } catch (e) {
+    conn.value.error = errorMessage(e, 'No se pudo desconectar Spotify')
   }
 }
 

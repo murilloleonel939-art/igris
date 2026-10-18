@@ -76,7 +76,7 @@ TOOLS_PROMPT = (
     "eliminar correos, y gestionar el calendario del usuario (ver, agendar, mover y eliminar eventos). "
     "Si el computador local está conectado, puedes observar su pantalla cuando el usuario pida ver, revisar o explicar lo que tiene abierto; usa capture_screen una sola vez para obtener una captura actual y describe solo lo que realmente sea visible. "
     "También puedes abrir Chrome y Edge, buscar y reproducir videos en YouTube, "
-    "abrir y buscar en Spotify o Steam, abrir el Explorador, buscar y abrir archivos, y abrir Word o Excel. Cuando el usuario pida poner, buscar o escuchar una canción en Spotify, usa siempre search_spotify; no abras open_chrome_url ni la versión web de Spotify "
+    "abrir y buscar en Spotify o Steam, abrir el Explorador, buscar y abrir archivos, y abrir Word o Excel. Cuando el usuario pida buscar música o administrar playlists en Spotify, usa las herramientas de Spotify API si están disponibles; para poner música localmente en el computador usa search_spotify o play_spotify. No abras la versión web de Spotify "
     "para escribir el texto que el usuario dicte, y suspender o reiniciar el equipo. Cuando el usuario diga reproducir, poner o escuchar una canción de YouTube, debes usar search_youtube con play=true y esperar el resultado; no basta con abrir resultados; usa esas herramientas "
     "solo cuando el usuario lo pida explícitamente. Para YouTube puedes listar listas, crear una lista, añadir videos y quitar videos; antes de crear una lista o quitar un video confirma la acción con el usuario. "
     "Úsalas siempre que la pregunta dependa de datos en tiempo real o personales; no inventes datos. "
@@ -214,6 +214,7 @@ def _facts_block(session) -> str:
 
     enabled = [FEATURES[k].label for k in FEATURES if caps.has(k)]
     linked = getattr(session, "google_linked", None)
+    spotify_linked = getattr(session, "spotify_linked", None)
 
     lines = ["CONTEXTO DE ESTE USUARIO (no lo menciones salvo que venga al caso):"]
     lines.append(
@@ -231,6 +232,14 @@ def _facts_block(session) -> str:
         else:
             lines.append(
                 "Todavía NO ha conectado su cuenta de Google: si pide correo, calendario o listas de YouTube, "
+                "pídele que la conecte en la sección «Conexiones» de su página de Igris."
+            )
+    if caps.has("spotify"):
+        if spotify_linked:
+            lines.append(f"Su cuenta de Spotify ya está conectada ({spotify_linked}).")
+        else:
+            lines.append(
+                "Todavía NO ha conectado su cuenta de Spotify: si pide buscar música o administrar playlists con la API, "
                 "pídele que la conecte en la sección «Conexiones» de su página de Igris."
             )
     if caps.has("reminders"):
@@ -530,6 +539,7 @@ class BrainSession:
         self.capabilities = None
         # Datos informativos para el prompt: qué tiene conectado ya.
         self.google_linked: Optional[str] = None   # correo de Google conectado
+        self.spotify_linked: Optional[str] = None  # cuenta de Spotify conectada
         self.telegram_linked: bool = False
 
         # ── Memoria estructurada ─────────────────────────────────────────────

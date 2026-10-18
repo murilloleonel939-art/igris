@@ -13,7 +13,7 @@ import logging
 
 from core.capabilities import denial_message
 from core.local_agent import reset_agent_user, set_agent_user
-from core.tools import calendar_write, device, gcalendar, gmail, notes, reminders, time_tools, tuya, weather, youtube
+from core.tools import calendar_write, device, gcalendar, gmail, notes, reminders, spotify, time_tools, tuya, weather, youtube
 
 logger = logging.getLogger(__name__)
 
@@ -548,8 +548,50 @@ TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "search_spotify", "description": "Busca en Spotify y, si play=true, intenta reproducir el resultado.",
+            "name": "search_spotify", "description": "Busca en la aplicación local de Spotify. Úsala solo si no está disponible la API de Spotify.",
             "parameters": {"type": "object", "properties": {"query": {"type": "string"}, "play": {"type": "boolean"}}, "required": ["query"]},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_spotify_api", "description": "Busca canciones, artistas y álbumes en la cuenta conectada de Spotify.",
+            "parameters": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_spotify_playlists", "description": "Lista las playlists de la cuenta conectada de Spotify.",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_spotify_playlist", "description": "Crea una playlist de Spotify; pide confirmación antes de crearla.",
+            "parameters": {"type": "object", "properties": {"name": {"type": "string"}, "description": {"type": "string"}, "public": {"type": "boolean"}}, "required": ["name"]},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "add_tracks_to_spotify_playlist", "description": "Añade canciones usando sus URI de Spotify a una playlist; pide confirmación.",
+            "parameters": {"type": "object", "properties": {"playlist_id": {"type": "string"}, "track_uris": {"type": "array", "items": {"type": "string"}}}, "required": ["playlist_id", "track_uris"]},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "remove_tracks_from_spotify_playlist", "description": "Quita canciones usando sus URI de Spotify de una playlist; pide confirmación.",
+            "parameters": {"type": "object", "properties": {"playlist_id": {"type": "string"}, "track_uris": {"type": "array", "items": {"type": "string"}}}, "required": ["playlist_id", "track_uris"]},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "start_spotify_playback", "description": "Inicia reproducción en un dispositivo Spotify activo; requiere Premium.",
+            "parameters": {"type": "object", "properties": {"track_uri": {"type": "string"}}, "required": []},
         },
     },
     {
@@ -675,6 +717,12 @@ _HANDLERS = {
     "type_in_office": device.type_in_office,
     "search_spotify": device.search_spotify,
     "play_spotify": device.play_spotify,
+    "search_spotify_api": spotify.search_spotify_api,
+    "list_spotify_playlists": spotify.list_spotify_playlists,
+    "create_spotify_playlist": spotify.create_spotify_playlist,
+    "add_tracks_to_spotify_playlist": spotify.add_tracks_to_spotify_playlist,
+    "remove_tracks_from_spotify_playlist": spotify.remove_tracks_from_spotify_playlist,
+    "start_spotify_playback": spotify.start_spotify_playback,
     "search_steam": device.search_steam,
     "navigate_edge": device.navigate_edge,
     "system_power": device.system_power,
@@ -695,6 +743,7 @@ _SESSION_TOOLS = {
     "add_note", "list_notes", "search_notes", "delete_note",
     "list_emails", "read_email", "list_events",
     "list_youtube_playlists", "create_youtube_playlist", "add_video_to_youtube_playlist", "remove_video_from_youtube_playlist",
+    "search_spotify_api", "list_spotify_playlists", "create_spotify_playlist", "add_tracks_to_spotify_playlist", "remove_tracks_from_spotify_playlist", "start_spotify_playback",
     "list_tuya_devices", "get_tuya_device_status", "control_tuya_device",
 }
 
