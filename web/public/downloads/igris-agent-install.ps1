@@ -77,8 +77,8 @@ def execute(command: dict) -> dict:
             return {"ok": False, "error": "URL no permitida"}
         if urlparse(url).hostname not in ALLOWED_HOSTS:
             return {"ok": False, "error": "Sitio no autorizado"}
-        chrome = PROGRAMS["chrome"]
-        if os.path.isfile(chrome):
+        chrome = next((candidate for candidate in PROGRAMS["chrome"] if os.path.isfile(candidate)), None)
+        if chrome:
             subprocess.Popen([chrome, url], shell=False)
         else:
             webbrowser.get("windows-default").open(url)
@@ -87,8 +87,8 @@ def execute(command: dict) -> dict:
         url = params.get("url", "")
         if not isinstance(url, str) or not url.startswith("https://www.youtube.com/watch?"):
             return {"ok": False, "error": "Video de YouTube no permitido"}
-        chrome = PROGRAMS["chrome"]
-        if os.path.isfile(chrome):
+        chrome = next((candidate for candidate in PROGRAMS["chrome"] if os.path.isfile(candidate)), None)
+        if chrome:
             subprocess.Popen([chrome, url], shell=False)
         else:
             webbrowser.get("windows-default").open(url)
@@ -106,8 +106,17 @@ def execute(command: dict) -> dict:
             return {"ok": False, "error": "Microsoft Edge no está instalado"}
         return {"ok": True, "url": url}
     if action == "spotify_search":
-        query = params.get("query", "")
-        url = "https://open.spotify.com/search/" + quote(str(query).strip())
+        query = str(params.get("query", "")).strip()
+        if not query:
+            return {"ok": False, "error": "Falta la búsqueda de Spotify"}
+        spotify = next((candidate for candidate in PROGRAMS["spotify"] if os.path.isfile(candidate)), None)
+        if spotify:
+            subprocess.Popen([spotify], shell=False)
+            time.sleep(2)
+            # La aplicación de Spotify acepta búsquedas mediante su URI interna.
+            os.startfile("spotify:search:" + quote(query))
+            return {"ok": True, "query": query}
+        url = "https://open.spotify.com/search/" + quote(query)
         return execute({"action": "chrome_open_url", "params": {"url": url}})
     if action == "steam_search":
         query = params.get("query", "")
@@ -192,6 +201,13 @@ def execute(command: dict) -> dict:
             subprocess.Popen([path], shell=False)
         elif program == "spotify":
             os.startfile("spotify:")
+        elif program in {"word", "excel"}:
+            # Office también puede estar registrado como aplicación de Windows.
+            uri = "ms-word:" if program == "word" else "ms-excel:"
+            try:
+                os.startfile(uri)
+            except OSError:
+                return {"ok": False, "error": f"No se encontró {program} instalado"}
         else:
             return {"ok": False, "error": f"No se encontró {program} instalado"}
         return {"ok": True, "program": program}
