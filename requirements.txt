@@ -15,7 +15,8 @@ python-telegram-bot==20.6
 # --------------------------------------------------------------
 # STT – Whisper local y biometría NVIDIA NeMo/TitaNet
 # --------------------------------------------------------------
-torch==2.5.1                     # <-- requerido por NVIDIA NeMo/torchaudio (CPU‑only)
+# torch y torchaudio se instalan como ruedas CPU en Dockerfile.
+# No declararlos aquí: PyPI puede reemplazarlos por builds CUDA y descargar Triton.
 git+https://github.com/openai/whisper.git  # <-- instala Whisper directamente desde su repo
 faster-whisper==1.1.1            # motor Whisper local optimizado para CPU
 av==14.0.1                       # versión compatible con metadata_errors de faster-whisper
@@ -37,7 +38,6 @@ qrcode
 pillow
 numpy>=2.0,<3
 nemo_toolkit[asr]
-torchaudio==2.5.1
 pyjwt
 email-validator
 piper-tts

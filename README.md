@@ -696,7 +696,7 @@ curl -i -X OPTIONS $API/api/chat \
 ### Recomendación: caché del modelo de Whisper
 La primera nota de voz tras un despliegue descarga el modelo de Whisper (unos 140 MB para `base`). Para no repetirlo en cada redeploy, monta un volumen persistente en `/root/.cache/whisper` (Coolify → backend → Storages).
 ### PyTorch solo CPU
-El servidor no tiene GPU, así que el `Dockerfile` instala `torch==2.5.1` y `torchaudio==2.5.1` desde el índice de CPU de PyTorch **antes** de `requirements.txt`. Así `openai-whisper` y NVIDIA NeMo encuentran PyTorch ya instalado y no descargan la versión con CUDA (varios GB). La versión del `Dockerfile` debe coincidir con la de `requirements.txt`. Para comprobarlo dentro del contenedor del backend: `pip list | grep -i -E "^(torch|torchaudio|nvidia)"` debe mostrar Torch/Torchaudio CPU y no paquetes CUDA.
+El servidor no tiene GPU, así que el `Dockerfile` instala `torch==2.5.1` y `torchaudio==2.5.1` desde el índice de CPU de PyTorch **antes** de `requirements.txt`. `requirements.txt` no vuelve a declarar esos paquetes: si pip los resolviera desde PyPI podría descargar builds CUDA y Triton, ocupando varios GB y provocando `no space left on device` durante el export de la imagen. Así `openai-whisper` y NVIDIA NeMo encuentran PyTorch CPU ya instalado. Para comprobarlo dentro del contenedor del backend: `pip list | grep -i -E "^(torch|torchaudio|nvidia|triton)"` debe mostrar Torch/Torchaudio CPU y no paquetes CUDA ni Triton.
 ---
 ## 🩺 Solución de problemas
 | Síntoma | Causa probable | Solución |
