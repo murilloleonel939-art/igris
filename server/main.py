@@ -71,6 +71,10 @@ async def transcribe_with_deepgram(data: bytes, content_type: str = "audio/webm"
 # Inicializar BD: crea la base de datos si falta, espera a PostgreSQL si aún
 # está arrancando y crea las tablas que falten (recordatorios y notas incluidas).
 init_db()
+# La configuración puede haberse cargado antes de que existieran las tablas.
+# Recargarla aquí garantiza que prevalezca la última versión guardada en PostgreSQL.
+get_settings().reload()
+tts.reload_config()
 
 
 def _ensure_bootstrap_admin() -> None:
@@ -354,8 +358,8 @@ async def status():
             "enabled": True,
         },
         "tts": {
-            "provider": os.environ.get("IGRIS_TTS_PROVIDER", "local"),
-            "enabled": True,  # Simplified
+            "provider": get_settings().get_tts_config().get("provider", "local"),
+            "enabled": True,
         },
     }
 

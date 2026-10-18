@@ -38,38 +38,92 @@ class SettingsManager:
         self.settings = self.load()
 
     def load(self) -> dict:
-        """Carga la configuración desde settings.json."""
+        """Carga configuración de archivo y reemplaza secciones con valores de la BD."""
         try:
             with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
         except FileNotFoundError:
             print(f"⚠️ {SETTINGS_FILE} no encontrado. Usando defaults.")
-            return self.get_defaults()
+            data = self.get_defaults()
         except Exception as e:
             print(f"⚠️ Error leyendo {SETTINGS_FILE}: {e}. Usando defaults.")
-            return self.get_defaults()
+            data = self.get_defaults()
 
         if not isinstance(data, dict):
-            return self.get_defaults()
+            data = self.get_defaults()
+        defaults = self.get_defaults()
+        for section in ("ai", "stt", "tts"):
+            if not isinstance(data.get(section), dict):
+                data[section] = dict(defaults[section])
+        data["ai"] = _sanitize_ai(data["ai"])
 
-        # Si el archivo tiene el formato plano antiguo (sin sección "ai"),
-        # completar con los defaults para no perder la configuración.
-        if not isinstance(data.get("ai"), dict):
-            data["ai"] = self.get_defaults()["ai"]
-        else:
+        # La BD sobrevive a reinicios y despliegues. Si existe un valor guardado,
+        # tiene prioridad sobre el archivo incluido en la imagen.
+        db = None
+        try:
+            db = SessionLocal()
+            changed = False
+            for section in ("ai", "stt", "tts"):
+                row = db.get(GlobalSetting, f"settings.{section}")
+                if row is None:
+                    db.add(GlobalSetting(
+                        key=f"settings.{section}",
+                        value=json.dumps(data[section], ensure_ascii=False),
+                    ))
+                    changed = True
+                    continue
+                saved = json.loads(row.value)
+                if isinstance(saved, dict):
+                    data[section] = {**data[section], **saved}
+            if changed:
+                db.commit()
+            else:
+                db.rollback()
+            db.close()
             data["ai"] = _sanitize_ai(data["ai"])
+        except Exception as exc:
+            if db is not None:
+                try:
+                    db.rollback()
+                    db.close()
+                except Exception:
+                    pass
+            print(f"⚠️ No se pudo cargar configuración persistente: {exc}")
         return data
 
     def save(self) -> bool:
-        """Guarda la configuración en settings.json."""
+        """Guarda archivo local y las secciones críticas en la base de datos."""
+        db = None
         try:
             with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
                 json.dump(self.settings, f, indent=2, ensure_ascii=False)
-            print(f"✓ Configuración guardada en {SETTINGS_FILE}")
+            db = SessionLocal()
+            for section in ("ai", "stt", "tts"):
+                key = f"settings.{section}"
+                encoded = json.dumps(self.settings.get(section, {}), ensure_ascii=False)
+                row = db.get(GlobalSetting, key)
+                if row is None:
+                    db.add(GlobalSetting(key=key, value=encoded))
+                else:
+                    row.value = encoded
+            db.commit()
+            db.close()
+            print(f"✓ Configuración guardada en {SETTINGS_FILE} y la base de datos")
             return True
         except Exception as e:
+            if db is not None:
+                try:
+                    db.rollback()
+                    db.close()
+                except Exception:
+                    pass
             print(f"✗ Error al guardar configuración: {e}")
             return False
+
+    def reload(self) -> dict:
+        """Recarga la configuración, incluyendo los valores persistidos en la BD."""
+        self.settings = self.load()
+        return self.settings
 
     def get(self, key: str, default=None):
         """Obtiene un valor de la configuración."""
@@ -248,9 +302,11 @@ class SettingsManager:
                 "language": os.getenv("IGRIS_STT_LANGUAGE", "es")
             },
             "tts": {
-                "provider": "local",
-                "voice": "es_ES-carlos-medium",
-                "instructions": "Habla como un caballero de las sombras."
+                "provider": os.getenv("IGRIS_TTS_PROVIDER", "local"),
+                "voice": os.getenv("IGRIS_TTS_VOICE", "es_ES-carlos-medium"),
+                "instructions": os.getenv("IGRIS_TTS_INSTRUCTIONS", "Habla como un caballero de las sombras."),
+                "rate": os.getenv("IGRIS_TTS_RATE", "+0%"),
+                "pitch": os.getenv("IGRIS_TTS_PITCH", "+0%")
             },
             "system": {
                 "personality": "caballero_sombras",

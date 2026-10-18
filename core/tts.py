@@ -10,22 +10,27 @@ def _get_tts_config():
         return {}
 
 _TTS_CFG = _get_tts_config()
-TTS_PROVIDER = os.environ.get("IGRIS_TTS_PROVIDER", _TTS_CFG.get("provider", "local")).lower()
+TTS_PROVIDER = (_TTS_CFG.get("provider") or os.environ.get("IGRIS_TTS_PROVIDER", "local")).lower()
 TTS_ENABLED = TTS_PROVIDER in ["local", "edge", "openai"]
-TTS_INSTRUCTIONS = os.environ.get(
-    "IGRIS_TTS_INSTRUCTIONS",
-    _TTS_CFG.get(
-        "instructions",
-        "Habla como un caballero de las sombras: grave, solemne, pausado, con respeto. "
-        "Usa frases cortas. No uses listas ni markdown. Responde en español. "
-        "Dirígete al usuario como 'mi señor'. Si hay riesgo, advierte con calma antes de actuar.",
-    ),
-)
-TTS_RATE = os.environ.get("IGRIS_TTS_RATE", _TTS_CFG.get("rate", "+0%"))
-TTS_PITCH = os.environ.get("IGRIS_TTS_PITCH", _TTS_CFG.get("pitch", "+0%"))
+TTS_INSTRUCTIONS = _TTS_CFG.get("instructions") or os.environ.get("IGRIS_TTS_INSTRUCTIONS", "Habla como un caballero de las sombras.")
+TTS_RATE = _TTS_CFG.get("rate") or os.environ.get("IGRIS_TTS_RATE", "+0%")
+TTS_PITCH = _TTS_CFG.get("pitch") or os.environ.get("IGRIS_TTS_PITCH", "+0%")
+
+
+def reload_config() -> None:
+    """Actualiza la configuración TTS después de iniciar la base de datos."""
+    global _TTS_CFG, TTS_PROVIDER, TTS_ENABLED, TTS_INSTRUCTIONS, TTS_RATE, TTS_PITCH, PIPER_VOICE
+    _TTS_CFG = _get_tts_config()
+    TTS_PROVIDER = (_TTS_CFG.get("provider") or os.environ.get("IGRIS_TTS_PROVIDER", "local")).lower()
+    TTS_ENABLED = TTS_PROVIDER in ["local", "edge", "openai"]
+    TTS_INSTRUCTIONS = _TTS_CFG.get("instructions") or os.environ.get("IGRIS_TTS_INSTRUCTIONS", "Habla como un caballero de las sombras.")
+    TTS_RATE = _TTS_CFG.get("rate") or os.environ.get("IGRIS_TTS_RATE", "+0%")
+    TTS_PITCH = _TTS_CFG.get("pitch") or os.environ.get("IGRIS_TTS_PITCH", "+0%")
+    PIPER_VOICE = _TTS_CFG.get("voice") or os.environ.get("IGRIS_PIPER_VOICE", "es_ES-carlos-medium")
+
 
 # Configuración local gratuita (Piper / Coqui)
-PIPER_VOICE = os.environ.get("IGRIS_PIPER_VOICE", "es_ES-carlos-medium")
+PIPER_VOICE = _TTS_CFG.get("voice") or os.environ.get("IGRIS_PIPER_VOICE", "es_ES-carlos-medium")
 
 _client_local = None
 
