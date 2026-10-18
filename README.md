@@ -695,6 +695,9 @@ curl -i -X OPTIONS $API/api/chat \
 ```
 ### Recomendación: caché del modelo de Whisper
 La primera nota de voz tras un despliegue descarga el modelo de Whisper (unos 140 MB para `base`). Para no repetirlo en cada redeploy, monta un volumen persistente en `/root/.cache/whisper` (Coolify → backend → Storages).
+### Agente local de Windows
+El agente de `windows_agent/` permite que IGRIS controle el computador encendido mediante una conexión WebSocket saliente: abrir Chrome, buscar en YouTube, controlar multimedia, ajustar volumen y abrir Chrome, Bloc de notas o Calculadora. Instálalo en Windows con `py -m pip install websockets`, define `IGRIS_DEVICE_URL` apuntando a `wss://TU_DOMINIO/api/device/ws` y `NODE_TOKEN` igual al del backend, y ejecútalo al iniciar sesión mediante el Programador de tareas. El permiso **Control del computador local** debe habilitarse para el usuario. El agente no acepta comandos shell ni rutas arbitrarias.
+
 ### PyTorch solo CPU
 El servidor no tiene GPU, así que el `Dockerfile` instala `torch==2.5.1` y `torchaudio==2.5.1` desde el índice de CPU de PyTorch **antes** de `requirements.txt`. `requirements.txt` no vuelve a declarar esos paquetes: si pip los resolviera desde PyPI podría descargar builds CUDA y Triton, ocupando varios GB y provocando `no space left on device` durante el export de la imagen. Así `openai-whisper` y NVIDIA NeMo encuentran PyTorch CPU ya instalado. Para comprobarlo dentro del contenedor del backend: `pip list | grep -i -E "^(torch|torchaudio|nvidia|triton)"` debe mostrar Torch/Torchaudio CPU y no paquetes CUDA ni Triton.
 ---

@@ -12,7 +12,7 @@ import json
 import logging
 
 from core.capabilities import denial_message
-from core.tools import calendar_write, gcalendar, gmail, notes, reminders, time_tools, tuya, weather
+from core.tools import calendar_write, device, gcalendar, gmail, notes, reminders, time_tools, tuya, weather
 
 logger = logging.getLogger(__name__)
 
@@ -428,6 +428,41 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "open_chrome", "description": "Abre una página permitida en Chrome en el computador local.",
+            "parameters": {"type": "object", "properties": {"url": {"type": "string"}}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_youtube", "description": "Busca música o videos en YouTube en Chrome.",
+            "parameters": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "media_control", "description": "Controla reproducir/pausar o cambiar de pista en el computador local.",
+            "parameters": {"type": "object", "properties": {"action": {"type": "string", "enum": ["play_pause", "next", "previous"]}}, "required": ["action"]},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "volume_control", "description": "Sube, baja o silencia el volumen del computador local.",
+            "parameters": {"type": "object", "properties": {"action": {"type": "string", "enum": ["up", "down", "mute"]}}, "required": ["action"]},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "launch_program", "description": "Abre un programa autorizado en el computador local.",
+            "parameters": {"type": "object", "properties": {"program": {"type": "string", "enum": ["chrome", "notepad", "calculator"]}}, "required": ["program"]},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "list_tuya_devices",
             "description": "Lista los dispositivos Smart Life vinculados al proyecto Tuya de Igris.",
             "parameters": {"type": "object", "properties": {}, "required": []},
@@ -501,6 +536,11 @@ _HANDLERS = {
     "list_notes": notes.list_notes,
     "search_notes": notes.search_notes,
     "delete_note": notes.delete_note,
+    "open_chrome": device.open_chrome,
+    "search_youtube": device.search_youtube,
+    "media_control": device.media_control,
+    "volume_control": device.volume_control,
+    "launch_program": device.launch_program,
     "list_tuya_devices": tuya.list_tuya_devices_for_session,
     "get_tuya_device_status": tuya.list_tuya_device_status,
     "control_tuya_device": tuya.control_tuya_device,

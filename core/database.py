@@ -141,6 +141,7 @@ class User(Base):
     can_use_notes = Column(Boolean, default=False, nullable=False)
     can_use_reminders = Column(Boolean, default=False, nullable=False)
     can_use_tuya = Column(Boolean, default=False, nullable=False)
+    can_use_device = Column(Boolean, default=False, nullable=False)
 
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -427,6 +428,7 @@ def _run_migrations(engine) -> None:
             ("can_use_notes", "FALSE"),
             ("can_use_reminders", "FALSE"),
             ("can_use_tuya", "FALSE"),
+            ("can_use_device", "FALSE"),
         )
         for column, default in permission_defaults:
             if _column_exists(conn, dialect, "users", column):

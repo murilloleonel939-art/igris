@@ -36,6 +36,7 @@ FEATURE_ORDER = (
     "notes",
     "reminders",
     "tuya",
+    "device",
 )
 
 # Funciones que están activas de fábrica. Son inofensivas: no tocan datos de
@@ -112,6 +113,12 @@ FEATURES: dict[str, Feature] = {
         label="Recordatorios",
         description="Programar avisos; le llegan por Telegram si lo tiene vinculado.",
     ),
+    "device": Feature(
+        key="device",
+        column="can_use_device",
+        label="Control del computador local",
+        description="Abrir Chrome, buscar YouTube, controlar multimedia, volumen y programas autorizados.",
+    ),
     "tuya": Feature(
         key="tuya",
         column="can_use_tuya",
@@ -146,6 +153,11 @@ TOOL_FEATURES: dict[str, str] = {
     "list_tuya_devices": "tuya",
     "get_tuya_device_status": "tuya",
     "control_tuya_device": "tuya",
+    "open_chrome": "device",
+    "search_youtube": "device",
+    "media_control": "device",
+    "volume_control": "device",
+    "launch_program": "device",
 }
 
 
