@@ -14,8 +14,15 @@ from core.database import AgentToken, SessionLocal, User
 from core.local_agent import hub
 
 
+FIXED_PROGRAMS = [
+    "Excel", "Word", "PowerPoint", "Chrome", "Firefox", "Microsoft Edge",
+    "Calculadora", "Calculator", "Bloc de notas", "Notepad", "Steam",
+    "Windows PowerShell", "Telegram", "WhatsApp", "Google Drive", "OneDrive",
+]
+
+
 class ProgramAccessUpdate(BaseModel):
-    allowed_programs: list[str] = Field(default_factory=list, max_length=500)
+    allowed_programs: list[str] = Field(default_factory=list, max_length=len(FIXED_PROGRAMS))
 
 router = APIRouter()
 
@@ -52,7 +59,9 @@ async def device_status() -> dict:
 @router.get("/api/device/programs", dependencies=[Depends(_require_catalog_access)])
 async def device_programs(q: str = "") -> dict:
     query = q.strip().lower()
-    programs = hub.programs if not query else [item for item in hub.programs if query in item.get("name", "").lower()]
+    programs = [{"name": name, "path": name} for name in FIXED_PROGRAMS]
+    if query:
+        programs = [item for item in programs if query in item["name"].lower()]
     return {"programs": programs, "count": len(programs), "connected": hub.connected}
 
 
@@ -63,7 +72,7 @@ async def device_program_access() -> dict:
 
 @router.put("/api/device/programs/access", dependencies=[Depends(_require_catalog_access)])
 async def update_device_program_access(payload: ProgramAccessUpdate) -> dict:
-    return {"allowed_programs": hub.set_allowed_programs(payload.allowed_programs)}
+    return {"allowed_programs": hub.set_allowed_programs([name for name in payload.allowed_programs if name in FIXED_PROGRAMS])}
 
 
 @router.post("/api/device/programs/sync", dependencies=[Depends(_require_catalog_access)])

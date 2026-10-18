@@ -27,7 +27,8 @@ class LocalAgentHub:
         if action == "launch_program":
             program = str(params.get("program", "")).strip().lower()
             allowed = {name.lower() for name in self.allowed_programs}
-            if program not in allowed:
+            aliases = {"edge": "microsoft edge", "powerpoint": "powerpoint", "onedrive": "onedrive", "calculator": "calculator", "notepad": "notepad"}
+            if program not in allowed and aliases.get(program, program) not in allowed:
                 return {"ok": False, "error": "La aplicación no está autorizada en la configuración del equipo."}
         if self.owner_user_id is not None and requested_user not in {None, self.owner_user_id}:
             return {"ok": False, "error": "El agente está vinculado a otro usuario."}
@@ -70,8 +71,8 @@ class LocalAgentHub:
                     pass
 
     def set_allowed_programs(self, names: list[str]) -> list[str]:
-        available = {item["name"] for item in self.programs}
-        self.allowed_programs = {str(name) for name in names if str(name) in available}
+        available = {str(name).lower() for name in names}
+        self.allowed_programs = {str(name) for name in names if str(name).lower() in available}
         db = None
         try:
             db = SessionLocal()

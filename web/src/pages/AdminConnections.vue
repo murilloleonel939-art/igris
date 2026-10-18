@@ -13,7 +13,7 @@
       <a href="/downloads/igris-agent-install-v6.ps1" download class="agent-download">Descargar agente Windows v6 <span>↓</span></a>
     </section>
     <section class="agent-manual">
-      <div><span class="agent-kicker">Credenciales del agente</span><h2>Tokens por equipo</h2><div class="agent-token-form"><input v-model="newDeviceName" placeholder="Nombre del equipo" maxlength="120" /><select v-model="newTokenUser"><option value="">Sin usuario específico</option><option v-for="user in users" :key="user.id" :value="String(user.id)">{{ user.username }}</option></select><button class="connect" :disabled="tokenSaving || !newDeviceName.trim()" @click="createToken">{{ tokenSaving ? 'Generando…' : 'Generar token' }}</button></div><p v-if="newToken" class="agent-token-result">Token nuevo (guárdalo ahora): <code>{{ newToken }}</code></p><p v-if="tokenError" class="agent-note">{{ tokenError }}</p><p v-if="!agentTokens.length" class="agent-note">Todavía no hay equipos creados. Genera el primer token para registrarlo.</p><div v-for="token in agentTokens" :key="token.id" class="agent-token-row"><span><b>{{ token.device_name }}</b><small>{{ token.revoked ? 'Revocado' : token.last_seen_at ? 'Conectado recientemente' : 'Sin conexión registrada' }}</small></span><span><button class="connect" @click="regenerateToken(token)">Regenerar</button><button v-if="!token.revoked" class="unlink" @click="revokeToken(token)">Revocar</button><button class="unlink" @click="deleteToken(token)">Eliminar equipo</button></span></div><span class="agent-kicker">Aplicaciones detectadas</span><h2>Catálogo del computador</h2><button class="connect" :disabled="programsLoading" @click="syncPrograms">{{ programsLoading ? 'Sincronizando…' : 'Sincronizar programas' }}</button></div>
+      <div><span class="agent-kicker">Credenciales del agente</span><h2>Tokens por equipo</h2><div class="agent-token-form"><input v-model="newDeviceName" placeholder="Nombre del equipo" maxlength="120" /><select v-model="newTokenUser"><option value="">Sin usuario específico</option><option v-for="user in users" :key="user.id" :value="String(user.id)">{{ user.username }}</option></select><button class="connect" :disabled="tokenSaving || !newDeviceName.trim()" @click="createToken">{{ tokenSaving ? 'Generando…' : 'Generar token' }}</button></div><p v-if="newToken" class="agent-token-result">Token nuevo (guárdalo ahora): <code>{{ newToken }}</code></p><p v-if="tokenError" class="agent-note">{{ tokenError }}</p><p v-if="!agentTokens.length" class="agent-note">Todavía no hay equipos creados. Genera el primer token para registrarlo.</p><div v-for="token in agentTokens" :key="token.id" class="agent-token-row"><span><b>{{ token.device_name }}</b><small>{{ token.revoked ? 'Revocado' : token.last_seen_at ? 'Conectado recientemente' : 'Sin conexión registrada' }}</small></span><span><button class="connect" @click="regenerateToken(token)">Regenerar</button><button v-if="!token.revoked" class="unlink" @click="revokeToken(token)">Revocar</button><button class="unlink" @click="deleteToken(token)">Eliminar equipo</button></span></div><span class="agent-kicker">Permisos de aplicaciones</span><h2>Aplicaciones autorizadas</h2><p class="agent-note">Marca las aplicaciones que Igris puede abrir y controlar.</p></div>
       <p v-if="programsError" class="agent-note">{{ programsError }}</p>
       <div v-else-if="programs.length" class="mt-4 grid gap-2 grid-cols-2 md:grid-cols-4 lg:grid-cols-6"><label v-for="program in programs" :key="program.path" class="program-item rounded border border-white/10 px-3 py-2 text-xs"><input type="checkbox" :value="program.name" v-model="allowedPrograms" @change="saveProgramAccess" /><b class="text-stone-200">{{ program.name }}</b></label></div>
       <p v-else class="agent-note">Conecta el agente y sincroniza para ver las aplicaciones disponibles.</p>
@@ -109,12 +109,18 @@ async function saveWhatsAppConfig() {
   }
 }
 
+const fixedPrograms = [
+  'Excel', 'Word', 'PowerPoint', 'Chrome', 'Firefox', 'Microsoft Edge',
+  'Calculadora', 'Calculator', 'Bloc de notas', 'Notepad', 'Steam',
+  'Windows PowerShell', 'Telegram', 'WhatsApp', 'Google Drive', 'OneDrive'
+]
+
 async function syncPrograms() {
   programsLoading.value = true
   programsError.value = ''
   try {
     const res = await api.post('/api/device/programs/sync')
-    programs.value = res.data?.programs || []
+    programs.value = fixedPrograms.map(name => ({ name, path: name }))
     await loadProgramAccess()
   } catch (e) {
     programsError.value = errorMessage(e, 'No se pudo sincronizar el catálogo')
@@ -195,7 +201,7 @@ async function saveProgramAccess() {
 async function loadPrograms() {
   try {
     const res = await api.get('/api/device/programs')
-    programs.value = res.data?.programs || []
+    programs.value = fixedPrograms.map(name => ({ name, path: name }))
     await loadProgramAccess()
   } catch (e) {
     programsError.value = errorMessage(e, 'No se pudo cargar el catálogo')
