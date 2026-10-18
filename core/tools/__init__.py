@@ -456,8 +456,50 @@ TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "launch_program", "description": "Abre un programa autorizado en el computador local.",
-            "parameters": {"type": "object", "properties": {"program": {"type": "string", "enum": ["chrome", "notepad", "calculator"]}}, "required": ["program"]},
+            "name": "launch_program", "description": "Abre una aplicación autorizada en Windows: Chrome, Edge, Spotify, Steam, Explorador, Word, Excel, bloc de notas o calculadora.",
+            "parameters": {"type": "object", "properties": {"program": {"type": "string", "enum": ["chrome", "edge", "spotify", "steam", "explorer", "word", "excel", "notepad", "calculator"]}}, "required": ["program"]},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_files", "description": "Busca archivos por nombre en Windows y devuelve sus rutas.",
+            "parameters": {"type": "object", "properties": {"query": {"type": "string"}, "folder": {"type": "string", "description": "Carpeta opcional donde buscar."}}, "required": ["query"]},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "open_file", "description": "Abre un archivo local con la aplicación predeterminada.",
+            "parameters": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "type_in_office", "description": "Escribe texto dictado por el usuario en Word, Excel o el bloc de notas que esté activo.",
+            "parameters": {"type": "object", "properties": {"text": {"type": "string"}, "application": {"type": "string", "enum": ["word", "excel", "notepad", ""]}}, "required": ["text"]},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_spotify", "description": "Abre Spotify y busca una canción, artista o álbum.",
+            "parameters": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_steam", "description": "Abre Steam y busca un videojuego.",
+            "parameters": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "navigate_edge", "description": "Abre una dirección HTTPS en Microsoft Edge.",
+            "parameters": {"type": "object", "properties": {"url": {"type": "string"}}, "required": []},
         },
     },
     {
@@ -541,6 +583,12 @@ _HANDLERS = {
     "media_control": device.media_control,
     "volume_control": device.volume_control,
     "launch_program": device.launch_program,
+    "search_files": device.search_files,
+    "open_file": device.open_file,
+    "type_in_office": device.type_in_office,
+    "search_spotify": device.search_spotify,
+    "search_steam": device.search_steam,
+    "navigate_edge": device.navigate_edge,
     "list_tuya_devices": tuya.list_tuya_devices_for_session,
     "get_tuya_device_status": tuya.list_tuya_device_status,
     "control_tuya_device": tuya.control_tuya_device,

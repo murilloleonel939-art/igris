@@ -68,7 +68,48 @@ async def volume_control(action: str) -> dict:
 
 
 async def launch_program(program: str) -> dict:
-    allowed = {"chrome", "notepad", "calculator"}
+    allowed = {"chrome", "edge", "spotify", "steam", "explorer", "word", "excel", "notepad", "calculator"}
     if program not in allowed:
         return {"error": "Ese programa no está autorizado."}
     return await run_local_action("launch_program", program=program)
+
+
+async def search_files(query: str, folder: str = "") -> dict:
+    if not isinstance(query, str) or not query.strip():
+        return {"error": "Falta el nombre o parte del nombre del archivo."}
+    if folder and not isinstance(folder, str):
+        return {"error": "La carpeta no es válida."}
+    return await run_local_action("search_files", query=query.strip()[:200], folder=(folder or "")[:500])
+
+
+async def open_file(path: str) -> dict:
+    if not isinstance(path, str) or not path.strip():
+        return {"error": "Falta la ruta del archivo."}
+    return await run_local_action("open_file", path=path.strip()[:1000])
+
+
+async def type_in_office(text: str, application: str = "") -> dict:
+    if not isinstance(text, str) or not text.strip():
+        return {"error": "Falta el texto que debo escribir."}
+    allowed = {"word", "excel", "notepad", ""}
+    if application not in allowed:
+        return {"error": "Solo puedo escribir en Word, Excel o el bloc de notas."}
+    return await run_local_action("type_text", text=text[:10000], application=application)
+
+
+async def search_spotify(query: str) -> dict:
+    if not isinstance(query, str) or not query.strip():
+        return {"error": "Falta la búsqueda de Spotify."}
+    return await run_local_action("spotify_search", query=query.strip()[:200])
+
+
+async def search_steam(query: str) -> dict:
+    if not isinstance(query, str) or not query.strip():
+        return {"error": "Falta el juego que debo buscar."}
+    return await run_local_action("steam_search", query=query.strip()[:200])
+
+
+async def navigate_edge(url: str = "https://www.bing.com") -> dict:
+    if not isinstance(url, str) or not url.startswith("https://"):
+        return {"error": "La dirección debe usar https."}
+    return await run_local_action("edge_open_url", url=url[:2048])

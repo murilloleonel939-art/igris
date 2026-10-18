@@ -8,15 +8,22 @@ import os
 import subprocess
 import time
 import webbrowser
-from urllib.parse import urlparse
+from pathlib import Path
+from urllib.parse import quote, urlparse
 
 import websockets
 
 
-ALLOWED_HOSTS = {"www.google.com", "google.com", "www.youtube.com", "youtube.com"}
+ALLOWED_HOSTS = {"www.google.com", "google.com", "www.youtube.com", "youtube.com", "open.spotify.com", "www.spotify.com", "store.steampowered.com", "www.bing.com"}
 
 PROGRAMS = {
     "chrome": os.path.join(os.environ.get("PROGRAMFILES", r"C:\\Program Files"), "Google", "Chrome", "Application", "chrome.exe"),
+    "edge": os.path.join(os.environ.get("PROGRAMFILES", r"C:\\Program Files"), "Microsoft", "Edge", "Application", "msedge.exe"),
+    "spotify": os.path.join(os.environ.get("APPDATA", ""), "Spotify", "Spotify.exe"),
+    "steam": os.path.join(os.environ.get("PROGRAMFILES(X86)", r"C:\\Program Files (x86)"), "Steam", "steam.exe"),
+    "explorer": "explorer.exe",
+    "word": os.path.join(os.environ.get("PROGRAMFILES", r"C:\\Program Files"), "Microsoft Office", "root", "Office16", "WINWORD.EXE"),
+    "excel": os.path.join(os.environ.get("PROGRAMFILES", r"C:\\Program Files"), "Microsoft Office", "root", "Office16", "EXCEL.EXE"),
     "notepad": "notepad.exe",
     "calculator": "calc.exe",
 }
@@ -49,6 +56,59 @@ def execute(command: dict) -> dict:
         # autoplay=1 inicia el video; no enviamos una tecla adicional que pudiera pausarlo.
         time.sleep(3)
         return {"ok": True, "url": url, "message": "Video abierto con reproducción solicitada."}
+    if action == "edge_open_url":
+        url = params.get("url", "")
+        if not isinstance(url, str) or not url.startswith("https://"):
+            return {"ok": False, "error": "URL no permitida"}
+        edge = PROGRAMS["edge"]
+        if os.path.isfile(edge):
+            subprocess.Popen([edge, url], shell=False)
+        else:
+            return {"ok": False, "error": "Microsoft Edge no está instalado"}
+        return {"ok": True, "url": url}
+    if action == "spotify_search":
+        query = params.get("query", "")
+        url = "https://open.spotify.com/search/" + quote(str(query).strip())
+        return execute({"action": "chrome_open_url", "params": {"url": url}})
+    if action == "steam_search":
+        query = params.get("query", "")
+        url = "https://store.steampowered.com/search/?term=" + quote(str(query).strip())
+        return execute({"action": "chrome_open_url", "params": {"url": url}})
+    if action == "search_files":
+        query = str(params.get("query", "")).strip().lower()
+        folder = str(params.get("folder", "")).strip() or os.path.expanduser("~")
+        if not query or not os.path.isdir(folder):
+            return {"ok": False, "error": "Búsqueda o carpeta no válida"}
+        matches = []
+        try:
+            for path in Path(folder).rglob("*"):
+                if path.is_file() and query in path.name.lower():
+                    matches.append(str(path))
+                    if len(matches) >= 30:
+                        break
+        except (OSError, PermissionError) as exc:
+            return {"ok": False, "error": f"No se pudo buscar: {exc}"}
+        return {"ok": True, "matches": matches, "count": len(matches)}
+    if action == "open_file":
+        path = os.path.abspath(str(params.get("path", "")))
+        if not os.path.isfile(path):
+            return {"ok": False, "error": "El archivo no existe"}
+        os.startfile(path)
+        return {"ok": True, "path": path}
+    if action == "type_text":
+        text = str(params.get("text", ""))
+        if not text:
+            return {"ok": False, "error": "Texto vacío"}
+        # Usa el portapapeles y Ctrl+V para conservar acentos y saltos de línea.
+        import tkinter as tk
+        root = tk.Tk(); root.withdraw(); root.clipboard_clear(); root.clipboard_append(text); root.update()
+        ctypes.windll.user32.keybd_event(0x11, 0, 0, 0)
+        ctypes.windll.user32.keybd_event(0x56, 0, 0, 0)
+        ctypes.windll.user32.keybd_event(0x56, 0, 2, 0)
+        ctypes.windll.user32.keybd_event(0x11, 0, 2, 0)
+        time.sleep(0.5)
+        root.destroy()
+        return {"ok": True, "characters": len(text)}
     if action.startswith("media_"):
         if action not in {"media_play_pause", "media_next", "media_previous"}:
             return {"ok": False, "error": "Acción no permitida"}
@@ -68,8 +128,13 @@ def execute(command: dict) -> dict:
         path = PROGRAMS.get(program)
         if not path:
             return {"ok": False, "error": "Programa no autorizado"}
-        subprocess.Popen([path], shell=False)
-        return {"ok": True}
+        if os.path.isfile(path) or path in {"explorer.exe", "notepad.exe", "calc.exe"}:
+            subprocess.Popen([path], shell=False)
+        elif program == "spotify":
+            os.startfile("spotify:")
+        else:
+            return {"ok": False, "error": f"No se encontró {program} instalado"}
+        return {"ok": True, "program": program}
     return {"ok": False, "error": "Acción desconocida"}
 
 

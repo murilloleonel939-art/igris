@@ -117,7 +117,7 @@ FEATURES: dict[str, Feature] = {
         key="device",
         column="can_use_device",
         label="Control del computador local",
-        description="Abrir Chrome, buscar YouTube, controlar multimedia, volumen y programas autorizados.",
+        description="Controlar Chrome, Edge, Spotify, Steam, Explorador, Word, Excel, archivos, multimedia, volumen y programas autorizados.",
     ),
     "tuya": Feature(
         key="tuya",
@@ -158,6 +158,12 @@ TOOL_FEATURES: dict[str, str] = {
     "media_control": "device",
     "volume_control": "device",
     "launch_program": "device",
+    "search_files": "device",
+    "open_file": "device",
+    "type_in_office": "device",
+    "search_spotify": "device",
+    "search_steam": "device",
+    "navigate_edge": "device",
 }
 
 
