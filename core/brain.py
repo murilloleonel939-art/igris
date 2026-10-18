@@ -76,7 +76,7 @@ TOOLS_PROMPT = (
     "eliminar correos, y gestionar el calendario del usuario (ver, agendar, mover y eliminar eventos). "
     "Si el computador local está conectado, puedes observar su pantalla cuando el usuario pida ver, revisar o explicar lo que tiene abierto; usa capture_screen una sola vez para obtener una captura actual y describe solo lo que realmente sea visible. "
     "También puedes abrir Chrome y Edge, buscar y reproducir videos en YouTube, "
-    "abrir y buscar en Spotify o Steam, abrir el Explorador, buscar y abrir archivos, y abrir Word o Excel "
+    "abrir y buscar en Spotify o Steam, abrir el Explorador, buscar y abrir archivos, y abrir Word o Excel. Cuando el usuario pida poner, buscar o escuchar una canción en Spotify, usa siempre search_spotify; no abras open_chrome_url ni la versión web de Spotify "
     "para escribir el texto que el usuario dicte, y suspender o reiniciar el equipo. Cuando el usuario diga reproducir, poner o escuchar una canción de YouTube, debes usar search_youtube con play=true y esperar el resultado; no basta con abrir resultados; usa esas herramientas "
     "solo cuando el usuario lo pida explícitamente. "
     "Úsalas siempre que la pregunta dependa de datos en tiempo real o personales; no inventes datos. "
