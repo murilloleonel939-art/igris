@@ -62,9 +62,9 @@ def embedding(audio: bytes, suffix: str = ".ogg") -> np.ndarray:
     signal = signal.mean(dim=0, keepdim=True)
     signal_length = torch.tensor([signal.shape[1]], dtype=torch.long)
     with torch.no_grad():
-        vector = _get_encoder().get_embedding(
-            audio_signal=signal,
-            audio_signal_len=signal_length,
+        _logits, vector = _get_encoder().forward(
+            input_signal=signal,
+            input_signal_length=signal_length,
         )
     return vector.squeeze().detach().cpu().numpy().astype(np.float32)
 
