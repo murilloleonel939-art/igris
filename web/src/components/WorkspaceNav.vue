@@ -5,7 +5,6 @@
       <router-link to="/" class="link">Chat</router-link>
       <template v-if="admin">
         <router-link to="/config" class="link">Configuración</router-link>
-        <a href="/downloads/igris-agent-install.ps1" download class="link">Agente Windows</a>
         <router-link to="/panel/conexiones" class="link">Conexiones</router-link>
         <router-link to="/panel/usuarios" class="link">Usuarios</router-link>
       </template>
