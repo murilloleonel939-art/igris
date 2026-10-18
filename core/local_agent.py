@@ -14,7 +14,7 @@ from core.database import GlobalSetting, SessionLocal
 FIXED_PROGRAM_NAMES = {
     "excel", "word", "powerpoint", "chrome", "firefox", "microsoft edge",
     "calculadora", "bloc de notas", "notepad", "steam", "windows powershell",
-    "telegram", "whatsapp", "google drive", "one drive", "onedrive",
+    "telegram", "whatsapp", "spotify", "google drive", "one drive", "onedrive",
 }
 
 
