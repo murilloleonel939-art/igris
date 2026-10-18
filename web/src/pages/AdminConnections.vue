@@ -10,7 +10,7 @@
     <template v-if="tab === 'agente'">
     <section id="agente-windows" class="agent-card">
       <div><span class="agent-kicker">Conexión local</span><h2>Agente Windows</h2><p>Descarga e instala el agente para que IGRIS controle tu computador Windows: aplicaciones, archivos, navegador, Spotify, Steam, Word, Excel y energía del equipo.</p></div>
-      <a href="/downloads/igris-agent-install.ps1" download class="agent-download">Descargar agente Windows <span>↓</span></a>
+      <a href="/downloads/igris-agent-install-v3.ps1" download class="agent-download">Descargar agente Windows <span>↓</span></a>
     </section>
     <section class="agent-manual">
       <div><span class="agent-kicker">Aplicaciones detectadas</span><h2>Catálogo del computador</h2><button class="connect" :disabled="programsLoading" @click="syncPrograms">{{ programsLoading ? 'Sincronizando…' : 'Sincronizar programas' }}</button></div>
