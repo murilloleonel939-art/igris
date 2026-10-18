@@ -10,7 +10,7 @@
     <template v-if="tab === 'agente'">
     <section id="agente-windows" class="agent-card">
       <div><span class="agent-kicker">Conexión local</span><h2>Agente Windows</h2><p>Descarga e instala el agente para que IGRIS controle tu computador Windows: aplicaciones, archivos, navegador, Spotify, Steam, Word, Excel y energía del equipo.</p></div>
-      <a href="/downloads/IgrisAgentSetup-v7.exe" download class="agent-download">Descargar agente Windows v7 <span>↓</span></a>
+      <a href="/downloads/IgrisAgentSetup-v8.exe" download class="agent-download">Descargar agente Windows v8 <span>↓</span></a>
     </section>
     <section class="agent-manual">
       <div><span class="agent-kicker">Credenciales del agente</span><h2>Tokens por equipo</h2><div class="agent-token-form"><input v-model="newDeviceName" placeholder="Nombre del equipo" maxlength="120" /><select v-model="newTokenUser"><option value="">Sin usuario específico</option><option v-for="user in users" :key="user.id" :value="String(user.id)">{{ user.username }}</option></select><button class="connect" :disabled="tokenSaving || !newDeviceName.trim()" @click="createToken">{{ tokenSaving ? 'Generando…' : 'Generar token' }}</button></div><p v-if="newToken" class="agent-token-result">Token nuevo (guárdalo ahora): <code>{{ newToken }}</code></p><p v-if="tokenError" class="agent-note">{{ tokenError }}</p><p v-if="!agentTokens.length" class="agent-note">Todavía no hay equipos creados. Genera el primer token para registrarlo.</p><div v-for="token in agentTokens" :key="token.id" class="agent-token-row"><span><b>{{ token.device_name }}</b><small>{{ token.revoked ? 'Revocado' : token.last_seen_at ? 'Conectado recientemente' : 'Sin conexión registrada' }}</small></span><span><button class="connect" @click="regenerateToken(token)">Regenerar</button><button v-if="!token.revoked" class="unlink" @click="revokeToken(token)">Revocar</button><button class="unlink" @click="deleteToken(token)">Eliminar equipo</button></span></div><span class="agent-kicker">Permisos de aplicaciones</span><h2>Aplicaciones autorizadas</h2><p class="agent-note">Marca las aplicaciones que Igris puede abrir y controlar.</p></div>
@@ -21,7 +21,7 @@
     <section class="agent-manual">
       <div><span class="agent-kicker">Manual rápido</span><h2>Cómo instalarlo y conectarlo</h2></div>
       <ol>
-        <li><b>Descarga el instalador.</b> Pulsa el botón anterior y guarda el archivo <code>igris-agent-install.ps1</code>.</li>
+        <li><b>Descarga el instalador.</b> Pulsa el botón anterior y guarda el archivo <code>IgrisAgentSetup-v8.exe</code>.</li>
         <li><b>Ejecuta PowerShell.</b> Haz clic derecho sobre el archivo y elige <em>Ejecutar con PowerShell</em>. Si Windows solicita permisos, acepta.</li>
         <li><b>Introduce los datos de conexión.</b> Copia la URL del dispositivo y el token que te indique IGRIS o el administrador.</li>
         <li><b>Deja el agente abierto.</b> Cuando aparezca <em>Agente local IGRIS conectado</em>, el computador ya está disponible.</li>

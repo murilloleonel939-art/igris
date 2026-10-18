@@ -31,21 +31,21 @@ jobs:
         run: '& "C:\\Program Files (x86)\\Inno Setup 6\\ISCC.exe" windows_agent\\igris-agent.iss'
       - uses: actions/upload-artifact@v4
         with:
-          name: IgrisAgentSetup-v7
-          path: windows_agent/output/IgrisAgentSetup-v7.exe
+          name: IgrisAgentSetup-v8
+          path: windows_agent/output/IgrisAgentSetup-v8.exe
       - name: Copy installer into frontend
         shell: pwsh
-        run: Copy-Item windows_agent/output/IgrisAgentSetup-v7.exe web/public/downloads/IgrisAgentSetup-v7.exe -Force
+        run: Copy-Item windows_agent/output/IgrisAgentSetup-v8.exe web/public/downloads/IgrisAgentSetup-v8.exe -Force
       - name: Publish installer in repository
         shell: pwsh
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add web/public/downloads/IgrisAgentSetup-v7.exe
+          git add web/public/downloads/IgrisAgentSetup-v8.exe
           git diff --cached --quiet
           if ($LASTEXITCODE -ne 0) { git commit -m "build: publicar instalador IgrisAgent v7"; git push origin HEAD:main }
       - name: Publish release asset
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: windows_agent/output/IgrisAgentSetup-v7.exe
+          files: windows_agent/output/IgrisAgentSetup-v8.exe

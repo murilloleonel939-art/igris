@@ -1,6 +1,6 @@
 ; Inno Setup: instala IgrisAgent.exe y crea desinstalador.
 #define MyAppName "IGRIS Windows Agent"
-#define MyAppVersion "7.0.0"
+#define MyAppVersion "8.0.0"
 #define MyAppPublisher "IGRIS"
 #define MyAppExeName "IgrisAgent.exe"
 
@@ -11,7 +11,7 @@ AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
 DefaultDirName={localappdata}\IGRIS\agent
 DisableProgramGroupPage=yes
-OutputBaseFilename=IgrisAgentSetup-v7
+OutputBaseFilename=IgrisAgentSetup-v8
 Compression=lzma
 SolidCompression=yes
 OutputDir=output
