@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import re
-from urllib.parse import quote, urlparse
+from urllib.parse import parse_qs, quote, urlparse
 
 import httpx
 
@@ -17,6 +17,12 @@ async def open_chrome(url: str = "https://www.google.com") -> dict:
     parsed = urlparse(url)
     if parsed.hostname not in ALLOWED_HOSTS:
         return {"error": "Ese sitio no está autorizado."}
+    # Si el modelo construye una búsqueda de YouTube para una orden de reproducción,
+    # conviértela en selección automática del primer resultado.
+    if parsed.hostname in {"www.youtube.com", "youtube.com"} and parsed.path == "/results":
+        query = parse_qs(parsed.query).get("search_query", [""])[0]
+        if query:
+            return await search_youtube(query, play=True)
     return await run_local_action("chrome_open_url", url=url[:2048])
 
 
@@ -34,7 +40,9 @@ async def search_youtube(query: str, play: bool = True) -> dict:
             response = await client.get(search_url)
             response.raise_for_status()
         # YouTube incluye los ids de los resultados en la página de búsqueda.
-        ids = re.findall(r'"videoId":"([A-Za-z0-9_-]{11})"', response.text)
+        ids = re.findall(r'"videoId"\s*:\s*"([A-Za-z0-9_-]{11})"', response.text)
+        if not ids:
+            ids = re.findall(r'videoId(?:\\?"|\\?\s*:)\s*\\?"([A-Za-z0-9_-]{11})', response.text)
         for video_id in dict.fromkeys(ids):
             video_url = f"https://www.youtube.com/watch?v={video_id}&autoplay=1"
             break
