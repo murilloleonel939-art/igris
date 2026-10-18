@@ -56,15 +56,15 @@ import websockets
 ALLOWED_HOSTS = {"www.google.com", "google.com", "www.youtube.com", "youtube.com", "open.spotify.com", "www.spotify.com", "store.steampowered.com", "www.bing.com"}
 
 PROGRAMS = {
-    "chrome": os.path.join(os.environ.get("PROGRAMFILES", r"C:\\Program Files"), "Google", "Chrome", "Application", "chrome.exe"),
-    "edge": os.path.join(os.environ.get("PROGRAMFILES", r"C:\\Program Files"), "Microsoft", "Edge", "Application", "msedge.exe"),
-    "spotify": os.path.join(os.environ.get("APPDATA", ""), "Spotify", "Spotify.exe"),
-    "steam": os.path.join(os.environ.get("PROGRAMFILES(X86)", r"C:\\Program Files (x86)"), "Steam", "steam.exe"),
-    "explorer": "explorer.exe",
-    "word": os.path.join(os.environ.get("PROGRAMFILES", r"C:\\Program Files"), "Microsoft Office", "root", "Office16", "WINWORD.EXE"),
-    "excel": os.path.join(os.environ.get("PROGRAMFILES", r"C:\\Program Files"), "Microsoft Office", "root", "Office16", "EXCEL.EXE"),
-    "notepad": "notepad.exe",
-    "calculator": "calc.exe",
+    "chrome": [os.path.join(os.environ.get("PROGRAMFILES", r"C:\\Program Files"), "Google", "Chrome", "Application", "chrome.exe"), os.path.join(os.environ.get("PROGRAMFILES(X86)", r"C:\\Program Files (x86)"), "Google", "Chrome", "Application", "chrome.exe")],
+    "edge": [os.path.join(os.environ.get("PROGRAMFILES", r"C:\\Program Files"), "Microsoft", "Edge", "Application", "msedge.exe")],
+    "spotify": [os.path.join(os.environ.get("APPDATA", ""), "Spotify", "Spotify.exe")],
+    "steam": [os.path.join(os.environ.get("PROGRAMFILES(X86)", r"C:\\Program Files (x86)"), "Steam", "steam.exe")],
+    "explorer": ["explorer.exe"],
+    "word": [os.path.join(os.environ.get("PROGRAMFILES", r"C:\\Program Files"), "Microsoft Office", "root", "Office16", "WINWORD.EXE"), os.path.join(os.environ.get("PROGRAMFILES(X86)", r"C:\\Program Files (x86)"), "Microsoft Office", "root", "Office16", "WINWORD.EXE")],
+    "excel": [os.path.join(os.environ.get("PROGRAMFILES", r"C:\\Program Files"), "Microsoft Office", "root", "Office16", "EXCEL.EXE"), os.path.join(os.environ.get("PROGRAMFILES(X86)", r"C:\\Program Files (x86)"), "Microsoft Office", "root", "Office16", "EXCEL.EXE")],
+    "notepad": ["notepad.exe"],
+    "calculator": ["calc.exe"],
 }
 
 
@@ -184,9 +184,10 @@ def execute(command: dict) -> dict:
         return {"ok": True}
     if action == "launch_program":
         program = params.get("program")
-        path = PROGRAMS.get(program)
-        if not path:
+        paths = PROGRAMS.get(program)
+        if not paths:
             return {"ok": False, "error": "Programa no autorizado"}
+        path = next((candidate for candidate in paths if os.path.isfile(candidate)), paths[0])
         if os.path.isfile(path) or path in {"explorer.exe", "notepad.exe", "calc.exe"}:
             subprocess.Popen([path], shell=False)
         elif program == "spotify":

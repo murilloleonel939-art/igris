@@ -76,6 +76,9 @@ async def volume_control(action: str) -> dict:
 
 
 async def launch_program(program: str) -> dict:
+    if not isinstance(program, str):
+        return {"error": "Falta el nombre del programa."}
+    program = program.strip().lower()
     allowed = {"chrome", "edge", "spotify", "steam", "explorer", "word", "excel", "notepad", "calculator"}
     if program not in allowed:
         return {"error": "Ese programa no está autorizado."}
