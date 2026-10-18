@@ -4,13 +4,9 @@ El agente se conecta hacia el backend por WebSocket seguro. El PC debe estar enc
 
 ## Instalación sencilla
 
-Desde PowerShell puedes ejecutar el instalador directamente, sin descargar el repositorio completo:
+Descarga `igris-agent-install.ps1` desde el menú **Agente Windows** del panel de IGRIS y ejecútalo con PowerShell. El archivo es autocontenido: no descarga código desde GitHub. También puedes abrir directamente `/downloads/igris-agent-install.ps1` en tu instalación de IGRIS.
 
-```powershell
-irm https://raw.githubusercontent.com/murilloleonel939-art/igris/main/windows_agent/install.ps1 | iex
-```
-
-El instalador te pedirá la URL WebSocket y el `NODE_TOKEN`, instalará Python automáticamente si Windows tiene `winget`, instalará la dependencia y configurará el inicio automático. Si tu repositorio de GitHub es privado, el enlace `raw.githubusercontent.com` necesitará una distribución pública o un instalador publicado en otro lugar.
+El instalador te pedirá la URL WebSocket y el `NODE_TOKEN`, instalará Python automáticamente si Windows tiene `winget`, instalará la dependencia y configurará el inicio automático.
 
 ## Instalación manual
 
