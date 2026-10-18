@@ -410,6 +410,10 @@ def _public_user(u: User, db: Session = None) -> dict[str, Any]:
     connection = {
         "google": None,
         "google_error": None,
+        "youtube": None,
+        "youtube_error": None,
+        "spotify": None,
+        "spotify_error": None,
         "telegram": None,
         "telegram_linked": False,
         "voice": False,
@@ -419,6 +423,12 @@ def _public_user(u: User, db: Session = None) -> dict[str, Any]:
         if account is not None:
             connection["google"] = account.email
             connection["google_error"] = account.last_error
+            connection["youtube"] = account.email if bool(getattr(u, "can_use_youtube", False)) else None
+            connection["youtube_error"] = account.last_error if bool(getattr(u, "can_use_youtube", False)) else None
+        spotify_account = db.query(SpotifyAccount).filter(SpotifyAccount.user_id == u.id).first()
+        if spotify_account is not None:
+            connection["spotify"] = spotify_account.display_name or spotify_account.email or spotify_account.spotify_user_id
+            connection["spotify_error"] = spotify_account.last_error
         link = db.query(TelegramLink).filter(TelegramLink.user_id == u.id).first()
         if link is not None:
             connection["telegram_linked"] = bool(link.chat_id)
