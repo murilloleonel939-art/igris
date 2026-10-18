@@ -95,6 +95,19 @@ def regenerate_agent_token(token_id: int, _: None = Depends(_require_catalog_acc
         return {"token": token, "device_name": row.device_name, "message": "Guarda este token; no volverá a mostrarse."}
 
 
+@router.delete("/api/device/tokens/{token_id}")
+def delete_agent_token(token_id: int, _: None = Depends(_require_catalog_access)) -> dict:
+    with SessionLocal() as db:
+        row = db.get(AgentToken, token_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail="Equipo no encontrado")
+        db.delete(row)
+        db.commit()
+    if hub.owner_token_id == token_id:
+        hub.disconnect()
+    return {"ok": True}
+
+
 @router.post("/api/device/tokens/{token_id}/revoke")
 def revoke_agent_token(token_id: int, _: None = Depends(_require_catalog_access)) -> dict:
     with SessionLocal() as db:
