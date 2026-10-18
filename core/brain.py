@@ -39,7 +39,7 @@ TOOLS_PROMPT = (
     "eliminar correos, y gestionar el calendario del usuario (ver, agendar, mover y eliminar eventos). "
     "Si el computador local está conectado, también puedes abrir Chrome y Edge, buscar y reproducir videos en YouTube, "
     "abrir y buscar en Spotify o Steam, abrir el Explorador, buscar y abrir archivos, y abrir Word o Excel "
-    "para escribir el texto que el usuario dicte; usa esas herramientas "
+    "para escribir el texto que el usuario dicte, y suspender o reiniciar el equipo; usa esas herramientas "
     "solo cuando el usuario lo pida explícitamente. "
     "Úsalas siempre que la pregunta dependa de datos en tiempo real o personales; no inventes datos. "
     "Solo tienes las herramientas que se te han dado: si alguna no está en tu lista, el "

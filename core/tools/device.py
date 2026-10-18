@@ -113,3 +113,12 @@ async def navigate_edge(url: str = "https://www.bing.com") -> dict:
     if not isinstance(url, str) or not url.startswith("https://"):
         return {"error": "La dirección debe usar https."}
     return await run_local_action("edge_open_url", url=url[:2048])
+
+
+async def system_power(action: str, wake_after_seconds: int = 0) -> dict:
+    allowed = {"sleep", "wake"}
+    if action not in allowed:
+        return {"error": "Acción de energía no permitida."}
+    if not isinstance(wake_after_seconds, int) or not 0 <= wake_after_seconds <= 86400:
+        return {"error": "El tiempo de reanudación debe estar entre 0 y 86400 segundos."}
+    return await run_local_action("system_power", action=action, wake_after_seconds=wake_after_seconds)

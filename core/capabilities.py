@@ -164,6 +164,7 @@ TOOL_FEATURES: dict[str, str] = {
     "search_spotify": "device",
     "search_steam": "device",
     "navigate_edge": "device",
+    "system_power": "device",
 }
 
 

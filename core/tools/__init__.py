@@ -505,6 +505,13 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "system_power", "description": "Suspende o reanuda el computador Windows. Para suspender y despertarlo después, usa wake_after_seconds.",
+            "parameters": {"type": "object", "properties": {"action": {"type": "string", "enum": ["sleep", "wake"]}, "wake_after_seconds": {"type": "integer", "description": "Segundos hasta despertar después de suspender; 0 no programa despertar."}}, "required": ["action"]},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "list_tuya_devices",
             "description": "Lista los dispositivos Smart Life vinculados al proyecto Tuya de Igris.",
             "parameters": {"type": "object", "properties": {}, "required": []},
@@ -589,6 +596,7 @@ _HANDLERS = {
     "search_spotify": device.search_spotify,
     "search_steam": device.search_steam,
     "navigate_edge": device.navigate_edge,
+    "system_power": device.system_power,
     "list_tuya_devices": tuya.list_tuya_devices_for_session,
     "get_tuya_device_status": tuya.list_tuya_device_status,
     "control_tuya_device": tuya.control_tuya_device,

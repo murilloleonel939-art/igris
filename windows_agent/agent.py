@@ -109,6 +109,26 @@ def execute(command: dict) -> dict:
         time.sleep(0.5)
         root.destroy()
         return {"ok": True, "characters": len(text)}
+    if action == "system_power":
+        power_action = params.get("action")
+        wake_after = int(params.get("wake_after_seconds") or 0)
+        if power_action == "wake":
+            return {"ok": True, "message": "El equipo ya está activo para recibir esta orden."}
+        if power_action == "sleep":
+            if wake_after:
+                # Programa el despertar mediante el Programador de tareas de Windows.
+                task_name = "IGRIS-Wake"
+                run_at = time.strftime("%H:%M", time.localtime(time.time() + wake_after))
+                date_at = time.strftime("%m/%d/%Y", time.localtime(time.time() + wake_after))
+                created = subprocess.run(["schtasks", "/Create", "/TN", task_name, "/TR", "cmd /c exit", "/SC", "ONCE", "/ST", run_at, "/SD", date_at, "/F", "/RU", "SYSTEM"], check=False, capture_output=True)
+                if created.returncode != 0:
+                    return {"ok": False, "error": "No se pudo programar el despertar de Windows."}
+                # schtasks crea la tarea, y PowerShell activa la opción WakeToRun.
+                subprocess.run(["powershell", "-NoProfile", "-Command", "$settings = New-ScheduledTaskSettingsSet -WakeToRun; Set-ScheduledTask -TaskName 'IGRIS-Wake' -Settings $settings"], check=False, capture_output=True)
+                subprocess.run(["powercfg", "/SETACVALUEINDEX", "SCHEME_CURRENT", "SUB_NONE", "RTCWAKE", "1"], check=False, capture_output=True)
+            subprocess.Popen(["rundll32.exe", "powrprof.dll,SetSuspendState", "0,1,0"], shell=False)
+            return {"ok": True, "message": "El equipo entrará en suspensión."}
+        return {"ok": False, "error": "Acción de energía no permitida"}
     if action.startswith("media_"):
         if action not in {"media_play_pause", "media_next", "media_previous"}:
             return {"ok": False, "error": "Acción no permitida"}
