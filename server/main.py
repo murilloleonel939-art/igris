@@ -16,7 +16,8 @@ from fastapi.responses import Response
 import httpx
 from jose import JWTError, jwt
 
-from core import Brain, config, stt          # ← añadido stt
+from core import Brain, config, stt
+from core.local_agent import hub          # ← añadido stt
 from core import database, telegram_links
 from core.capabilities import admin_capabilities, capabilities_from_user
 from core.database import GoogleAccount, Profile, TelegramLink, User
@@ -71,6 +72,7 @@ async def transcribe_with_deepgram(data: bytes, content_type: str = "audio/webm"
 # Inicializar BD: crea la base de datos si falta, espera a PostgreSQL si aún
 # está arrancando y crea las tablas que falten (recordatorios y notas incluidas).
 init_db()
+hub.restore_programs()
 # La configuración puede haberse cargado antes de que existieran las tablas.
 # Recargarla aquí garantiza que prevalezca la última versión guardada en PostgreSQL.
 get_settings().reload()

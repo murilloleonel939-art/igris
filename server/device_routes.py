@@ -16,7 +16,7 @@ from core.local_agent import hub
 
 FIXED_PROGRAMS = [
     "Excel", "Word", "PowerPoint", "Chrome", "Firefox", "Microsoft Edge",
-    "Calculadora", "Calculator", "Bloc de notas", "Notepad", "Steam",
+    "Calculadora", "Bloc de notas", "Notepad", "Steam",
     "Windows PowerShell", "Telegram", "WhatsApp", "Google Drive", "OneDrive",
 ]
 

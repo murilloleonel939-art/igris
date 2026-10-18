@@ -111,7 +111,7 @@ async function saveWhatsAppConfig() {
 
 const fixedPrograms = [
   'Excel', 'Word', 'PowerPoint', 'Chrome', 'Firefox', 'Microsoft Edge',
-  'Calculadora', 'Calculator', 'Bloc de notas', 'Notepad', 'Steam',
+  'Calculadora', 'Bloc de notas', 'Notepad', 'Steam',
   'Windows PowerShell', 'Telegram', 'WhatsApp', 'Google Drive', 'OneDrive'
 ]
 

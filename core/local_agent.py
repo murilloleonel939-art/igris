@@ -11,6 +11,12 @@ _current_user_id: contextvars.ContextVar[int | None] = contextvars.ContextVar("i
 
 from core.database import GlobalSetting, SessionLocal
 
+FIXED_PROGRAM_NAMES = {
+    "excel", "word", "powerpoint", "chrome", "firefox", "microsoft edge",
+    "calculadora", "bloc de notas", "notepad", "steam", "windows powershell",
+    "telegram", "whatsapp", "google drive", "one drive", "onedrive",
+}
+
 
 class LocalAgentHub:
     def __init__(self) -> None:
@@ -50,7 +56,8 @@ class LocalAgentHub:
             if isinstance(item, dict) and item.get("name") and item.get("path"):
                 clean.append({"name": str(item["name"])[:120], "path": str(item["path"])[:1000]})
         self.programs = clean
-        self.allowed_programs.intersection_update({item["name"] for item in clean})
+        # La lista autorizable es fija y no depende del catálogo detectado.
+        # Nunca eliminar permisos guardados porque el agente reporte otro catálogo.
         db = None
         try:
             db = SessionLocal()
@@ -71,8 +78,7 @@ class LocalAgentHub:
                     pass
 
     def set_allowed_programs(self, names: list[str]) -> list[str]:
-        available = {str(name).lower() for name in names}
-        self.allowed_programs = {str(name) for name in names if str(name).lower() in available}
+        self.allowed_programs = {str(name) for name in names if str(name).strip().lower() in FIXED_PROGRAM_NAMES}
         db = None
         try:
             db = SessionLocal()
@@ -130,7 +136,7 @@ class LocalAgentHub:
             if permissions:
                 saved_permissions = json.loads(permissions.value)
                 if isinstance(saved_permissions, list):
-                    self.allowed_programs = {str(name) for name in saved_permissions}
+                    self.allowed_programs = {str(name) for name in saved_permissions if str(name).strip().lower() in FIXED_PROGRAM_NAMES}
             db.close()
         except Exception:
             if db is not None:
