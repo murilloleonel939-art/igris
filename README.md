@@ -253,7 +253,7 @@ cd web && PORT=3100 node server.js
 
 ### PostgreSQL
 
-En producción la base es PostgreSQL (`DATABASE_URL`); SQLite solo se usa en local y **pierde los datos en cada despliegue** si no hay un volumen persistente (el propio backend avisa de esto en los logs).
+En producción la base es PostgreSQL (`DATABASE_URL`); SQLite solo se usa en local y **pierde los datos en cada despliegue** si no hay un volumen persistente (el propio backend avisa de esto en los logs). La configuración global de WhatsApp, incluido el número del canal, se guarda en la tabla `global_settings` de esta base y sobrevive a los redeploys.
 
 `core/database.py` se encarga de:
 
@@ -652,8 +652,8 @@ IGRIS_ANTHROPIC_MODEL=claude-haiku-4-5-20251001
 Backend y frontend son **dos servicios separados** en Coolify, con sus propias variables y su propio deploy. Un cambio en `web/` no se ve hasta desplegar el frontend (el backend no sirve la interfaz).
 
 1. **Variables de entorno:** configúralas en Coolify → servicio de backend (ver tablas anteriores). No olvides `IGRIS_ACCESS_KEY` (la del administrador) y `DATABASE_URL`.
-2. **Backend:** Rebuild and Deploy (si cambiaste el `Dockerfile` o `requirements.txt`, usa Deploy sin caché). Al arrancar, las tablas que falten (`users`, `reminders`, `notes`) se crean solas.
-3. **Revisar los logs del backend:** deben aparecer `Base de datos activa: postgresql` y `Planificador de recordatorios iniciado (cada 30 s)`.
+2. **Backend:** Rebuild and Deploy (si cambiaste el `Dockerfile` o `requirements.txt`, usa Deploy sin caché). Al arrancar, las tablas que falten (`users`, `reminders`, `notes`, `global_settings`) se crean solas.
+3. **Revisar los logs del backend:** deben aparecer `Base de datos activa: postgresql` y `Planificador de recordatorios iniciado (cada 30 s)`. Si usas PostgreSQL, el número guardado en **Conexiones → WhatsApp** permanecerá después de un redeploy.
 4. **Frontend:** Rebuild and Deploy en el servicio del frontend (base `/web`, build `npm install && npm run build`, arranque `npm start`, puerto 3000). Verifica que `web/public/igris.mp4` esté en el repositorio.
 5. **Probar la web del administrador:** abre `https://webigris.zottagroup.com/acceso` con Chrome o Edge. Escribe la clave, acepta el permiso del micrófono y toca la pantalla una vez. Deberías ver a Igris de fondo; háblale o usa ✉️ Enviar para escribir "hola".
 6. **Probar el área de usuarios:** crea un usuario en `/panel/usuarios` y entra con él en `https://webigris.zottagroup.com/u/login`. Cada usuario debe ver su propio chat.
@@ -733,7 +733,7 @@ El servidor no tiene GPU, así que el `Dockerfile` instala `torch==2.5.1` y `tor
 | Igris dice que falta el permiso de escritura del calendario | El refresh token de Google no incluye `calendar.events` | Generar un refresh token nuevo con ese permiso |
 | Los recordatorios no llegan | Falta `TELEGRAM_TOKEN`, `ALLOWED_TELEGRAM_IDS` vacío (si se crearon desde la web), o el planificador no arrancó | Ver en los logs `Planificador de recordatorios iniciado`; si aparece `TELEGRAM_TOKEN no definido` o `no hay a quién avisar`, definir las variables y redesplegar |
 | Un recordatorio se reintenta cada 30 s en el log | El envío a Telegram falla de forma persistente (por ejemplo, el chat bloqueó al bot) | Revisar el aviso `no llegó a un destino` del log; se reintenta sin límite para no perder avisos tras una caída |
-| Los recordatorios y notas desaparecen tras cada despliegue | El backend usa SQLite (falta `DATABASE_URL`) | Definir `DATABASE_URL` hacia PostgreSQL; el log debe decir `Base de datos activa: postgresql` |
+| Los recordatorios, notas o el número de WhatsApp desaparecen tras cada despliegue | El backend usa SQLite o apunta a una base PostgreSQL distinta | Definir `DATABASE_URL` hacia PostgreSQL y conservar la misma base; el log debe decir `Base de datos activa: postgresql` |
 | `No module named 'psycopg2'` al arrancar | URL de PostgreSQL sin el prefijo del driver y versión antigua de `core/database.py` | Usar el `database.py` actual (convierte la URL solo) o definir `postgresql+psycopg://...` |
 | Aparece `groq` en `/status` o en la configuración | `IGRIS_FALLBACK_CHAIN` o `IGRIS_PROVIDER` de Coolify aún lo contienen | Quitarlo de esas variables (y borrar `GROQ_API_KEY` e `IGRIS_GROQ_MODEL`); aunque quede, se filtra y no rompe nada |
 | La app instalada abre siempre en `/u/login` aunque la instalé desde el panel | Queda una PWA vieja instalada: guarda su dirección de arranque y no la cambia al desplegar | **Desinstalarla** y volver a instalarla desde la pantalla que corresponda (`/acceso` o `/u/login`) |
