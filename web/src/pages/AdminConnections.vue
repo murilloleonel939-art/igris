@@ -122,7 +122,6 @@ async function syncPrograms() {
 }
 
 async function loadAgentTokens() {
-  if (personalSession) return
   try {
     const res = await api.get('/api/device/tokens')
     agentTokens.value = res.data?.tokens || []
