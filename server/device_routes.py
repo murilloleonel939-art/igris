@@ -2,23 +2,22 @@
 from __future__ import annotations
 
 import json
-import os
-import secrets
-
-from fastapi import APIRouter, Depends, Header, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, WebSocket, WebSocketDisconnect
 
 from core.local_agent import hub
 
 router = APIRouter()
 
 
-def _require_catalog_access(x_igris_key: str | None = Header(default=None), authorization: str | None = Header(default=None)) -> None:
-    expected = os.getenv("IGRIS_ACCESS_KEY", "")
-    node = os.getenv("NODE_TOKEN", "")
-    provided = (x_igris_key or "").strip()
-    bearer = (authorization or "").removeprefix("Bearer ").strip()
-    if not ((expected and secrets.compare_digest(provided, expected)) or (node and secrets.compare_digest(bearer, node))):
-        raise HTTPException(status_code=401, detail="No autorizado")
+async def _require_catalog_access(
+    request: Request,
+    x_igris_key: str | None = Header(default=None),
+    authorization: str | None = Header(default=None),
+) -> None:
+    """Protege el catálogo con la misma validación que el resto del panel."""
+    from server.main import require_key
+
+    await require_key(request, x_igris_key, authorization)
 
 
 @router.get("/api/device/status")

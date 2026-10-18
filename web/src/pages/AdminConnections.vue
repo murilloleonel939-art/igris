@@ -59,11 +59,14 @@
 import { ref, onMounted } from 'vue'
 import api from '../api'
 import { getToken, getUser } from '../userApi'
+import { getKey } from '../api'
 import { errorMessage } from '../errors'
 
 const tab = ref('cuentas')
 const users = ref([])
-const personalSession = !!getToken()
+// Si existe la clave del panel, esta vista siempre usa las rutas administrativas.
+// Así un token personal caducado no provoca un 401 y una redirección inesperada.
+const personalSession = !!getToken() && !Boolean(getKey())
 const loading = ref(false)
 const error = ref('')
 const unlinking = ref(null)

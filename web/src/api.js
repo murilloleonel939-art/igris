@@ -8,16 +8,18 @@ const API_URL = 'https://igris.zottagroup.com'
 // La clave de acceso vive SOLO en localStorage (nunca en VITE_*, ni en el código)
 const KEY_STORAGE = 'igris_key'
 const ACCESS_PATH = '/acceso'
+let runtimeKey = ''
 
 export function getKey() {
   try {
-    return localStorage.getItem(KEY_STORAGE) || ''
+    return localStorage.getItem(KEY_STORAGE) || runtimeKey
   } catch {
     return ''
   }
 }
 
 export function setKey(key) {
+  runtimeKey = key
   try {
     localStorage.setItem(KEY_STORAGE, key)
   } catch {
@@ -26,6 +28,7 @@ export function setKey(key) {
 }
 
 export function clearKey() {
+  runtimeKey = ''
   try {
     localStorage.removeItem(KEY_STORAGE)
   } catch {
