@@ -10,7 +10,7 @@ Desde PowerShell puedes ejecutar el instalador directamente, sin descargar el re
 irm https://raw.githubusercontent.com/murilloleonel939-art/igris/main/windows_agent/install.ps1 | iex
 ```
 
-El instalador te pedirá la URL WebSocket y el `NODE_TOKEN`, instalará la dependencia y configurará el inicio automático.
+El instalador te pedirá la URL WebSocket y el `NODE_TOKEN`, instalará Python automáticamente si Windows tiene `winget`, instalará la dependencia y configurará el inicio automático. Si tu repositorio de GitHub es privado, el enlace `raw.githubusercontent.com` necesitará una distribución pública o un instalador publicado en otro lugar.
 
 ## Instalación manual
 

@@ -14,7 +14,17 @@ New-Item -ItemType Directory -Force -Path $installDir | Out-Null
 $python = Get-Command py -ErrorAction SilentlyContinue
 if (-not $python) { $python = Get-Command python -ErrorAction SilentlyContinue }
 if (-not $python) {
-    throw "No se encontró Python. Instala Python 3.11 o superior desde https://www.python.org/downloads/windows/ y vuelve a ejecutar este instalador."
+    $winget = Get-Command winget -ErrorAction SilentlyContinue
+    if (-not $winget) {
+        throw "No se encontró Python ni winget. Instala Python 3.11 o superior desde https://www.python.org/downloads/windows/ y vuelve a ejecutar este instalador."
+    }
+    Write-Host "Python no está instalado. Instalándolo con winget..." -ForegroundColor Yellow
+    & $winget.Source install --id Python.Python.3.12 --exact --scope user --accept-source-agreements --accept-package-agreements
+    $python = Get-Command py -ErrorAction SilentlyContinue
+    if (-not $python) { $python = Get-Command python -ErrorAction SilentlyContinue }
+    if (-not $python) {
+        throw "Python se instaló, pero Windows aún no lo encuentra. Cierra y vuelve a abrir PowerShell y ejecuta el instalador otra vez."
+    }
 }
 $pythonCommand = $python.Source
 
