@@ -11,6 +11,7 @@ import subprocess
 import time
 import webbrowser
 import socket
+import sys
 import zlib
 from pathlib import Path
 from urllib.parse import quote, urlparse
@@ -374,9 +375,22 @@ def execute(command: dict) -> dict:
     return {"ok": False, "error": "Acción desconocida"}
 
 
+def load_node_token() -> str:
+    token = os.environ.get("NODE_TOKEN", "").strip()
+    if token:
+        return token
+    config = Path(sys.executable if getattr(sys, "frozen", False) else __file__).with_name("node_token.txt")
+    try:
+        return config.read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+
+
 async def main() -> None:
-    url = os.environ.get("IGRIS_DEVICE_URL", "wss://igris.zottagroup.com/api/device/ws")
-    token = os.environ["NODE_TOKEN"]
+    url = "wss://igris.zottagroup.com/api/device/ws"
+    token = load_node_token()
+    if not token:
+        raise RuntimeError("No se encontró NODE_TOKEN. Reinstala el agente y proporciona el token.")
     while True:
         try:
             async with websockets.connect(url, additional_headers={"Authorization": f"Bearer {token}"}, ping_interval=20, ping_timeout=20) as ws:
