@@ -138,10 +138,16 @@ async def type_in_office(text: str, application: str = "") -> dict:
     return await run_local_action("type_text", text=text[:10000], application=application)
 
 
-async def search_spotify(query: str) -> dict:
+async def search_spotify(query: str, play: bool = False) -> dict:
     if not isinstance(query, str) or not query.strip():
         return {"error": "Falta la búsqueda de Spotify."}
-    return await run_local_action("spotify_search", query=query.strip()[:200])
+    return await run_local_action("spotify_search", query=query.strip()[:200], play=bool(play))
+
+
+async def play_spotify(query: str) -> dict:
+    if not isinstance(query, str) or not query.strip():
+        return {"error": "Falta la canción o artista de Spotify."}
+    return await run_local_action("spotify_search", query=query.strip()[:200], play=True)
 
 
 async def search_steam(query: str) -> dict:

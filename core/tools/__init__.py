@@ -520,7 +520,14 @@ TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "search_spotify", "description": "Abre Spotify y busca una canción, artista o álbum.",
+            "name": "search_spotify", "description": "Busca en Spotify y, si play=true, intenta reproducir el resultado.",
+            "parameters": {"type": "object", "properties": {"query": {"type": "string"}, "play": {"type": "boolean"}}, "required": ["query"]},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "play_spotify", "description": "Busca una canción, artista o álbum en Spotify y reproduce el primer resultado.",
             "parameters": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]},
         },
     },
@@ -635,6 +642,7 @@ _HANDLERS = {
     "open_file": device.open_file,
     "type_in_office": device.type_in_office,
     "search_spotify": device.search_spotify,
+    "play_spotify": device.play_spotify,
     "search_steam": device.search_steam,
     "navigate_edge": device.navigate_edge,
     "system_power": device.system_power,

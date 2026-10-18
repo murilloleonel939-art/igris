@@ -697,7 +697,7 @@ curl -i -X OPTIONS $API/api/chat \
 ### Recomendación: caché del modelo de Whisper
 La primera nota de voz tras un despliegue descarga el modelo de Whisper (unos 140 MB para `base`). Para no repetirlo en cada redeploy, monta un volumen persistente en `/root/.cache/whisper` (Coolify → backend → Storages).
 ### Agente local de Windows
-El agente de `windows_agent/` permite que IGRIS controle el computador encendido mediante una conexión WebSocket saliente: abrir Chrome, buscar en YouTube, controlar multimedia, ajustar volumen, consultar la pantalla, manejar ventanas, abrir programas, buscar archivos y usar Spotify o Steam. El agente no acepta comandos shell ni rutas arbitrarias.
+El agente de `windows_agent/` permite que IGRIS controle el computador encendido mediante una conexión WebSocket saliente: abrir Chrome, buscar en YouTube, controlar multimedia, ajustar volumen, consultar la pantalla, manejar ventanas, abrir programas, buscar archivos y buscar o reproducir música en Spotify. El agente no acepta comandos shell ni rutas arbitrarias.
 
 #### Instalación recomendada
 Desde **Panel admin → Conexiones → Agente Windows**, crea un equipo y genera su token individual. Puedes vincularlo a un usuario concreto. Descarga el instalador versionado `igris-agent-install-v5.ps1` y ejecútalo con PowerShell. La URL está fijada en `wss://igris.zottagroup.com/api/device/ws`; el instalador solo solicita `NODE_TOKEN`.

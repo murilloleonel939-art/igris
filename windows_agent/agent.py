@@ -245,7 +245,17 @@ def execute(command: dict) -> dict:
                 time.sleep(2)
             # El protocolo spotify: abre la aplicación instalada, sin pasar por Chrome.
             os.startfile("spotify:search:" + quote(query))
-            return {"ok": True, "query": query, "application": "spotify"}
+            if params.get("play"):
+                # Spotify Desktop enfoca la búsqueda; Enter abre el primer resultado.
+                time.sleep(3)
+                _key_event(0x0D)
+                _key_event(0x0D, 2)
+                time.sleep(1)
+                # La barra espaciadora inicia o pausa la reproducción del resultado abierto.
+                _key_event(0x20)
+                _key_event(0x20, 2)
+                return {"ok": True, "query": query, "application": "spotify", "playing": True}
+            return {"ok": True, "query": query, "application": "spotify", "playing": False}
         except OSError:
             return {"ok": False, "error": "No se encontró la aplicación de Spotify instalada."}
     if action == "steam_search":
