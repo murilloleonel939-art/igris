@@ -2,13 +2,16 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import ctypes
 import json
 import os
+import struct
 import subprocess
 import time
 import webbrowser
 import socket
+import zlib
 from pathlib import Path
 from urllib.parse import quote, urlparse
 
@@ -40,6 +43,59 @@ def enumerate_programs() -> list[dict[str, str]]:
 
 
 DYNAMIC_PROGRAMS: dict[str, str] = {}
+
+
+class _BITMAPINFOHEADER(ctypes.Structure):
+    _fields_ = [("biSize", ctypes.c_uint32), ("biWidth", ctypes.c_int32), ("biHeight", ctypes.c_int32), ("biPlanes", ctypes.c_uint16), ("biBitCount", ctypes.c_uint16), ("biCompression", ctypes.c_uint32), ("biSizeImage", ctypes.c_uint32), ("biXPelsPerMeter", ctypes.c_int32), ("biYPelsPerMeter", ctypes.c_int32), ("biClrUsed", ctypes.c_uint32), ("biClrImportant", ctypes.c_uint32)]
+
+
+class _BITMAPINFO(ctypes.Structure):
+    _fields_ = [("bmiHeader", _BITMAPINFOHEADER), ("bmiColors", ctypes.c_uint32 * 3)]
+
+
+def _png_chunk(kind: bytes, data: bytes) -> bytes:
+    return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data) & 0xffffffff)
+
+
+def _capture_screen_png() -> str:
+    user32 = ctypes.windll.user32
+    gdi32 = ctypes.windll.gdi32
+    width, height = user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)
+    if not (1 <= width <= 10000 and 1 <= height <= 10000):
+        raise RuntimeError("Tamaño de pantalla no válido")
+    desktop = user32.GetDC(0)
+    source = gdi32.CreateCompatibleDC(desktop)
+    bitmap = gdi32.CreateCompatibleBitmap(desktop, width, height)
+    old = gdi32.SelectObject(source, bitmap)
+    try:
+        if not gdi32.BitBlt(source, 0, 0, width, height, desktop, 0, 0, 0x00CC0020):
+            raise RuntimeError("No se pudo capturar la pantalla")
+        info = _BITMAPINFO()
+        info.bmiHeader.biSize = ctypes.sizeof(_BITMAPINFOHEADER)
+        info.bmiHeader.biWidth = width
+        info.bmiHeader.biHeight = -height
+        info.bmiHeader.biPlanes = 1
+        info.bmiHeader.biBitCount = 32
+        pixels = (ctypes.c_ubyte * (width * height * 4))()
+        if not gdi32.GetDIBits(source, bitmap, 0, height, pixels, ctypes.byref(info), 0):
+            raise RuntimeError("No se pudo leer la pantalla")
+        rows = bytearray()
+        raw = bytes(pixels)
+        for row in range(height):
+            rows.append(0)
+            for col in range(width):
+                i = (row * width + col) * 4
+                rows.extend((raw[i + 2], raw[i + 1], raw[i], 255))
+        png = b"\\x89PNG\\r\\n\\x1a\\n"
+        png += _png_chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0))
+        png += _png_chunk(b"IDAT", zlib.compress(bytes(rows), 6))
+        png += _png_chunk(b"IEND", b"")
+        return base64.b64encode(png).decode("ascii")
+    finally:
+        gdi32.SelectObject(source, old)
+        gdi32.DeleteObject(bitmap)
+        gdi32.DeleteDC(source)
+        user32.ReleaseDC(0, desktop)
 
 
 def _window_text(hwnd: int) -> str:
@@ -98,6 +154,14 @@ PROGRAMS = {
 def execute(command: dict) -> dict:
     action = command.get("action")
     params = command.get("params") or {}
+    if action == "capture_screen":
+        try:
+            image = _capture_screen_png()
+            if len(image) > 12_000_000:
+                return {"ok": False, "error": "La captura es demasiado grande"}
+            return {"ok": True, "image": image, "media_type": "image/png", "message": "Captura actual de la pantalla"}
+        except Exception as exc:
+            return {"ok": False, "error": f"No pude capturar la pantalla: {exc}"}
     if action == "list_windows":
         return {"ok": True, "windows": enumerate_windows()}
     if action == "focus_window":

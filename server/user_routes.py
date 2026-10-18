@@ -388,6 +388,8 @@ def _set_features(user: User, features) -> None:
 class ChatIn(BaseModel):
     text: str
     session_id: Optional[str] = None
+    image_data: Optional[str] = None
+    image_mime: str = "image/png"
 
 
 class TtsIn(BaseModel):
@@ -1128,7 +1130,7 @@ async def user_chat(
     remember_from_text(db, user.id, text)
     _bind_identity(session, user, db)
     try:
-        reply = await session.say(text)
+        reply = await session.say(text, {"image_data": payload.image_data, "image_mime": payload.image_mime})
         return {"status": "ok", "reply": reply}
     except Exception as e:
         return {"status": "error", "message": str(e)}

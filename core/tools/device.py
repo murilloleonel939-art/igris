@@ -61,6 +61,11 @@ async def search_youtube(query: str, play: bool = True) -> dict:
     return result
 
 
+async def capture_screen() -> dict:
+    """Solicita una captura puntual para que el proveedor multimodal la analice."""
+    return await run_local_action("capture_screen")
+
+
 async def list_windows() -> dict:
     return await run_local_action("list_windows")
 

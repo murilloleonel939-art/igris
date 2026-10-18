@@ -171,6 +171,10 @@ def update_conversation_summary(previous: str, turns: list[list[dict]], max_turn
     for turn in turns[-max_turns:]:
         user = next((m.get("content", "") for m in turn if m.get("role") == "user"), "")
         assistant = next((m.get("content", "") for m in reversed(turn) if m.get("role") == "assistant"), "")
+        if isinstance(user, list):
+            user = " ".join(str(item.get("text", "")) for item in user if isinstance(item, dict) and item.get("type") == "text")
+        if isinstance(assistant, list):
+            assistant = " ".join(str(item.get("text", "")) for item in assistant if isinstance(item, dict) and item.get("type") == "text")
         user = _clean(user, 180)
         assistant = _clean(assistant, 220)
         if user:

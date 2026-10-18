@@ -155,6 +155,7 @@ TOOL_FEATURES: dict[str, str] = {
     "control_tuya_device": "tuya",
     "open_chrome": "device",
     "search_youtube": "device",
+    "capture_screen": "device",
     "list_windows": "device",
     "focus_window": "device",
     "click_screen": "device",

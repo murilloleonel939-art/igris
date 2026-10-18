@@ -34,10 +34,48 @@ MAX_TOOL_ROUNDS = 4
 # Turnos de conversación que se recuerdan (un turno = tu mensaje + herramientas + respuesta).
 MAX_HISTORY_TURNS = int(os.environ.get("IGRIS_HISTORY_TURNS", "6"))
 
+def _user_content(text: str, image_data: str | None = None, image_mime: str = "image/png"):
+    if not image_data:
+        return text
+    allowed = {"image/png", "image/jpeg", "image/webp", "image/gif"}
+    if image_mime not in allowed or not isinstance(image_data, str) or len(image_data) > 12_000_000:
+        raise ValueError("La imagen no es válida o supera el tamaño permitido")
+    try:
+        import base64
+        base64.b64decode(image_data, validate=True)
+    except Exception as exc:
+        raise ValueError("La imagen no está codificada correctamente") from exc
+    return [{"type": "text", "text": text}, {"type": "image_url", "image_url": {"url": f"data:{image_mime};base64,{image_data}"}}]
+
+
+def _tool_content_for_openai(result: str):
+    """Convierte una captura devuelta por el agente en contenido multimodal."""
+    try:
+        payload = json.loads(result)
+    except (TypeError, json.JSONDecodeError):
+        return result
+    if not isinstance(payload, dict) or not payload.get("image"):
+        return result
+    image = payload.get("image")
+    media_type = payload.get("media_type", "image/png")
+    if not isinstance(image, str) or len(image) > 12_000_000 or media_type not in {"image/png", "image/jpeg", "image/webp", "image/gif"}:
+        return json.dumps({"ok": False, "error": "La captura no es válida."}, ensure_ascii=False)
+    try:
+        import base64
+        base64.b64decode(image, validate=True)
+    except Exception:
+        return json.dumps({"ok": False, "error": "La captura no está codificada correctamente."}, ensure_ascii=False)
+    return [
+        {"type": "text", "text": json.dumps({k: v for k, v in payload.items() if k != "image"}, ensure_ascii=False)},
+        {"type": "image_url", "image_url": {"url": f"data:{media_type};base64,{image}"}},
+    ]
+
+
 TOOLS_PROMPT = (
     "Dispones de herramientas para consultar la hora, el clima, el correo de Gmail, enviar y "
     "eliminar correos, y gestionar el calendario del usuario (ver, agendar, mover y eliminar eventos). "
-    "Si el computador local está conectado, también puedes abrir Chrome y Edge, buscar y reproducir videos en YouTube, "
+    "Si el computador local está conectado, puedes observar su pantalla cuando el usuario pida ver, revisar o explicar lo que tiene abierto; usa capture_screen una sola vez para obtener una captura actual y describe solo lo que realmente sea visible. "
+    "También puedes abrir Chrome y Edge, buscar y reproducir videos en YouTube, "
     "abrir y buscar en Spotify o Steam, abrir el Explorador, buscar y abrir archivos, y abrir Word o Excel "
     "para escribir el texto que el usuario dicte, y suspender o reiniciar el equipo. Cuando el usuario diga reproducir, poner o escuchar una canción de YouTube, debes usar search_youtube con play=true y esperar el resultado; no basta con abrir resultados; usa esas herramientas "
     "solo cuando el usuario lo pida explícitamente. "
@@ -288,11 +326,13 @@ async def _complete_with_tools(client, model: str, messages: List[dict], session
             })
             for tc in msg.tool_calls:
                 result = await run_tool(tc.function.name, tc.function.arguments, session)
-                work.append({
-                    "role": "tool",
-                    "tool_call_id": tc.id,
-                    "content": result,
-                })
+                content = _tool_content_for_openai(result)
+                if isinstance(content, list):
+                    text_content = next((part.get("text", "") for part in content if part.get("type") == "text"), "")
+                    work.append({"role": "tool", "tool_call_id": tc.id, "content": text_content})
+                    work.append({"role": "user", "content": content})
+                else:
+                    work.append({"role": "tool", "tool_call_id": tc.id, "content": content})
             continue
 
         reply = (msg.content or "").strip()
@@ -319,6 +359,25 @@ def _tools_for_anthropic(session=None) -> List[dict]:
     ]
 
 
+def _tool_content_for_anthropic(content):
+    if not isinstance(content, list):
+        return content or ""
+    blocks = []
+    for item in content:
+        if not isinstance(item, dict):
+            continue
+        if item.get("type") == "text":
+            blocks.append({"type": "text", "text": str(item.get("text", ""))})
+        elif item.get("type") == "image_url":
+            url = (item.get("image_url") or {}).get("url", "")
+            if isinstance(url, str) and url.startswith("data:") and ";base64," in url:
+                header, data = url.split(",", 1)
+                media_type = header[5:].split(";", 1)[0]
+                if media_type in {"image/png", "image/jpeg", "image/webp", "image/gif"}:
+                    blocks.append({"type": "image", "source": {"type": "base64", "media_type": media_type, "data": data}})
+    return blocks or ""
+
+
 def _anthropic_payload(messages: List[dict]) -> Tuple[str, List[dict]]:
     """Traduce el historial (formato OpenAI) a (system, messages) de Anthropic.
 
@@ -342,7 +401,8 @@ def _anthropic_payload(messages: List[dict]) -> Tuple[str, List[dict]]:
             system = (system + "\n\n" + (msg.get("content") or "")).strip()
 
         elif role == "user":
-            out.append({"role": "user", "content": msg.get("content") or ""})
+            content = msg.get("content") or ""
+            out.append({"role": "user", "content": _tool_content_for_anthropic(content)})
 
         elif role == "assistant":
             blocks: List[dict] = []
@@ -369,7 +429,7 @@ def _anthropic_payload(messages: List[dict]) -> Tuple[str, List[dict]]:
             block = {
                 "type": "tool_result",
                 "tool_use_id": msg.get("tool_call_id"),
-                "content": msg.get("content") or "",
+                "content": _tool_content_for_anthropic(msg.get("content") or ""),
             }
             # Si el mensaje anterior ya es de usuario con resultados, se añade ahí.
             if out and out[-1]["role"] == "user" and isinstance(out[-1]["content"], list):
@@ -501,7 +561,8 @@ class BrainSession:
         return None
 
     async def say(self, text: str, context: Optional[dict] = None) -> str:
-        user_msg = {"role": "user", "content": text}
+        context = context or {}
+        user_msg = {"role": "user", "content": _user_content(text, context.get("image_data"), context.get("image_mime", "image/png"))}
         prev_turn_no, prev_user_text = self.turn_no, self.last_user_text
         self.turn_no += 1
         self.last_user_text = text

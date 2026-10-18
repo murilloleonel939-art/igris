@@ -377,7 +377,9 @@ from pydantic import BaseModel
 
 class ChatRequest(BaseModel):
     text: str
-    session_id: Optional[str] = None  # opcional: si el frontend no lo envía, se usa una sesión única
+    session_id: Optional[str] = None
+    image_data: Optional[str] = None
+    image_mime: str = "image/png"
 
 @app.post("/api/voice-profile", dependencies=[Depends(require_key)])
 async def register_admin_voice(audio: UploadFile = File(...)):
@@ -458,7 +460,7 @@ async def http_chat(req: ChatRequest, authorization: Optional[str] = Header(defa
         sid = "".join(c for c in (req.session_id or "") if c.isalnum() or c in "-_")[:64] or "default"
         session = sessions.get(f"web:{sid}")
         _bind_admin_identity_from_bearer(session, authorization, req.text)
-        reply = await session.say(req.text)
+        reply = await session.say(req.text, {"image_data": req.image_data, "image_mime": req.image_mime})
         return {"status": "ok", "reply": reply}
     except Exception as e:
         return {"status": "error", "message": str(e)}

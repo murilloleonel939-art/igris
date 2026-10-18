@@ -442,6 +442,13 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "capture_screen", "description": "Observa la pantalla actual del computador Windows para explicar lo que aparece y ayudar en contexto. Úsala solo cuando el usuario pida ver, revisar o explicar su pantalla.",
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "list_windows", "description": "Lista las ventanas visibles del computador Windows.",
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
@@ -615,6 +622,7 @@ _HANDLERS = {
     "delete_note": notes.delete_note,
     "open_chrome": device.open_chrome,
     "search_youtube": device.search_youtube,
+    "capture_screen": device.capture_screen,
     "list_windows": device.list_windows,
     "focus_window": device.focus_window,
     "click_screen": device.click_screen,
