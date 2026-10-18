@@ -12,6 +12,7 @@ import json
 import logging
 
 from core.capabilities import denial_message
+from core.local_agent import reset_agent_user, set_agent_user
 from core.tools import calendar_write, device, gcalendar, gmail, notes, reminders, time_tools, tuya, weather
 
 logger = logging.getLogger(__name__)
@@ -692,6 +693,8 @@ async def run_tool(name: str, arguments: str, session=None) -> str:
         args["_session"] = session
 
     logger.info(f"Ejecutando herramienta: {name} {[k for k in args if k != '_session']}")
+    session_user = getattr(getattr(session, "capabilities", None), "user_id", None) if session is not None else None
+    context_token = set_agent_user(session_user)
     try:
         result = await handler(**args)
     except TypeError as e:
@@ -699,5 +702,7 @@ async def run_tool(name: str, arguments: str, session=None) -> str:
     except Exception as e:
         logger.exception(f"Error en herramienta {name}")
         result = {"error": f"Falló la herramienta: {e}"}
+    finally:
+        reset_agent_user(context_token)
 
     return json.dumps(result, ensure_ascii=False)

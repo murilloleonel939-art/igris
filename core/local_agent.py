@@ -2,9 +2,12 @@
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import secrets
 import json
 from typing import Any
+
+_current_user_id: contextvars.ContextVar[int | None] = contextvars.ContextVar("igris_agent_user_id", default=None)
 
 from core.database import GlobalSetting, SessionLocal
 
@@ -15,8 +18,13 @@ class LocalAgentHub:
         self._pending: dict[str, asyncio.Future[dict[str, Any]]] = {}
         self.connected = False
         self.programs: list[dict[str, str]] = []
+        self.owner_user_id: int | None = None
+        self.owner_token_id: int | None = None
 
     async def enqueue(self, action: str, **params: Any) -> dict[str, Any]:
+        requested_user = params.pop("user_id", None)
+        if self.owner_user_id is not None and requested_user not in {None, self.owner_user_id}:
+            return {"ok": False, "error": "El agente está vinculado a otro usuario."}
         command_id = secrets.token_urlsafe(18)
         loop = asyncio.get_running_loop()
         future: asyncio.Future[dict[str, Any]] = loop.create_future()
@@ -67,6 +75,8 @@ class LocalAgentHub:
 
     def disconnect(self) -> None:
         self.connected = False
+        self.owner_user_id = None
+        self.owner_token_id = None
         while not self._commands.empty():
             try:
                 self._commands.get_nowait()
@@ -103,5 +113,13 @@ hub = LocalAgentHub()
 hub.restore_programs()
 
 
+def set_agent_user(user_id: int | None):
+    return _current_user_id.set(user_id)
+
+
+def reset_agent_user(token) -> None:
+    _current_user_id.reset(token)
+
+
 async def run_local_action(action: str, **params: Any) -> dict[str, Any]:
-    return await hub.enqueue(action, **params)
+    return await hub.enqueue(action, user_id=_current_user_id.get(), **params)

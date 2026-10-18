@@ -26,15 +26,13 @@ if (-not $python) {
 }
 $pythonCommand = $python.Source
 
-$url = Read-Host "URL WebSocket de IGRIS (ejemplo: wss://tu-dominio.com/api/device/ws)"
-$token = Read-Host "NODE_TOKEN del backend"
-if ([string]::IsNullOrWhiteSpace($url) -or [string]::IsNullOrWhiteSpace($token)) {
-    throw "La URL y el NODE_TOKEN son obligatorios."
+$url = "wss://igris.zottagroup.com/api/device/ws"
+Write-Host "Servidor IGRIS: $url" -ForegroundColor Cyan
+$token = Read-Host "NODE_TOKEN del agente"
+if ([string]::IsNullOrWhiteSpace($token)) {
+    throw "El NODE_TOKEN es obligatorio."
 }
-$url = $url.Trim().TrimEnd('/')
-if (-not $url.StartsWith("wss://")) {
-    throw "La URL debe comenzar con wss://"
-}
+$token = $token.Trim()
 
 $agentSource = @'
 """Agente Windows de IGRIS. Ejecutar al iniciar sesión, sin permisos de administrador."""

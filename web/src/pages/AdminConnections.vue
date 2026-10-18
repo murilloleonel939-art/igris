@@ -10,10 +10,10 @@
     <template v-if="tab === 'agente'">
     <section id="agente-windows" class="agent-card">
       <div><span class="agent-kicker">Conexión local</span><h2>Agente Windows</h2><p>Descarga e instala el agente para que IGRIS controle tu computador Windows: aplicaciones, archivos, navegador, Spotify, Steam, Word, Excel y energía del equipo.</p></div>
-      <a href="/downloads/igris-agent-install-v3.ps1" download class="agent-download">Descargar agente Windows <span>↓</span></a>
+      <a href="/downloads/igris-agent-install-v4.ps1" download class="agent-download">Descargar agente Windows v4 <span>↓</span></a>
     </section>
     <section class="agent-manual">
-      <div><span class="agent-kicker">Aplicaciones detectadas</span><h2>Catálogo del computador</h2><button class="connect" :disabled="programsLoading" @click="syncPrograms">{{ programsLoading ? 'Sincronizando…' : 'Sincronizar programas' }}</button></div>
+      <div><span class="agent-kicker">Credenciales del agente</span><h2>Tokens por equipo</h2><div class="agent-token-form"><input v-model="newDeviceName" placeholder="Nombre del equipo" maxlength="120" /><select v-model="newTokenUser"><option value="">Sin usuario específico</option><option v-for="user in users" :key="user.id" :value="String(user.id)">{{ user.username }}</option></select><button class="connect" :disabled="tokenSaving || !newDeviceName.trim()" @click="createToken">{{ tokenSaving ? 'Generando…' : 'Generar token' }}</button></div><p v-if="newToken" class="agent-token-result">Token nuevo (guárdalo ahora): <code>{{ newToken }}</code></p><p v-if="tokenError" class="agent-note">{{ tokenError }}</p><div v-for="token in agentTokens" :key="token.id" class="agent-token-row"><span><b>{{ token.device_name }}</b><small>{{ token.revoked ? 'Revocado' : token.last_seen_at ? 'Conectado recientemente' : 'Sin conexión registrada' }}</small></span><span><button class="connect" @click="regenerateToken(token)">Regenerar</button><button v-if="!token.revoked" class="unlink" @click="revokeToken(token)">Revocar</button></span></div><span class="agent-kicker">Aplicaciones detectadas</span><h2>Catálogo del computador</h2><button class="connect" :disabled="programsLoading" @click="syncPrograms">{{ programsLoading ? 'Sincronizando…' : 'Sincronizar programas' }}</button></div>
       <p v-if="programsError" class="agent-note">{{ programsError }}</p>
       <div v-else-if="programs.length" class="mt-4 grid gap-2 sm:grid-cols-2"><div v-for="program in programs" :key="program.path" class="rounded border border-white/10 px-3 py-2 text-xs"><b class="text-stone-200">{{ program.name }}</b><span class="block truncate text-stone-500">{{ program.path }}</span></div></div>
       <p v-else class="agent-note">Conecta el agente y sincroniza para ver las aplicaciones disponibles.</p>
@@ -77,6 +77,12 @@ const whatsappError = ref('')
 const programs = ref([])
 const programsLoading = ref(false)
 const programsError = ref('')
+const agentTokens = ref([])
+const newDeviceName = ref('')
+const newTokenUser = ref('')
+const newToken = ref('')
+const tokenSaving = ref(false)
+const tokenError = ref('')
 
 async function loadWhatsAppConfig() {
   try {
@@ -112,6 +118,53 @@ async function syncPrograms() {
     programsError.value = errorMessage(e, 'No se pudo sincronizar el catálogo')
   } finally {
     programsLoading.value = false
+  }
+}
+
+async function loadAgentTokens() {
+  if (personalSession) return
+  try {
+    const res = await api.get('/api/device/tokens')
+    agentTokens.value = res.data?.tokens || []
+  } catch (e) {
+    tokenError.value = errorMessage(e, 'No se pudieron cargar los tokens')
+  }
+}
+
+async function createToken() {
+  tokenSaving.value = true
+  tokenError.value = ''
+  newToken.value = ''
+  try {
+    const res = await api.post('/api/device/tokens', { device_name: newDeviceName.value.trim(), user_id: newTokenUser.value ? Number(newTokenUser.value) : null })
+    newToken.value = res.data?.token || ''
+    newDeviceName.value = ''
+    await loadAgentTokens()
+  } catch (e) {
+    tokenError.value = errorMessage(e, 'No se pudo generar el token')
+  } finally {
+    tokenSaving.value = false
+  }
+}
+
+async function regenerateToken(token) {
+  if (!window.confirm(`¿Regenerar el token de '${token.device_name}'? El anterior dejará de funcionar.`)) return
+  try {
+    const res = await api.post(`/api/device/tokens/${token.id}/regenerate`)
+    newToken.value = res.data?.token || ''
+    await loadAgentTokens()
+  } catch (e) {
+    tokenError.value = errorMessage(e, 'No se pudo regenerar el token')
+  }
+}
+
+async function revokeToken(token) {
+  if (!window.confirm(`¿Revocar el acceso de '${token.device_name}'?`)) return
+  try {
+    await api.post(`/api/device/tokens/${token.id}/revoke`)
+    await loadAgentTokens()
+  } catch (e) {
+    tokenError.value = errorMessage(e, 'No se pudo revocar el token')
   }
 }
 
@@ -188,7 +241,7 @@ async function unlinkTelegram(user) {
   }
 }
 
-onMounted(() => { load(); loadWhatsAppConfig(); loadPrograms() })
+onMounted(() => { load(); loadWhatsAppConfig(); loadPrograms(); loadAgentTokens() })
 </script>
 
 <style scoped>

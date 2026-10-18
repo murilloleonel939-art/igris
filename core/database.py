@@ -197,6 +197,21 @@ class GlobalSetting(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
+class AgentToken(Base):
+    """Credencial individual de un agente Windows."""
+    __tablename__ = "agent_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    token_hash = Column(String(128), unique=True, nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    device_name = Column(String(120), nullable=False)
+    revoked = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    last_seen_at = Column(DateTime, nullable=True)
+
+    user = relationship("User")
+
+
 class AIConfig(Base):
     """Configuración de proveedores AI por usuario"""
     __tablename__ = "ai_config"

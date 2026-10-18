@@ -4,9 +4,9 @@ El agente se conecta hacia el backend por WebSocket seguro. El PC debe estar enc
 
 ## Instalación sencilla
 
-Descarga `igris-agent-install-v3.ps1` desde el menú **Agente Windows** del panel de IGRIS y ejecútalo con PowerShell. El archivo es autocontenido: no descarga código desde GitHub. También puedes abrir directamente `/downloads/igris-agent-install-v3.ps1` en tu instalación de IGRIS.
+Descarga `igris-agent-install-v4.ps1` desde el menú **Agente Windows** del panel de IGRIS y ejecútalo con PowerShell. El archivo es autocontenido: no descarga código desde GitHub. También puedes abrir directamente `/downloads/igris-agent-install-v4.ps1` en tu instalación de IGRIS.
 
-El instalador te pedirá la URL WebSocket y el `NODE_TOKEN`, instalará Python automáticamente si Windows tiene `winget`, instalará la dependencia y configurará el inicio automático.
+El instalador usa automáticamente `wss://igris.zottagroup.com/api/device/ws` y solo te pedirá el `NODE_TOKEN` individual generado desde el panel. Instalará Python automáticamente si Windows tiene `winget`, instalará la dependencia y configurará el inicio automático.
 
 ## Instalación manual
 
@@ -15,11 +15,11 @@ El instalador te pedirá la URL WebSocket y el `NODE_TOKEN`, instalará Python a
 3. Define estas variables:
 
 ```powershell
-$env:IGRIS_DEVICE_URL = "wss://TU-DOMINIO/api/device/ws"
-$env:NODE_TOKEN = "EL_MISMO_TOKEN_NODE_TOKEN_DEL_BACKEND"
+$env:IGRIS_DEVICE_URL = "wss://igris.zottagroup.com/api/device/ws"
+$env:NODE_TOKEN = "EL_TOKEN_INDIVIDUAL_GENERADO_EN_EL_PANEL"
 ```
 
 4. Ejecuta `py agent.py` y verifica que aparezca `Agente local IGRIS conectado`.
 5. Para conectarlo al inicio de Windows, crea una tarea del Programador de tareas que ejecute `py C:\ruta\windows_agent\agent.py` al iniciar sesión, con el mismo entorno configurado de forma segura.
 
-El backend usa `NODE_TOKEN` para autenticar este primer agente. Debe mantenerse secreto. El agente solo acepta acciones cerradas: abrir URLs http/https, multimedia, volumen y tres programas autorizados. No ejecuta comandos recibidos desde la nube.
+Cada agente debe usar un token individual generado desde el panel. El administrador puede regenerarlo o revocarlo; al revocarlo, el agente pierde el acceso. El token debe mantenerse secreto. El agente solo acepta acciones cerradas: abrir URLs http/https, multimedia, volumen y tres programas autorizados. No ejecuta comandos recibidos desde la nube.

@@ -354,7 +354,7 @@ def execute(command: dict) -> dict:
 
 
 async def main() -> None:
-    url = os.environ["IGRIS_DEVICE_URL"]
+    url = os.environ.get("IGRIS_DEVICE_URL", "wss://igris.zottagroup.com/api/device/ws")
     token = os.environ["NODE_TOKEN"]
     while True:
         try:
