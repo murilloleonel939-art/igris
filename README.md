@@ -37,6 +37,7 @@
 | ⏰ Recordatorios con aviso por Telegram (únicos, diarios o semanales) | Funcional |
 | 📝 Notas: anotar, listar, buscar y borrar | Funcional |
 | 🔑 **Permisos por usuario**: el admin activa o desactiva cada función (hora, clima, correo, enviar/eliminar correos, calendario, agendar/mover/eliminar eventos, notas, recordatorios) por cuenta | Funcional |
+| 🖥️ **Agentes Windows por equipo**: tokens individuales vinculados a usuario, regeneración, revocación y eliminación | Funcional |
 | 🔗 **Google por usuario**: cada cuenta conecta su propio Gmail/Calendar desde `/u`; al terminar, el callback del backend devuelve al usuario a la pantalla de Conexiones | Funcional |
 | 🔌 **Pantalla de Conexiones propia** (`/conexiones`): página completa con el diseño del workspace, no un cuadro emergente sobre el chat. Reúne Google, voz y Telegram en tarjetas | Funcional |
 | 📲 **Telegram por usuario**: cada cuenta vincula su propio chat con un código de 6 dígitos | Funcional |
@@ -617,7 +618,7 @@ Los permisos de Google se piden **según lo que el administrador haya habilitado
 ### Otras
 | Variable | Descripción |
 | --- | --- |
-| `NODE_TOKEN` | Token reservado para los clientes `node/` (Raspberry Pi). Hoy ningún endpoint lo exige |
+| `NODE_TOKEN` | Token heredado para clientes `node/` o instalaciones antiguas. El agente Windows nuevo usa tokens individuales generados desde el panel y guardados en `agent_tokens` |
 > ⚠️ Las variables `VITE_*` son del frontend: se configuran en el servicio del frontend y se incrustan en el JavaScript público al compilar. **Nunca pongas secretos en ellas** ni las agregues al backend. La clave de acceso (`IGRIS_ACCESS_KEY`) vive solo en el backend; en el navegador se guarda únicamente en `localStorage` cuando el usuario la escribe.
 ### Ejemplo mínimo
 ```
@@ -696,7 +697,22 @@ curl -i -X OPTIONS $API/api/chat \
 ### Recomendación: caché del modelo de Whisper
 La primera nota de voz tras un despliegue descarga el modelo de Whisper (unos 140 MB para `base`). Para no repetirlo en cada redeploy, monta un volumen persistente en `/root/.cache/whisper` (Coolify → backend → Storages).
 ### Agente local de Windows
-El agente de `windows_agent/` permite que IGRIS controle el computador encendido mediante una conexión WebSocket saliente: abrir Chrome, buscar en YouTube, controlar multimedia, ajustar volumen y abrir Chrome, Bloc de notas o Calculadora. Instálalo en Windows con `py -m pip install websockets`, define `IGRIS_DEVICE_URL` apuntando a `wss://TU_DOMINIO/api/device/ws` y `NODE_TOKEN` igual al del backend, y ejecútalo al iniciar sesión mediante el Programador de tareas. El permiso **Control del computador local** debe habilitarse para el usuario. El agente no acepta comandos shell ni rutas arbitrarias.
+El agente de `windows_agent/` permite que IGRIS controle el computador encendido mediante una conexión WebSocket saliente: abrir Chrome, buscar en YouTube, controlar multimedia, ajustar volumen, consultar la pantalla, manejar ventanas, abrir programas, buscar archivos y usar Spotify o Steam. El agente no acepta comandos shell ni rutas arbitrarias.
+
+#### Instalación recomendada
+Desde **Panel admin → Conexiones → Agente Windows**, crea un equipo y genera su token individual. Puedes vincularlo a un usuario concreto. Descarga el instalador versionado `igris-agent-install-v5.ps1` y ejecútalo con PowerShell. La URL está fijada en `wss://igris.zottagroup.com/api/device/ws`; el instalador solo solicita `NODE_TOKEN`.
+
+Cada equipo aparece en el panel con su estado y permite regenerar el token, revocarlo o eliminarlo. El token se muestra únicamente al crearlo o regenerarlo; si se pierde, hay que regenerarlo. Un token vinculado a un usuario no puede usarse para controlar el agente desde otra cuenta.
+
+#### Instalación manual
+```powershell
+$env:IGRIS_DEVICE_URL = "wss://igris.zottagroup.com/api/device/ws"
+$env:NODE_TOKEN = "EL_TOKEN_INDIVIDUAL_GENERADO_EN_EL_PANEL"
+py -m pip install websockets
+py windows_agent/agent.py
+```
+
+El permiso **Control del computador local** debe habilitarse para el usuario. Para conservar los equipos y tokens después de redeploy, el backend debe usar PostgreSQL persistente mediante `DATABASE_URL`.
 
 ### PyTorch solo CPU
 El servidor no tiene GPU, así que el `Dockerfile` instala `torch==2.5.1` y `torchaudio==2.5.1` desde el índice de CPU de PyTorch **antes** de `requirements.txt`. `requirements.txt` no vuelve a declarar esos paquetes: si pip los resolviera desde PyPI podría descargar builds CUDA y Triton, ocupando varios GB y provocando `no space left on device` durante el export de la imagen. Así `openai-whisper` y NVIDIA NeMo encuentran PyTorch CPU ya instalado. Para comprobarlo dentro del contenedor del backend: `pip list | grep -i -E "^(torch|torchaudio|nvidia|triton)"` debe mostrar Torch/Torchaudio CPU y no paquetes CUDA ni Triton.
