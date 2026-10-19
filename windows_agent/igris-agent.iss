@@ -50,8 +50,11 @@ begin
   TokenPage := CreateInputQueryPage(wpSelectDir, 'Conexión de IGRIS', 'Token del agente', 'Pega el NODE_TOKEN generado en el panel de administración.');
   TokenPage.Add('NODE_TOKEN:', True);
   ExistingTokenFile := ExpandConstant('{localappdata}\IGRIS\node_token.txt');
-  if FileExists(ExistingTokenFile) and LoadStringFromFile(ExistingTokenFile, ExistingToken) then
-    TokenPage.Values[0] := Trim(ExistingToken);
+  if FileExists(ExistingTokenFile) then
+  begin
+    if LoadStringFromFile(ExistingTokenFile, ExistingToken) then
+      TokenPage.Values[0] := Trim(ExistingToken);
+  end;
 end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;
