@@ -21,7 +21,6 @@ git+https://github.com/openai/whisper.git  # <-- instala Whisper directamente de
 faster-whisper==1.1.1            # motor Whisper local optimizado para CPU
 av==14.0.1                       # versión compatible con metadata_errors de faster-whisper
 openai==1.35.0                   # SDK usado por todos los proveedores de IA (APIs compatibles con OpenAI)
-python-docx==1.1.2               # Generación de documentos Word (.docx) para create_document
 
 # --------------------------------------------------------------
 # Otros paquetes que ya tenías (se conservan tal cual)

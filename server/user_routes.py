@@ -779,43 +779,6 @@ def _memory_json(memory: UserMemory) -> dict[str, Any]:
     }
 
 
-@router.get("/api/user/documents/{filename}")
-def download_user_document(
-    filename: str,
-    user: User = Depends(require_user),
-):
-    """Entrega un .docx creado por el propio usuario.
-
-    El archivo vive en documents/u<id>/: se comprueba que el nombre no salga de
-    esa carpeta y que exista. Un usuario no puede leer el documento de otro
-    porque la ruta se construye con SU id, sacado del token.
-    """
-    from fastapi.responses import FileResponse
-
-    from core import documents
-
-    if not re.fullmatch(r"[A-Za-z0-9._-]{1,120}", filename or ""):
-        raise HTTPException(status_code=400, detail="Nombre de archivo no válido")
-
-    folder = documents.DOCUMENTS_DIR / f"u{user.id}"
-    target = (folder / filename).resolve()
-    try:
-        target.relative_to(folder.resolve())
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Nombre de archivo no válido")
-
-    if not target.is_file():
-        raise HTTPException(status_code=404, detail="El documento ya no está disponible")
-
-    return FileResponse(
-        path=str(target),
-        media_type=(
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        ),
-        filename=filename,
-    )
-
-
 @router.get("/api/user/memories")
 def list_user_memories(user: User = Depends(require_user), db: Session = Depends(get_db)):
     """Lista los recuerdos propios, separados por memoria personal y operativa."""
@@ -1190,8 +1153,7 @@ async def user_chat(
     _bind_identity(session, user, db)
     try:
         reply = await session.say(text, {"image_data": payload.image_data, "image_mime": payload.image_mime})
-        # Los documentos creados en este turno se devuelven aparte: la interfaz
-        # ofrece la descarga real en lugar de fiarse de lo que diga el texto.
+        # La interfaz muestra la ruta que confirmó el agente local.
         created = list(getattr(session, "documents", []) or [])
         session.documents = []
         return {"status": "ok", "reply": reply, "documents": created}

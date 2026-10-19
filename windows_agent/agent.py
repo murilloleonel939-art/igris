@@ -292,34 +292,269 @@ def execute(command: dict) -> dict:
             return {"ok": False, "error": "El archivo no existe"}
         os.startfile(path)
         return {"ok": True, "path": path}
-    if action == "save_document":
-        # El servidor envía el .docx ya construido y el agente lo escribe en el
-        # disco del usuario. Aquí no se decide nada: solo se valida la ruta y se
-        # guarda, para que el archivo acabe en SU equipo y no en el servidor.
-        import base64 as _b64
-        filename = os.path.basename(str(params.get("filename", "")).strip())
-        payload = params.get("content_base64") or ""
-        if not filename.lower().endswith(".docx"):
-            return {"ok": False, "error": "Solo se guardan documentos .docx"}
-        # Caracteres seguros para un nombre de archivo de Windows.
-        if any(ch in filename for ch in '<>:"/\\|?*') or filename.startswith("."):
+    if action == "create_document":
+        # El backend envía solo estructura y texto. El .docx se construye aquí,
+        # en el PC del usuario; nunca viaja un archivo terminado ni queda copia
+        # temporal en IGRIS.
+        file_format = str(params.get("format", "docx")).strip().lower()
+        supported_formats = {"docx", "xlsx", "pptx", "txt", "csv"}
+        if file_format not in supported_formats:
+            return {"ok": False, "error": "Formato no admitido. Usa DOCX, XLSX, PPTX, TXT o CSV."}
+
+        filename = str(params.get("filename", "")).strip()
+        if (
+            not filename
+            or filename != os.path.basename(filename)
+            or Path(filename).suffix.lower() != "." + file_format
+            or any(ch in filename for ch in '<>:"/\\|?*')
+            or filename.startswith(".")
+        ):
             return {"ok": False, "error": "Nombre de archivo no permitido"}
+        if len(filename) > 120 or filename.endswith((".", " ")):
+            return {"ok": False, "error": "Nombre de archivo no permitido"}
+        if file_format in {"docx", "xlsx"}:
+            try:
+                from docx import Document as WordDocument
+            except ImportError:
+                WordDocument = None
+            try:
+                from openpyxl import Workbook as ExcelWorkbook
+            except ImportError:
+                ExcelWorkbook = None
+            if file_format == "docx" and WordDocument is None:
+                return {"ok": False, "error": "El agente no tiene instalada la dependencia python-docx."}
+            if file_format == "xlsx" and ExcelWorkbook is None:
+                return {"ok": False, "error": "El agente no tiene instalada la dependencia openpyxl."}
+        elif file_format == "pptx":
+            try:
+                from pptx import Presentation as PowerPointPresentation
+            except ImportError:
+                PowerPointPresentation = None
+            if PowerPointPresentation is None:
+                return {"ok": False, "error": "El agente no tiene instalada la dependencia python-pptx."}
+
+        if not isinstance(params.get("title"), str):
+            return {"ok": False, "error": "El título debe ser texto"}
+        title = params["title"].strip()
+        if not title:
+            return {"ok": False, "error": "Falta el título del documento"}
+        if len(title) > 160:
+            return {"ok": False, "error": "El título supera el límite permitido"}
+        sections = params.get("sections")
+        if not isinstance(sections, list):
+            return {"ok": False, "error": "Las secciones no son válidas"}
+        if len(sections) > 40:
+            return {"ok": False, "error": "El documento tiene demasiadas secciones"}
+        total_chars = 0
+        for raw in sections:
+            if not isinstance(raw, dict):
+                return {"ok": False, "error": "Las secciones no son válidas"}
+            if not isinstance(raw.get("heading", ""), str) or not isinstance(raw.get("title", ""), str):
+                return {"ok": False, "error": "Los encabezados deben ser texto"}
+            if not isinstance(raw.get("bullets", False), bool):
+                return {"ok": False, "error": "El formato de lista no es válido"}
+            heading = raw.get("heading") or raw.get("title") or ""
+            body = raw.get("body") or []
+            if isinstance(body, str):
+                body = [body]
+            if not isinstance(body, list) or len(body) > 80 or len(heading) > 160:
+                return {"ok": False, "error": "Una sección supera los límites permitidos"}
+            for item in body:
+                if not isinstance(item, str) or len(item) > 6000:
+                    return {"ok": False, "error": "Un párrafo supera los límites permitidos"}
+                total_chars += len(item)
+            total_chars += len(heading)
+        if total_chars > 240000:
+            return {"ok": False, "error": "El documento supera el tamaño permitido"}
+        has_content = False
+        for item in sections:
+            raw_body = item.get("body") or []
+            if isinstance(raw_body, str):
+                raw_body = [raw_body]
+            if str(item.get("heading") or item.get("title") or "").strip() or any(
+                isinstance(line, str) and line.strip() for line in raw_body
+            ):
+                has_content = True
+                break
+        if not has_content:
+            return {"ok": False, "error": "Incluye contenido para crear el archivo."}
+        for value_name in ("subtitle", "author"):
+            value = params.get(value_name, "")
+            if not isinstance(value, str):
+                return {"ok": False, "error": "Los datos de portada deben ser texto"}
+            if len(value) > 500:
+                return {"ok": False, "error": "Los datos de portada superan el tamaño permitido"}
+
+        subtitle = str(params.get("subtitle", "")).strip()[:500]
+        author = str(params.get("author", "")).strip()[:500]
+        if file_format == "docx":
+            from docx import Document as WordDocument
+            from docx.enum.text import WD_ALIGN_PARAGRAPH
+            from docx.shared import Inches, Pt
+
+            doc = WordDocument()
+            section = doc.sections[0]
+            section.top_margin = Inches(0.7)
+            section.bottom_margin = Inches(0.7)
+            section.left_margin = Inches(0.85)
+            section.right_margin = Inches(0.85)
+            normal = doc.styles["Normal"]
+            normal.font.name = "Aptos"
+            normal.font.size = Pt(10.5)
+            if bool(params.get("cover", True)):
+                p = doc.add_paragraph()
+                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                p.paragraph_format.space_before = Pt(150)
+                run = p.add_run(title[:160])
+                run.bold = True
+                run.font.size = Pt(28)
+                if subtitle:
+                    p = doc.add_paragraph()
+                    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    p.add_run(subtitle).italic = True
+                if author:
+                    p = doc.add_paragraph()
+                    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    p.add_run(author)
+                doc.add_page_break()
+            for raw in sections:
+                heading = str(raw.get("heading") or raw.get("title") or "").strip()[:160]
+                body = raw.get("body") or []
+                if isinstance(body, str):
+                    body = [body]
+                if heading:
+                    doc.add_heading(heading, level=1)
+                for item in body[:80]:
+                    text = str(item).strip()[:6000]
+                    if text:
+                        doc.add_paragraph(text, style="List Bullet" if raw.get("bullets") else None)
+        elif file_format == "xlsx":
+            from openpyxl import Workbook as ExcelWorkbook
+            doc = ExcelWorkbook()
+            sheet = doc.active
+            sheet.title = (title[:31] or "Documento").replace("/", "-").replace("\\", "-")
+            rows = [[title]]
+            if subtitle:
+                rows.append([subtitle])
+            if author:
+                rows.append(["Autor", author])
+            for raw in sections:
+                heading = str(raw.get("heading") or raw.get("title") or "").strip()
+                if heading:
+                    rows.append([heading])
+                body = raw.get("body") or []
+                if isinstance(body, str):
+                    body = body.splitlines()
+                for line in body[:80]:
+                    text = str(line).strip()[:6000]
+                    if text:
+                        rows.append([text])
+            for row in rows:
+                sheet.append(row)
+            sheet.column_dimensions["A"].width = 100
+        elif file_format == "pptx":
+            from pptx import Presentation as PowerPointPresentation
+
+            doc = PowerPointPresentation()
+            layout = doc.slide_layouts[0]
+            slide = doc.slides.add_slide(layout)
+            slide.shapes.title.text = title[:160]
+            if len(slide.placeholders) > 1:
+                slide.placeholders[1].text = "\n".join(value for value in (subtitle, author) if value)
+            if not sections:
+                slide = doc.slides.add_slide(doc.slide_layouts[5])
+                slide.shapes.title.text = title[:160]
+            for raw in sections:
+                heading = str(raw.get("heading") or raw.get("title") or "").strip()[:160]
+                body = raw.get("body") or []
+                if isinstance(body, str):
+                    body = body.splitlines()
+                slide = doc.slides.add_slide(doc.slide_layouts[1])
+                slide.shapes.title.text = heading or title[:160]
+                frame = slide.placeholders[1].text_frame
+                frame.clear()
+                for index, line in enumerate(body[:80]):
+                    text = str(line).strip()[:6000]
+                    if text:
+                        paragraph = frame.paragraphs[0] if index == 0 else frame.add_paragraph()
+                        paragraph.text = text
+                        paragraph.level = 1 if raw.get("bullets") else 0
+        else:
+            rows = [title]
+            if subtitle:
+                rows.append(subtitle)
+            if author:
+                rows.append(author)
+            for raw in sections:
+                heading = str(raw.get("heading") or raw.get("title") or "").strip()
+                if heading:
+                    rows.extend(["", heading])
+                body = raw.get("body") or []
+                if isinstance(body, str):
+                    body = body.splitlines()
+                rows.extend(str(line).strip()[:6000] for line in body[:80] if str(line).strip())
+            separator = "," if file_format == "csv" else "\n"
+            if file_format == "csv":
+                import csv
+                import io
+
+                buffer = io.StringIO(newline="")
+                writer = csv.writer(buffer)
+                writer.writerows([[line] for line in rows])
+                text_content = buffer.getvalue()
+            else:
+                text_content = separator.join(rows) + "\n"
+
+        # Windows puede redirigir Documentos a OneDrive u otra ubicación; usa
+        # la ruta conocida del shell antes de recurrir a USERPROFILE\Documents.
+        folder = None
         try:
-            content = _b64.b64decode(payload, validate=True)
-        except Exception:
-            return {"ok": False, "error": "El contenido del documento llegó dañado"}
-        if not content or len(content) > 30_000_000:
-            return {"ok": False, "error": "El documento está vacío o es demasiado grande"}
-        # open=True se reserva para cuando el usuario pide verlo; por defecto solo
-        # se guarda, sin abrir nada que no haya pedido.
-        folder = str(params.get("folder", "")).strip()
-        if not folder:
-            folder = str(Path(os.path.expanduser("~")) / "Documents")
-        target_dir = Path(folder)
+            import ctypes
+            from ctypes import wintypes
+
+            class GUID(ctypes.Structure):
+                _fields_ = [
+                    ("Data1", wintypes.DWORD),
+                    ("Data2", wintypes.WORD),
+                    ("Data3", wintypes.WORD),
+                    ("Data4", ctypes.c_ubyte * 8),
+                ]
+
+            folder_id = GUID(
+                0xFDD39AD0, 0x238F, 0x46AF,
+                (ctypes.c_ubyte * 8)(0xAD, 0xB4, 0x6C, 0x85, 0x48, 0x03, 0x69, 0xC7),
+            )
+            known_folder = wintypes.LPWSTR()
+            shell32 = ctypes.windll.shell32
+            shell32.SHGetKnownFolderPath.argtypes = [
+                ctypes.POINTER(GUID), wintypes.DWORD, wintypes.HANDLE,
+                ctypes.POINTER(wintypes.LPWSTR),
+            ]
+            shell32.SHGetKnownFolderPath.restype = wintypes.HRESULT
+            result = shell32.SHGetKnownFolderPath(
+                ctypes.byref(folder_id), 0, None, ctypes.byref(known_folder)
+            )
+            if result == 0 and known_folder.value:
+                folder = Path(known_folder.value)
+            if known_folder.value:
+                ole32 = ctypes.windll.ole32
+                ole32.CoTaskMemFree.argtypes = [wintypes.LPVOID]
+                ole32.CoTaskMemFree.restype = None
+                ole32.CoTaskMemFree(ctypes.cast(known_folder, wintypes.LPVOID))
+        except (AttributeError, OSError, TypeError):
+            folder = None
+        if folder is None:
+            folder = Path(os.environ.get("USERPROFILE", str(Path.home()))) / "Documents"
+
         try:
-            target_dir.mkdir(parents=True, exist_ok=True)
-            target = target_dir / filename
-            target.write_bytes(content)
+            folder.mkdir(parents=True, exist_ok=True)
+            target = folder / filename
+            if target.exists():
+                return {"ok": False, "error": "Ya existe un archivo con ese nombre; vuelve a intentarlo."}
+            if file_format in {"txt", "csv"}:
+                target.write_text(text_content, encoding="utf-8-sig" if file_format == "csv" else "utf-8")
+            else:
+                doc.save(str(target))
         except (OSError, PermissionError) as exc:
             return {"ok": False, "error": f"No se pudo guardar el documento: {exc}"}
         if params.get("open"):
@@ -327,7 +562,13 @@ def execute(command: dict) -> dict:
                 os.startfile(str(target))
             except OSError:
                 pass
-        return {"ok": True, "path": str(target), "filename": filename, "size_bytes": len(content)}
+        return {
+            "ok": True,
+            "path": str(target),
+            "filename": filename,
+            "size_bytes": target.stat().st_size,
+            "sections": len([x for x in sections if isinstance(x, dict)]),
+        }
     if action == "type_text":
         text = str(params.get("text", ""))
         if not text:
@@ -415,7 +656,9 @@ def load_node_token() -> str:
     token = os.environ.get("NODE_TOKEN", "").strip()
     if token:
         return token
-    config = Path(sys.executable if getattr(sys, "frozen", False) else __file__).with_name("node_token.txt")
+    config = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "IGRIS" / "node_token.txt"
+    if not config.is_file():
+        config = Path(sys.executable if getattr(sys, "frozen", False) else __file__).with_name("node_token.txt")
     try:
         return config.read_text(encoding="utf-8").strip()
     except OSError:

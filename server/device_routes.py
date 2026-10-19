@@ -158,9 +158,14 @@ async def device_ws(websocket: WebSocket) -> None:
     if agent_row is None and not valid_legacy:
         await websocket.close(code=1008)
         return
+    if hub.connected:
+        await websocket.close(code=1013)
+        return
+    await websocket.accept()
     hub.owner_user_id = agent_row.user_id if agent_row is not None else None
     hub.owner_token_id = agent_row.id if agent_row is not None else None
-    await websocket.accept()
+    hub.active_websocket = websocket
+    hub.connected = True
     try:
         hello = json.loads(await websocket.receive_text())
         if hello.get("type") != "hello":
@@ -175,19 +180,23 @@ async def device_ws(websocket: WebSocket) -> None:
                     current = db.get(AgentToken, agent_row.id)
                     if current is None or current.revoked:
                         await websocket.close(code=1008)
-                        hub.disconnect()
+                        hub.disconnect(websocket)
                         return
-            command = await hub.next_command()
+            command = await hub.next_command(websocket)
             await websocket.send_json(command)
             raw = await websocket.receive_text()
+            if websocket is not hub.active_websocket:
+                raise WebSocketDisconnect(code=1000)
             response = json.loads(raw)
-            if response.get("id") == command.get("id") and isinstance(response.get("result"), dict):
-                result = response["result"]
-                if command.get("action") == "sync_programs":
-                    hub.update_programs(result.get("programs", []))
-                hub.complete(command["id"], result)
+            if response.get("id") != command.get("id") or not isinstance(response.get("result"), dict):
+                hub.complete(command["id"], {"ok": False, "error": "El agente devolvió una respuesta inválida."}, websocket=websocket)
+                continue
+            result = response["result"]
+            if command.get("action") == "sync_programs":
+                hub.update_programs(result.get("programs", []))
+            hub.complete(command["id"], result, websocket=websocket)
     except (WebSocketDisconnect, json.JSONDecodeError):
-        hub.disconnect()
+        hub.disconnect(websocket)
     except Exception:
-        hub.disconnect()
+        hub.disconnect(websocket)
         raise

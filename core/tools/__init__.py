@@ -513,23 +513,24 @@ TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "type_in_office", "description": "Pega texto dictado en la ventana de Word, Excel o el bloc de notas que YA esté abierta y activa. No crea archivos ni los guarda: para entregar un documento, usa create_document.",
-            "parameters": {"type": "object", "properties": {"text": {"type": "string"}, "application": {"type": "string", "enum": ["word", "excel", "notepad", ""]}}, "required": ["text"]},
+            "name": "type_in_office", "description": "Pega texto dictado en la ventana de Word, Excel, PowerPoint o Bloc de notas que YA esté abierta y activa. No crea archivos ni los guarda: para crear uno local, usa create_document.",
+            "parameters": {"type": "object", "properties": {"text": {"type": "string"}, "application": {"type": "string", "enum": ["word", "excel", "powerpoint", "notepad", ""]}}, "required": ["text"]},
         },
     },
     {
         "type": "function",
         "function": {
             "name": "create_document",
-            "description": "Crea un documento Word (.docx) real y lo guarda en el computador del usuario mediante el agente conectado, en su carpeta Documentos. Si el computador no está conectado, el archivo queda disponible para descargar. Úsala siempre que el usuario pida un documento, informe, presentación, carta o resumen escrito. NO uses type_in_office para esto.",
+            "description": "Crea localmente en la carpeta Documentos del computador del usuario mediante el agente .exe conectado. Admite Word (docx), Excel (xlsx), PowerPoint (pptx), texto (txt) y CSV, y abre el archivo si el usuario lo pide. El servidor no crea ni conserva archivos. Si el equipo está desconectado, informa el error. Úsala para documentos, hojas de cálculo, presentaciones y texto.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "title": {"type": "string", "description": "Título del documento. Aparece en la portada y da nombre al archivo."},
                     "subtitle": {"type": "string", "description": "Subtítulo opcional de la portada."},
                     "author": {"type": "string", "description": "Autor o destinatario opcional, bajo la portada."},
-                    "cover": {"type": "boolean", "description": "Si es true (por defecto) añade portada y salto de página."},
-                    "save_to_computer": {"type": "boolean", "description": "Si es true (por defecto) intenta guardarlo en el computador del usuario. Solo ponlo en false si el usuario pide expresamente no guardarlo."},
+                    "format": {"type": "string", "enum": ["docx", "xlsx", "pptx", "txt", "csv"], "description": "Formato del archivo según lo solicitado: Word, Excel, PowerPoint, texto o CSV. Por defecto docx."},
+                    "cover": {"type": "boolean", "description": "Si es true (por defecto) añade portada y salto de página al formato Word."},
+                    "save_to_computer": {"type": "boolean", "description": "Debe ser true. El documento siempre se guarda en el computador del usuario."},
                     "open_after": {"type": "boolean", "description": "Si es true, abre el documento al guardarlo. Úsalo solo si el usuario pide verlo."},
                     "sections": {
                         "type": "array",

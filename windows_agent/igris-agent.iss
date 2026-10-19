@@ -1,6 +1,6 @@
 ; Inno Setup: instala IgrisAgent.exe y crea desinstalador.
 #define MyAppName "IGRIS Windows Agent"
-#define MyAppVersion "9.0.0"
+#define MyAppVersion "10.0.0"
 #define MyAppPublisher "IGRIS"
 #define MyAppExeName "IgrisAgent.exe"
 
@@ -11,7 +11,7 @@ AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
 DefaultDirName={localappdata}\IGRIS\agent
 DisableProgramGroupPage=yes
-OutputBaseFilename=IgrisAgentSetup-v9
+OutputBaseFilename=IgrisAgentSetup-v10
 Compression=lzma
 SolidCompression=yes
 OutputDir=output
@@ -30,23 +30,44 @@ Filename: "{app}\IgrisAgent.exe"; Description: "Iniciar IGRIS Windows Agent"; Fl
 [Code]
 var
   TokenPage: TInputQueryWizardPage;
+  TokenFile: String;
 
 procedure InitializeWizard;
 begin
   TokenPage := CreateInputQueryPage(wpSelectDir, 'Conexión de IGRIS', 'Token del agente', 'Pega el NODE_TOKEN generado en el panel de administración.');
-  TokenPage.Add('NODE_TOKEN:', True);
+  TokenPage.Add('NODE_TOKEN:', False);
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  TokenValue: String;
+begin
+  Result := '';
+  TokenValue := Trim(TokenPage.Values[0]);
+  if TokenValue = '' then
+    Result := 'El token del agente es obligatorio. Introduce el NODE_TOKEN del panel.';
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
 var
-  TokenFile: String;
+  TokenValue: String;
 begin
   if CurStep = ssPostInstall then
   begin
-    TokenFile := ExpandConstant('{app}\node_token.txt');
-    SaveStringToFile(TokenFile, TokenPage.Values[0], False);
+    TokenValue := Trim(TokenPage.Values[0]);
+    TokenFile := ExpandConstant('{localappdata}\IGRIS\node_token.txt');
+    ForceDirectories(ExtractFileDir(TokenFile));
+    if not SaveStringToFile(TokenFile, TokenValue, False) then
+      RaiseException('No se pudo guardar la configuración del agente en el perfil de Windows.');
   end;
 end;
 
-[UninstallDelete]
-Type: files; Name: "{app}\node_token.txt"
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+begin
+  if CurUninstallStep = usUninstall then
+  begin
+    TokenFile := ExpandConstant('{localappdata}\IGRIS\node_token.txt');
+    if FileExists(TokenFile) then
+      DeleteFile(TokenFile);
+  end;
+end;

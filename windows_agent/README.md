@@ -2,14 +2,8 @@
 
 El agente se conecta hacia el backend por WebSocket seguro. El PC debe estar encendido; al apagarlo se desconecta y al iniciar sesión vuelve a conectarse.
 
-## Instalación sencilla
-
-Descarga `igris-agent-install-v6.ps1` desde el menú **Agente Windows** del panel de IGRIS y ejecútalo con PowerShell. El archivo es autocontenido: no descarga código desde GitHub. También puedes abrir directamente `/downloads/igris-agent-install-v6.ps1` en tu instalación de IGRIS.
-
-El instalador usa automáticamente `wss://igris.zottagroup.com/api/device/ws` y solo te pedirá el `NODE_TOKEN` individual generado desde el panel. Instalará Python automáticamente si Windows tiene `winget`, instalará la dependencia y configurará el inicio automático.
-
-## Instalación sin PowerShell
-La versión ejecutable se distribuye como `IgrisAgentSetup-v9.exe`. Ábrela, pega el `NODE_TOKEN` generado en **Panel admin → Conexiones → Agente Windows** y finaliza. El agente queda en segundo plano y arranca automáticamente con Windows. Para quitarlo, ve a **Configuración → Aplicaciones → Aplicaciones instaladas → IGRIS Windows Agent → Desinstalar**. El desinstalador elimina el agente, el arranque automático y el token guardado.
+## Instalación desde el ejecutable
+Descarga `IgrisAgentSetup-v10.exe` desde **Panel admin → Conexiones → Agente Windows**. Haz doble clic, pega el `NODE_TOKEN` individual del equipo y termina el asistente. El agente queda en segundo plano y arranca automáticamente con Windows. Crea archivos Word (`.docx`), Excel (`.xlsx`), PowerPoint (`.pptx`), texto (`.txt`) y CSV directamente en la carpeta Documentos del PC; el servidor no guarda copias. Para quitarlo, ve a **Configuración → Aplicaciones → Aplicaciones instaladas → IGRIS Windows Agent → Desinstalar**; se borra también el token local.
 
 Para compilarlo en Windows:
 
@@ -21,7 +15,7 @@ Para compilarlo en Windows:
 ## Instalación manual
 
 1. Instala Python 3.11+ en Windows.
-2. Abre PowerShell en esta carpeta y ejecuta `py -m pip install websockets`.
+2. Abre PowerShell en esta carpeta y ejecuta `py -m pip install -r requirements.txt`.
 3. Define estas variables:
 
 ```powershell

@@ -716,12 +716,12 @@ curl -i -X OPTIONS $API/api/chat \
 ### Recomendación: caché del modelo de Whisper
 La primera nota de voz tras un despliegue descarga el modelo de Whisper (unos 140 MB para `base`). Para no repetirlo en cada redeploy, monta un volumen persistente en `/root/.cache/whisper` (Coolify → backend → Storages).
 ### Agente local de Windows
-El agente de `windows_agent/` permite que IGRIS controle el computador encendido mediante una conexión WebSocket saliente: abrir Chrome, Edge, Spotify, Steam, Word, Excel y el Explorador; buscar en YouTube, controlar multimedia, ajustar volumen, consultar la pantalla, manejar ventanas, buscar y abrir archivos, y buscar o reproducir música en Spotify. La ejecución se realiza en segundo plano mediante el instalador `IgrisAgentSetup-v9.exe`, sin depender de una ventana de consola. El agente no acepta comandos shell ni rutas arbitrarias.
+El agente de `windows_agent/` permite que IGRIS controle el computador encendido mediante una conexión WebSocket saliente: abrir Chrome, Edge, Spotify, Steam, Word, Excel y el Explorador; buscar en YouTube, controlar multimedia, ajustar volumen, consultar la pantalla, manejar ventanas, buscar y abrir archivos, crear documentos Word, hojas de cálculo Excel, presentaciones PowerPoint y archivos de texto directamente en el PC y buscar o reproducir música en Spotify. La ejecución se realiza en segundo plano mediante el instalador `IgrisAgentSetup-v10.exe`, sin depender de una ventana de consola. El agente no acepta comandos shell ni rutas arbitrarias.
 
 #### Instalación recomendada
-Desde **Panel admin → Conexiones → Agente Windows**, crea un equipo y genera su token individual. Puedes vincularlo a un usuario concreto. Descarga `IgrisAgentSetup-v9.exe` y ejecútalo en Windows. La URL está fijada en `wss://igris.zottagroup.com/api/device/ws`; el instalador guarda el `NODE_TOKEN` individual y configura el agente para iniciar con Windows.
+Desde **Panel admin → Conexiones → Agente Windows**, crea un equipo y genera su token individual. Puedes vincularlo a un usuario concreto. Descarga `IgrisAgentSetup-v10.exe` y ejecútalo en Windows. La URL está fijada en `wss://igris.zottagroup.com/api/device/ws`; el instalador guarda el `NODE_TOKEN` individual y configura el agente para iniciar con Windows.
 
-El instalador v9 corrige la ejecución sin consola y permite que Spotify tarde unos segundos en iniciar mientras Windows carga la aplicación. Si Spotify está autorizado en el panel, puedes pedir «abre Spotify», «busca música en Spotify» o «reproduce [canción]».
+El instalador v10 crea los documentos Word en la carpeta Documentos del PC. El texto se envía al agente conectado y el archivo se construye allí; IGRIS no conserva una copia. Si el equipo está desconectado, la herramienta informa que no se creó el documento. Si Spotify está autorizado en el panel, también puedes pedir «abre Spotify», «busca música en Spotify» o «reproduce [canción]».
 
 Cada equipo aparece en el panel con su estado y permite regenerar el token, revocarlo o eliminarlo. El token se muestra únicamente al crearlo o regenerarlo; si se pierde, hay que regenerarlo. Un token vinculado a un usuario no puede usarse para controlar el agente desde otra cuenta.
 
@@ -729,23 +729,20 @@ Cada equipo aparece en el panel con su estado y permite regenerar el token, revo
 ```powershell
 $env:IGRIS_DEVICE_URL = "wss://igris.zottagroup.com/api/device/ws"
 $env:NODE_TOKEN = "EL_TOKEN_INDIVIDUAL_GENERADO_EN_EL_PANEL"
-py -m pip install websockets
+py -m pip install -r windows_agent/requirements.txt
 py windows_agent/agent.py
 ```
 
-El permiso **Control del computador local** debe habilitarse para el usuario. Para conservar los equipos y tokens después de redeploy, el backend debe usar PostgreSQL persistente mediante `DATABASE_URL`.
+El permiso **Control del computador local** debe habilitarse para el usuario. Para conservar los equipos y tokens después de redeploy, el backend debe usar PostgreSQL persistente mediante `DATABASE_URL`. La compilación de Windows instala las dependencias de `windows_agent/requirements.txt` y empaqueta `python-docx` dentro del ejecutable; no requiere Python en el PC del usuario.
 
 ### Documentos Word (`create_document`)
 
-La función **Documentos Word** (`can_use_documents`) viene activa de fábrica. El `.docx` se genera en el servidor con `python-docx` y **se guarda en el computador del usuario**, en su carpeta `Documentos`, a través del agente de Windows conectado (`save_document`). El servidor solo conserva una copia para poder descargarla mientras la sesión esté abierta.
+La función **Documentos Word** (`can_use_documents`) viene activa de fábrica. El `.docx` se crea íntegramente en el PC mediante el agente Windows conectado. El servidor envía el título y el texto estructurado; no construye, guarda ni ofrece una copia del archivo.
 
-- Si el computador no está conectado, o el agente pertenece a otro usuario, la herramienta lo dice con el motivo real y ofrece la descarga. Nunca afirma que se guardó.
-- La ruta real (`C:\Users\...\Documents\archivo.docx`) se devuelve y el modelo la repite tal cual.
-- El agente solo acepta nombres terminados en `.docx`, sin caracteres de ruta, y reduce cualquier ruta a su nombre de archivo: no se puede escribir fuera de la carpeta.
-- `save_to_computer=false` omite el guardado local; `open_after=true` abre el documento al guardarlo.
-- Copia del servidor en `documents/u<id>/` (`IGRIS_DOCUMENTS_DIR` cambia la ruta). La descarga exige el token del usuario y solo sirve archivos de su propia carpeta.
-
-**El agente de Windows desplegado tiene que actualizarse** para conocer `save_document`. Con un agente antiguo, el documento se genera pero no llega al equipo: la respuesta dirá que no se pudo guardar. Hay que sustituir `windows_agent/agent.py` por la versión de este repositorio y reiniciar el agente.
+- El agente guarda el documento en la carpeta `Documentos` del usuario y devuelve la ruta real (`C:\Users\...\Documents\archivo.docx`).
+- Si el computador no está conectado, o el agente pertenece a otro usuario, no se crea ningún archivo y la herramienta informa el motivo.
+- El agente valida el nombre `.docx` y lo guarda dentro de `Documentos`; `open_after=true` abre el archivo después de guardarlo.
+- El ejecutable distribuido debe ser `IgrisAgentSetup-v10.exe`. Instala esa versión desde **Panel admin → Conexiones → Agente Windows** para usar la creación local.
 
 `type_in_office` sigue existiendo, pero solo pega texto en una ventana ya abierta: no crea ni guarda archivos. Para entregar un documento se usa siempre `create_document`.
 

@@ -22,26 +22,40 @@ class LocalAgentHub:
     def __init__(self) -> None:
         self._commands: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
         self._pending: dict[str, asyncio.Future[dict[str, Any]]] = {}
+        self._command_websockets: dict[str, Any] = {}
+        self._command_actions: dict[str, str] = {}
         self.connected = False
         self.programs: list[dict[str, str]] = []
         self.owner_user_id: int | None = None
         self.owner_token_id: int | None = None
+        self.active_websocket = None
         self.allowed_programs: set[str] = set()
 
     async def enqueue(self, action: str, **params: Any) -> dict[str, Any]:
         requested_user = params.pop("user_id", None)
+        if not self.connected or self.active_websocket is None:
+            return {"ok": False, "error": "El agente local no está conectado."}
         if action == "launch_program":
             program = str(params.get("program", "")).strip().lower()
             allowed = {name.lower() for name in self.allowed_programs}
             aliases = {"edge": "microsoft edge", "powerpoint": "powerpoint", "onedrive": "onedrive", "calculator": "calculator", "notepad": "notepad"}
             if program not in allowed and aliases.get(program, program) not in allowed:
                 return {"ok": False, "error": "La aplicación no está autorizada en la configuración del equipo."}
-        if self.owner_user_id is not None and requested_user not in {None, self.owner_user_id}:
+        if action == "create_document" and requested_user is None:
+            return {"ok": False, "error": "No se pudo identificar al usuario para crear el documento."}
+        if action == "create_document" and self.owner_user_id is None:
+            return {"ok": False, "error": "El agente no está vinculado a un usuario."}
+        if self.owner_user_id is not None and requested_user != self.owner_user_id:
             return {"ok": False, "error": "El agente está vinculado a otro usuario."}
+        if self.active_websocket is None:
+            return {"ok": False, "error": "El agente local no está conectado."}
         command_id = secrets.token_urlsafe(18)
         loop = asyncio.get_running_loop()
         future: asyncio.Future[dict[str, Any]] = loop.create_future()
         self._pending[command_id] = future
+        websocket = self.active_websocket
+        self._command_websockets[command_id] = websocket
+        self._command_actions[command_id] = action
         await self._commands.put({"id": command_id, "action": action, "params": params})
         try:
             return await asyncio.wait_for(future, timeout=45)
@@ -49,6 +63,8 @@ class LocalAgentHub:
             return {"ok": False, "error": "El computador no respondió. Comprueba que el agente esté iniciado."}
         finally:
             self._pending.pop(command_id, None)
+            self._command_websockets.pop(command_id, None)
+            self._command_actions.pop(command_id, None)
 
     def update_programs(self, programs: list[dict[str, str]]) -> None:
         clean = []
@@ -94,26 +110,61 @@ class LocalAgentHub:
                 db.close()
         return sorted(self.allowed_programs)
 
-    async def next_command(self) -> dict[str, Any]:
-        self.connected = True
+    async def next_command(self, websocket=None) -> dict[str, Any]:
+        if websocket is not None and websocket is not self.active_websocket:
+            raise RuntimeError("El agente ya no es la conexión activa")
         return await self._commands.get()
 
-    def complete(self, command_id: str, result: dict[str, Any]) -> bool:
+    def complete(self, command_id: str, result: dict[str, Any], websocket=None) -> bool:
         future = self._pending.get(command_id)
+        expected_websocket = self._command_websockets.get(command_id)
+        if websocket is not None and websocket is not expected_websocket:
+            return False
         if future is None or future.done():
             return False
         future.set_result(result)
         return True
 
-    def disconnect(self) -> None:
+    def disconnect(self, websocket=None) -> None:
+        if websocket is not None and websocket is not self.active_websocket:
+            return
+        disconnected_websocket = self.active_websocket
         self.connected = False
         self.owner_user_id = None
         self.owner_token_id = None
+        self.active_websocket = None
+        retained_commands = []
         while not self._commands.empty():
             try:
-                self._commands.get_nowait()
+                command = self._commands.get_nowait()
             except asyncio.QueueEmpty:
                 break
+            command_id = command.get("id")
+            if self._command_websockets.get(command_id) is not disconnected_websocket:
+                retained_commands.append(command)
+                continue
+            future = self._pending.get(command_id)
+            if future is not None and not future.done():
+                action = self._command_actions.get(command_id, command.get("action"))
+                message = (
+                    "El agente se desconectó antes de crear el documento."
+                    if action == "create_document"
+                    else "El agente se desconectó antes de completar la acción."
+                )
+                future.set_result({"ok": False, "error": message})
+        for command in retained_commands:
+            self._commands.put_nowait(command)
+        for command_id, future in list(self._pending.items()):
+            if (
+                self._command_websockets.get(command_id) is disconnected_websocket
+                and not future.done()
+            ):
+                message = (
+                    "El agente se desconectó antes de crear el documento."
+                    if self._command_actions.get(command_id) == "create_document"
+                    else "El agente se desconectó antes de completar la acción."
+                )
+                future.set_result({"ok": False, "error": message})
 
     def status(self) -> dict[str, Any]:
         return {

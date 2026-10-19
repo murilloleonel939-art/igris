@@ -255,13 +255,11 @@
         <div v-for="(msg, i) in chatMessages" :key="i" class="msg">
           <span :class="['from', msg.from === 'user' ? 'user' : 'igris']">{{ msg.from }}:</span>
           <span class="text">{{ msg.text }}</span>
-          <a
+          <span
             v-for="doc in (msg.documents || [])"
             :key="doc.filename"
-            href="#"
             class="doc-download"
-            @click.prevent="downloadDocument(doc)"
-          >{{ doc.saved_to_computer ? 'Ya está en tu equipo · descargar copia' : 'Descargar ' + doc.filename }}</a>
+          >Guardado en {{ doc.local_path || 'tu carpeta Documentos' }}</span>
           <button
             v-if="msg.from === 'igris'"
             @click.stop="playIgrisResponse(msg.text, i)"
@@ -453,31 +451,6 @@ const stopSpeaking = () => {
   if (currentAudio) {
     currentAudio.pause()
     if (currentAudio.onended) currentAudio.onended()
-  }
-}
-
-/* ───────────── Descarga de documentos ───────────── */
-// La ruta del documento exige el token del usuario, así que no sirve un <a href>
-// directo: se pide con el cliente autenticado y se descarga el blob.
-const downloadDocument = async (doc) => {
-  if (!doc?.url) return
-  try {
-    const response = await userApi.get(doc.url, { responseType: 'blob' })
-    const blobUrl = URL.createObjectURL(response.data)
-    const link = document.createElement('a')
-    link.href = blobUrl
-    link.download = doc.filename || 'documento.docx'
-    document.body.appendChild(link)
-    link.click()
-    link.remove()
-    URL.revokeObjectURL(blobUrl)
-  } catch (err) {
-    console.error('No se pudo descargar el documento:', err)
-    chatMessages.value.push({
-      from: 'igris',
-      text: 'No pude descargar el documento. Comprueba que la sesión siga abierta.',
-    })
-    scrollToBottom()
   }
 }
 
