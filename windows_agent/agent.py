@@ -292,6 +292,42 @@ def execute(command: dict) -> dict:
             return {"ok": False, "error": "El archivo no existe"}
         os.startfile(path)
         return {"ok": True, "path": path}
+    if action == "save_document":
+        # El servidor envía el .docx ya construido y el agente lo escribe en el
+        # disco del usuario. Aquí no se decide nada: solo se valida la ruta y se
+        # guarda, para que el archivo acabe en SU equipo y no en el servidor.
+        import base64 as _b64
+        filename = os.path.basename(str(params.get("filename", "")).strip())
+        payload = params.get("content_base64") or ""
+        if not filename.lower().endswith(".docx"):
+            return {"ok": False, "error": "Solo se guardan documentos .docx"}
+        # Caracteres seguros para un nombre de archivo de Windows.
+        if any(ch in filename for ch in '<>:"/\\|?*') or filename.startswith("."):
+            return {"ok": False, "error": "Nombre de archivo no permitido"}
+        try:
+            content = _b64.b64decode(payload, validate=True)
+        except Exception:
+            return {"ok": False, "error": "El contenido del documento llegó dañado"}
+        if not content or len(content) > 30_000_000:
+            return {"ok": False, "error": "El documento está vacío o es demasiado grande"}
+        # open=True se reserva para cuando el usuario pide verlo; por defecto solo
+        # se guarda, sin abrir nada que no haya pedido.
+        folder = str(params.get("folder", "")).strip()
+        if not folder:
+            folder = str(Path(os.path.expanduser("~")) / "Documents")
+        target_dir = Path(folder)
+        try:
+            target_dir.mkdir(parents=True, exist_ok=True)
+            target = target_dir / filename
+            target.write_bytes(content)
+        except (OSError, PermissionError) as exc:
+            return {"ok": False, "error": f"No se pudo guardar el documento: {exc}"}
+        if params.get("open"):
+            try:
+                os.startfile(str(target))
+            except OSError:
+                pass
+        return {"ok": True, "path": str(target), "filename": filename, "size_bytes": len(content)}
     if action == "type_text":
         text = str(params.get("text", ""))
         if not text:

@@ -521,7 +521,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "create_document",
-            "description": "Crea un documento Word (.docx) real y lo deja listo para descargar. Úsala siempre que el usuario pida un documento, informe, presentación, carta o resumen escrito: el archivo se crea de verdad y recibes su nombre y su enlace. NO uses type_in_office para esto.",
+            "description": "Crea un documento Word (.docx) real y lo guarda en el computador del usuario mediante el agente conectado, en su carpeta Documentos. Si el computador no está conectado, el archivo queda disponible para descargar. Úsala siempre que el usuario pida un documento, informe, presentación, carta o resumen escrito. NO uses type_in_office para esto.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -529,6 +529,8 @@ TOOLS = [
                     "subtitle": {"type": "string", "description": "Subtítulo opcional de la portada."},
                     "author": {"type": "string", "description": "Autor o destinatario opcional, bajo la portada."},
                     "cover": {"type": "boolean", "description": "Si es true (por defecto) añade portada y salto de página."},
+                    "save_to_computer": {"type": "boolean", "description": "Si es true (por defecto) intenta guardarlo en el computador del usuario. Solo ponlo en false si el usuario pide expresamente no guardarlo."},
+                    "open_after": {"type": "boolean", "description": "Si es true, abre el documento al guardarlo. Úsalo solo si el usuario pide verlo."},
                     "sections": {
                         "type": "array",
                         "description": "Secciones del documento, en orden.",

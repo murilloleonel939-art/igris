@@ -261,7 +261,7 @@
             href="#"
             class="doc-download"
             @click.prevent="downloadDocument(doc)"
-          >Descargar {{ doc.filename }}</a>
+          >{{ doc.saved_to_computer ? 'Ya está en tu equipo · descargar copia' : 'Descargar ' + doc.filename }}</a>
           <button
             v-if="msg.from === 'igris'"
             @click.stop="playIgrisResponse(msg.text, i)"

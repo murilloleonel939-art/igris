@@ -737,12 +737,15 @@ El permiso **Control del computador local** debe habilitarse para el usuario. Pa
 
 ### Documentos Word (`create_document`)
 
-La función **Documentos Word** (`can_use_documents`) viene activa de fábrica y no depende del equipo del usuario: el `.docx` se genera en el servidor con `python-docx` y se descarga desde el chat con el botón que aparece junto a la respuesta.
+La función **Documentos Word** (`can_use_documents`) viene activa de fábrica. El `.docx` se genera en el servidor con `python-docx` y **se guarda en el computador del usuario**, en su carpeta `Documentos`, a través del agente de Windows conectado (`save_document`). El servidor solo conserva una copia para poder descargarla mientras la sesión esté abierta.
 
-- El archivo se guarda en `documents/u<id>/` (`IGRIS_DOCUMENTS_DIR` cambia la ruta).
-- La descarga exige el token del usuario y solo sirve archivos de su propia carpeta.
-- Sin `python-docx` instalado, la herramienta devuelve un error explícito; nunca dice que el documento existe.
-- Si `documents/` no está en un volumen persistente, los archivos se pierden en cada despliegue y hay que volver a pedirlos.
+- Si el computador no está conectado, o el agente pertenece a otro usuario, la herramienta lo dice con el motivo real y ofrece la descarga. Nunca afirma que se guardó.
+- La ruta real (`C:\Users\...\Documents\archivo.docx`) se devuelve y el modelo la repite tal cual.
+- El agente solo acepta nombres terminados en `.docx`, sin caracteres de ruta, y reduce cualquier ruta a su nombre de archivo: no se puede escribir fuera de la carpeta.
+- `save_to_computer=false` omite el guardado local; `open_after=true` abre el documento al guardarlo.
+- Copia del servidor en `documents/u<id>/` (`IGRIS_DOCUMENTS_DIR` cambia la ruta). La descarga exige el token del usuario y solo sirve archivos de su propia carpeta.
+
+**El agente de Windows desplegado tiene que actualizarse** para conocer `save_document`. Con un agente antiguo, el documento se genera pero no llega al equipo: la respuesta dirá que no se pudo guardar. Hay que sustituir `windows_agent/agent.py` por la versión de este repositorio y reiniciar el agente.
 
 `type_in_office` sigue existiendo, pero solo pega texto en una ventana ya abierta: no crea ni guarda archivos. Para entregar un documento se usa siempre `create_document`.
 
