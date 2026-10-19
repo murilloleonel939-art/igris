@@ -24,6 +24,11 @@ jobs:
       - name: Build executable
         shell: pwsh
         run: .\windows_agent\build-exe.ps1
+      - name: Verify executable
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "windows_agent\dist\IgrisAgent.exe")) { throw "PyInstaller terminó sin crear windows_agent\\dist\\IgrisAgent.exe" }
+          Get-Item "windows_agent\dist\IgrisAgent.exe" | Format-List FullName,Length
       - name: Install Inno Setup
         shell: pwsh
         run: choco install innosetup --no-progress -y
