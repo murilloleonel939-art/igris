@@ -413,7 +413,10 @@ const playIrisResponse = async (text, index) => {
 
   let audioUrl = null
   try {
+    const ttsStarted = performance.now()
+    console.info('[TTS] request_start', { textChars: text.length })
     const response = await userApi.post('/api/user/tts', { text }, { responseType: 'arraybuffer' })
+    console.info('[TTS] response_received', { elapsedMs: Math.round(performance.now() - ttsStarted) })
     if (!response.data) return
 
     const audioBlob = new Blob([response.data], { type: 'audio/mpeg' })
@@ -465,7 +468,10 @@ const stopSpeaking = () => {
   setIgrisState('thinking')
 
   try {
+    const chatStarted = performance.now()
+    console.info('[CHAT] request_start', { textChars: msg.length })
     const response = await userApi.post('/api/user/chat', { text: msg, session_id: sessionId })
+    console.info('[CHAT] response_received', { elapsedMs: Math.round(performance.now() - chatStarted), replyChars: (response.data.reply || '').length })
     if (response.data.status === 'ok') {
       chatMessages.value.push({
         from: 'igris',

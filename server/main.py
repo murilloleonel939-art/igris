@@ -460,15 +460,23 @@ async def admin_voice_chat(
 @app.post("/api/chat", dependencies=[Depends(require_key)])
 async def http_chat(req: ChatRequest, authorization: Optional[str] = Header(default=None)):
     """Endpoint de chat simple - requiere X-Igris-Key"""
+    chat_started = time.perf_counter()
+    chat_id = secrets.token_hex(4)
+    logger.info("CHAT_START id=%s surface=admin text_chars=%d", chat_id, len(req.text or ""))
     try:
         # Se limpia el id y se prefija "web:"; sin id se usa una sesión única
         # (uso personal con una sola clave de acceso).
         sid = "".join(c for c in (req.session_id or "") if c.isalnum() or c in "-_")[:64] or "default"
         session = sessions.get(f"web:{sid}")
+        session.trace_id = chat_id
         _bind_admin_identity_from_bearer(session, authorization, req.text)
+        model_started = time.perf_counter()
         reply = await session.say(req.text, {"image_data": req.image_data, "image_mime": req.image_mime})
+        logger.info("CHAT_MODEL_END id=%s surface=admin elapsed_ms=%.1f reply_chars=%d", chat_id, (time.perf_counter() - model_started) * 1000, len(reply or ""))
+        logger.info("CHAT_END id=%s surface=admin total_ms=%.1f", chat_id, (time.perf_counter() - chat_started) * 1000)
         return {"status": "ok", "reply": reply}
     except Exception as e:
+        logger.exception("CHAT_ERROR id=%s surface=admin total_ms=%.1f", chat_id, (time.perf_counter() - chat_started) * 1000)
         return {"status": "error", "message": str(e)}
 
 

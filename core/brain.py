@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import time
 from typing import List, Optional, Tuple
 
 from openai import AsyncOpenAI
@@ -21,6 +22,11 @@ from core.tools.time_tools import now_context
 from core.memory import memories_block, update_conversation_summary
 
 logger = logging.getLogger(__name__)
+
+
+def _trace_id(session) -> str:
+    return str(getattr(session, "trace_id", "-"))
+
 
 DEFAULT_CHAIN = ["nemotron", "openai", "anthropic", "local"]
 
@@ -316,6 +322,8 @@ async def _complete_with_tools(client, model: str, messages: List[dict], session
     tools = tools_for(_capabilities_of(session))
 
     for round_no in range(MAX_TOOL_ROUNDS + 1):
+        call_started = time.perf_counter()
+        logger.info("MODEL_CALL_START id=%s provider=openai_compatible model=%s round=%d messages=%d tools=%d", _trace_id(session), model, round_no, len(work), len(tools) if round_no < MAX_TOOL_ROUNDS else 0)
         kwargs = dict(
             model=model,
             messages=work,
@@ -328,6 +336,7 @@ async def _complete_with_tools(client, model: str, messages: List[dict], session
 
         resp = await client.chat.completions.create(**kwargs)
         choice = resp.choices[0]
+        logger.info("MODEL_CALL_END id=%s provider=openai_compatible model=%s round=%d elapsed_ms=%.1f finish_reason=%s tool_calls=%d", _trace_id(session), model, round_no, (time.perf_counter() - call_started) * 1000, choice.finish_reason, len(choice.message.tool_calls or []))
         msg = choice.message
 
         if msg.tool_calls:
@@ -347,7 +356,10 @@ async def _complete_with_tools(client, model: str, messages: List[dict], session
                 ],
             })
             for tc in msg.tool_calls:
+                tool_started = time.perf_counter()
+                logger.info("TOOL_START name=%s round=%d", tc.function.name, round_no)
                 result = await run_tool(tc.function.name, tc.function.arguments, session)
+                logger.info("TOOL_END name=%s round=%d elapsed_ms=%.1f", tc.function.name, round_no, (time.perf_counter() - tool_started) * 1000)
                 content = _tool_content_for_openai(result)
                 if isinstance(content, list):
                     text_content = next((part.get("text", "") for part in content if part.get("type") == "text"), "")
@@ -473,7 +485,9 @@ async def _complete_with_anthropic(client, model: str, messages: List[dict], ses
     tools = _tools_for_anthropic(session)
 
     for round_no in range(MAX_TOOL_ROUNDS + 1):
+        call_started = time.perf_counter()
         system, conv = _anthropic_payload(work)
+        logger.info("MODEL_CALL_START id=%s provider=anthropic model=%s round=%d messages=%d tools=%d", _trace_id(session), model, round_no, len(conv), len(tools) if round_no < MAX_TOOL_ROUNDS else 0)
 
         kwargs = dict(
             model=model,
@@ -489,6 +503,7 @@ async def _complete_with_anthropic(client, model: str, messages: List[dict], ses
             kwargs["tools"] = tools
 
         resp = await client.messages.create(**kwargs)
+        logger.info("MODEL_CALL_END id=%s provider=anthropic model=%s round=%d elapsed_ms=%.1f", _trace_id(session), model, round_no, (time.perf_counter() - call_started) * 1000)
 
         text = "".join(
             b.text for b in resp.content if getattr(b, "type", None) == "text"
@@ -623,6 +638,7 @@ class BrainSession:
                 continue
             client, model = built
             logger.info(f"Intentando proveedor: {name} ({model})")
+            provider_started = time.perf_counter()
             try:
                 # Claude habla el protocolo nativo de Anthropic; el resto, el de OpenAI.
                 if name == "anthropic":
@@ -632,9 +648,11 @@ class BrainSession:
                 self.turns.append([user_msg] + new_msgs)
                 self.turns = self.turns[-MAX_HISTORY_TURNS:]
                 self.conversation_summary = update_conversation_summary(self.conversation_summary, self.turns)
+                logger.info("PROVIDER_END id=%s provider=%s elapsed_ms=%.1f status=ok", _trace_id(self), name, (time.perf_counter() - provider_started) * 1000)
                 return reply
             except Exception as e:
                 logger.error(f"Proveedor '{name}' falló: {e}")
+                logger.info("PROVIDER_END id=%s provider=%s elapsed_ms=%.1f status=error", _trace_id(self), name, (time.perf_counter() - provider_started) * 1000)
                 errors.append(f"{name}: {e}")
             finally:
                 await client.close()

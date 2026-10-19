@@ -1145,19 +1145,29 @@ async def user_chat(
 
     # El Brain se comparte con el resto del servidor, pero el historial queda
     # aislado por usuario gracias a la clave anterior.
+    chat_started = time.perf_counter()
+    chat_id = secrets.token_hex(4)
+    logger.info("CHAT_START id=%s user=%s text_chars=%d", chat_id, user.id, len(text))
     session = _sessions.get(_session_key(user.id, payload.session_id))
+    session.trace_id = chat_id
     # Identidad y permisos SIEMPRE frescos, y la instrucción de trato: si el admin
     # la cambió en caliente, el próximo mensaje ya refleja el nuevo trato.
+    prep_started = time.perf_counter()
     _bind_identity(session, user, db)
     remember_from_text(db, user.id, text)
     _bind_identity(session, user, db)
+    logger.info("CHAT_PREP_END id=%s elapsed_ms=%.1f", chat_id, (time.perf_counter() - prep_started) * 1000)
     try:
+        model_started = time.perf_counter()
         reply = await session.say(text, {"image_data": payload.image_data, "image_mime": payload.image_mime})
+        logger.info("CHAT_MODEL_END id=%s elapsed_ms=%.1f reply_chars=%d", chat_id, (time.perf_counter() - model_started) * 1000, len(reply or ""))
         # La interfaz muestra la ruta que confirmó el agente local.
         created = list(getattr(session, "documents", []) or [])
         session.documents = []
+        logger.info("CHAT_END id=%s total_ms=%.1f", chat_id, (time.perf_counter() - chat_started) * 1000)
         return {"status": "ok", "reply": reply, "documents": created}
     except Exception as e:
+        logger.exception("CHAT_ERROR id=%s total_ms=%.1f", chat_id, (time.perf_counter() - chat_started) * 1000)
         return {"status": "error", "message": str(e)}
 
 
