@@ -40,6 +40,21 @@ MAX_TOOL_ROUNDS = 4
 # Pateway admite controlar el razonamiento de GPT-6 Luna. "none" prioriza latencia.
 REASONING_EFFORT = os.environ.get("IGRIS_REASONING_EFFORT", "none").strip().lower()
 
+# Acciones deterministas cuyo mensaje real puede devolverse sin una segunda llamada.
+# Si devuelven error, resultado ambiguo o no tienen "message", vuelve a intervenir la IA.
+DIRECT_RESPONSE_TOOLS = {
+    "open_chrome",
+    "search_youtube",
+    "search_spotify",
+    "play_spotify",
+    "navigate_edge",
+    "launch_program",
+    "media_control",
+    "volume_control",
+    "focus_window",
+    "press_key",
+}
+
 # Turnos de conversación que se recuerdan (un turno = tu mensaje + herramientas + respuesta).
 MAX_HISTORY_TURNS = int(os.environ.get("IGRIS_HISTORY_TURNS", "6"))
 
@@ -362,11 +377,28 @@ async def _complete_with_tools(client, model: str, messages: List[dict], session
                     for tc in msg.tool_calls
                 ],
             })
+            direct_results = []
+            direct_response = True
             for tc in msg.tool_calls:
                 tool_started = time.perf_counter()
                 logger.info("TOOL_START name=%s round=%d", tc.function.name, round_no)
                 result = await run_tool(tc.function.name, tc.function.arguments, session)
                 logger.info("TOOL_END name=%s round=%d elapsed_ms=%.1f", tc.function.name, round_no, (time.perf_counter() - tool_started) * 1000)
+                try:
+                    parsed_result = json.loads(result)
+                except (TypeError, json.JSONDecodeError):
+                    parsed_result = None
+                if (
+                    len(msg.tool_calls) != 1
+                    or tc.function.name not in DIRECT_RESPONSE_TOOLS
+                    or not isinstance(parsed_result, dict)
+                    or parsed_result.get("ok") is not True
+                    or not isinstance(parsed_result.get("message"), str)
+                    or not parsed_result["message"].strip()
+                ):
+                    direct_response = False
+                else:
+                    direct_results.append(parsed_result["message"].strip())
                 content = _tool_content_for_openai(result)
                 if isinstance(content, list):
                     text_content = next((part.get("text", "") for part in content if part.get("type") == "text"), "")
@@ -374,6 +406,10 @@ async def _complete_with_tools(client, model: str, messages: List[dict], session
                     work.append({"role": "user", "content": content})
                 else:
                     work.append({"role": "tool", "tool_call_id": tc.id, "content": content})
+            if direct_response and direct_results:
+                reply = direct_results[0]
+                logger.info("DIRECT_TOOL_RESPONSE id=%s tool=%s", _trace_id(session), msg.tool_calls[0].function.name)
+                return reply, work[base_len:] + [{"role": "assistant", "content": reply}]
             continue
 
         reply = (msg.content or "").strip()

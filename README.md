@@ -297,6 +297,14 @@ Igris usa *tool calling*: el modelo decide cuándo llamar a una herramienta. Las
 | `capture_screen`, `list_windows`, `type_in_office` | Observa la pantalla, lista ventanas y pega texto en una ventana abierta | "Mira mi pantalla y explícame esto" |
 | `search_youtube`, `search_spotify`, `play_spotify` | Busca y reproduce en YouTube y Spotify | "Reproduce la canción X" |
 | `list_tuya_devices`, `control_tuya_device`, `get_tuya_device_status` | Descubre, controla y consulta dispositivos Tuya | "Enciende el aire acondicionado" |
+
+### Respuesta directa después de una herramienta
+
+El flujo normal de *tool calling* hace una segunda llamada al modelo después de ejecutar una herramienta: sirve para interpretar el resultado y redactar la respuesta final. Para reducir latencia, `core/brain.py` permite respuesta directa para acciones deterministas incluidas en `DIRECT_RESPONSE_TOOLS` (`open_chrome`, `search_youtube`, `search_spotify`, `play_spotify`, `navigate_edge`, `launch_program`, `media_control`, `volume_control`, `focus_window` y `press_key`).
+
+La respuesta directa solo ocurre cuando se cumplen todas estas condiciones: hay una única llamada de herramienta, la herramienta está en la lista permitida, devuelve JSON con `ok: true` y un campo `message` no vacío. En ese caso se devuelve ese mensaje real y se omite la segunda llamada al modelo. Si la herramienta falla, devuelve `ok: false`, un error, un resultado ambiguo o varias herramientas, el flujo vuelve al modelo para explicar el resultado. No se inventan mensajes ni se aplica esta optimización a consultas, correos, calendario, documentos o acciones con confirmación.
+
+Para medir la mejora, revisar los logs `TOOL_END`, `DIRECT_TOOL_RESPONSE`, `CHAT_MODEL_END` y `CHAT_END`. La diferencia entre una acción con y sin `DIRECT_TOOL_RESPONSE` representa aproximadamente la segunda llamada evitada.
 ### Crear eventos del calendario (confirmación obligatoria)
 La confirmación se hace cumplir **en el servidor**, no solo con el prompt:
 1. `propose_event` no crea nada: guarda una propuesta pendiente en la sesión y Igris te lee título, día, fecha y hora, y los choques con otros eventos.
