@@ -37,7 +37,7 @@ EMBEDDING_MODEL = os.environ.get(
     "IGRIS_MEMORY_EMBEDDING_MODEL", "text-embedding-3-small"
 )
 EMBEDDINGS_ENABLED = os.environ.get(
-    "IGRIS_MEMORY_EMBEDDINGS_ENABLED", "true"
+    "IGRIS_MEMORY_EMBEDDINGS_ENABLED", "false"
 ).lower() in {"1", "true", "yes", "on"}
 
 

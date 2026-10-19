@@ -37,6 +37,9 @@ MAX_TOKENS = int(os.environ.get("IGRIS_MAX_TOKENS", "2048"))
 # Máximo de rondas de herramientas por mensaje (evita bucles infinitos).
 MAX_TOOL_ROUNDS = 4
 
+# Pateway admite controlar el razonamiento de GPT-6 Luna. "none" prioriza latencia.
+REASONING_EFFORT = os.environ.get("IGRIS_REASONING_EFFORT", "none").strip().lower()
+
 # Turnos de conversación que se recuerdan (un turno = tu mensaje + herramientas + respuesta).
 MAX_HISTORY_TURNS = int(os.environ.get("IGRIS_HISTORY_TURNS", "6"))
 
@@ -330,6 +333,8 @@ async def _complete_with_tools(client, model: str, messages: List[dict], session
             temperature=0.7,
             max_tokens=MAX_TOKENS,
         )
+        if model == "gpt-6-luna" and REASONING_EFFORT in {"none", "low", "medium", "high", "xhigh", "max"}:
+            kwargs["reasoning_effort"] = REASONING_EFFORT
         # En la última ronda no se ofrecen herramientas: fuerza una respuesta final.
         if round_no < MAX_TOOL_ROUNDS and tools:
             kwargs["tools"] = tools
