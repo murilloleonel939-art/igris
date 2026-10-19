@@ -18,6 +18,7 @@ $build = Get-Content (Join-Path $PSScriptRoot "build-exe.ps1") -Raw
 foreach ($module in @("docx", "openpyxl", "pptx")) {
     if (-not $build.Contains("--collect-all $module")) { throw "El ejecutable no incluye recursos de $module" }
 }
+if (-not $build.Contains("--hidden-import websockets")) { throw "Falta soporte del cliente WebSocket" }
 foreach ($import in @("--hidden-import tkinter", "--hidden-import _tkinter")) {
     if (-not $build.Contains($import)) { throw "Falta soporte de configuración gráfica: $import" }
 }
