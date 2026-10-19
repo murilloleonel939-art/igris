@@ -51,7 +51,16 @@ end;
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   TokenValue: String;
+  ResultCode: Integer;
 begin
+  if CurStep = ssInstall then
+  begin
+    { El agente arranca con Windows y no tiene consola: al reinstalar puede
+      seguir vivo y ocupar el único puesto de conexión del servidor. Se cierra
+      antes de copiar los archivos nuevos. }
+    Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM IgrisAgent.exe',
+      '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  end;
   if CurStep = ssPostInstall then
   begin
     TokenValue := Trim(TokenPage.Values[0]);

@@ -13,6 +13,7 @@ import webbrowser
 import socket
 import sys
 import zlib
+from datetime import datetime
 from pathlib import Path
 from urllib.parse import quote, urlparse
 
@@ -665,11 +666,30 @@ def load_node_token() -> str:
         return ""
 
 
+def log_path() -> Path:
+    """Archivo de diagnóstico junto al token, para saber por qué no conecta."""
+    return Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "IGRIS" / "agent.log"
+
+
+def log(message: str) -> None:
+    """El ejecutable no tiene consola: el diagnóstico va a un archivo."""
+    try:
+        path = log_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(f"{stamp} {message}\n")
+    except OSError:
+        pass
+
+
 async def main() -> None:
     url = "wss://igris.zottagroup.com/api/device/ws"
     token = load_node_token()
     if not token:
+        log("ERROR: no se encontró NODE_TOKEN. Reinstala el agente y proporciona el token.")
         raise RuntimeError("No se encontró NODE_TOKEN. Reinstala el agente y proporciona el token.")
+    log(f"Iniciando agente. Token de {len(token)} caracteres, empieza por '{token[:6]}'.")
     while True:
         try:
             async with websockets.connect(url, additional_headers={"Authorization": f"Bearer {token}"}, ping_interval=20, ping_timeout=20) as ws:
@@ -683,6 +703,7 @@ async def main() -> None:
                 hello_result = json.loads(await ws.recv())
                 if hello_result.get("type") != "hello_ack":
                     raise RuntimeError("El servidor no aceptó el agente")
+                log("Conectado al servidor.")
                 DYNAMIC_PROGRAMS.clear()
                 DYNAMIC_PROGRAMS.update({item["name"].lower(): item["path"] for item in enumerate_programs()})
                 # El ejecutable se compila sin consola; no usar print aquí.
@@ -699,6 +720,7 @@ async def main() -> None:
                     await ws.send(json.dumps({"id": command.get("id"), "result": result}))
         except Exception as exc:
             # Reintenta en segundo plano sin abrir ni depender de una consola.
+            log(f"Sin conexión: {type(exc).__name__}: {exc}. Reintento en 5 s.")
             await asyncio.sleep(5)
 
 

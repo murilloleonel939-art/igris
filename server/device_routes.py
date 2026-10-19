@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import secrets
 from datetime import datetime, timezone
@@ -12,6 +13,8 @@ from pydantic import BaseModel, Field
 
 from core.database import AgentToken, SessionLocal, User
 from core.local_agent import hub
+
+logger = logging.getLogger(__name__)
 
 
 FIXED_PROGRAMS = [
@@ -196,11 +199,38 @@ async def device_ws(websocket: WebSocket) -> None:
                 db.commit()
     valid_legacy = bool(expected and secrets.compare_digest(token, expected))
     if agent_row is None and not valid_legacy:
+        # Uvicorn convierte cualquier close() previo a accept() en un 403, así
+        # que el motivo real solo queda aquí, en el log del servidor.
+        logger.warning(
+            "Agente rechazado: el token no existe, fue revocado o no empieza por 'igris_'. "
+            "Genera un token nuevo en Panel admin → Conexiones."
+        )
         await websocket.close(code=1008)
         return
+
+    # Una reinstalación deja vivo el proceso anterior hasta que Windows cierra
+    # la sesión, así que el equipo vuelve con el MISMO token. En ese caso la
+    # conexión nueva sustituye a la vieja en vez de ser rechazada: si no, el
+    # puesto queda ocupado por una conexión muerta y el agente reinstalado
+    # reintenta cada 5 s sin poder entrar nunca.
+    same_device = (
+        hub.connected
+        and agent_row is not None
+        and hub.owner_token_id == agent_row.id
+    )
+    if same_device:
+        logger.info("El equipo '%s' reconectó: se reemplaza la conexión anterior.", agent_row.device_name)
+        hub.disconnect()
+
     if hub.connected:
+        logger.warning(
+            "Agente rechazado: ya hay otro equipo conectado (%s). "
+            "Solo se admite uno a la vez.",
+            f"equipo {hub.owner_token_id}" if hub.owner_token_id else "token heredado NODE_TOKEN",
+        )
         await websocket.close(code=1013)
         return
+
     await websocket.accept()
     hub.owner_user_id = agent_row.user_id if agent_row is not None else None
     hub.owner_token_id = agent_row.id if agent_row is not None else None
