@@ -334,7 +334,9 @@ async def _complete_with_tools(client, model: str, messages: List[dict], session
             max_tokens=MAX_TOKENS,
         )
         if model == "gpt-6-luna" and REASONING_EFFORT in {"none", "low", "medium", "high", "xhigh", "max"}:
-            kwargs["reasoning_effort"] = REASONING_EFFORT
+            # El SDK instalado no expone reasoning_effort como argumento formal;
+            # extra_body lo incorpora al JSON enviado a Pateway.
+            kwargs.setdefault("extra_body", {})["reasoning_effort"] = REASONING_EFFORT
         # En la última ronda no se ofrecen herramientas: fuerza una respuesta final.
         if round_no < MAX_TOOL_ROUNDS and tools:
             kwargs["tools"] = tools
