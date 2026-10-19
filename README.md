@@ -38,6 +38,7 @@
 | 📝 Notas: anotar, listar, buscar y borrar | Funcional |
 | 🔑 **Permisos por usuario**: el admin activa o desactiva cada función (hora, clima, correo, enviar/eliminar correos, calendario, agendar/mover/eliminar eventos, notas, recordatorios) por cuenta | Funcional |
 | 🖥️ **Agentes Windows por equipo**: tokens individuales vinculados a usuario, regeneración, revocación y eliminación | Funcional |
+| 🎵 **Spotify por usuario**: conexión OAuth oficial, búsqueda de canciones/artistas/álbumes, playlists y reproducción | Funcional |
 | 🔗 **Google por usuario**: cada cuenta conecta su propio Gmail/Calendar desde `/u`; al terminar, el callback del backend devuelve al usuario a la pantalla de Conexiones | Funcional |
 | 🔌 **Pantalla de Conexiones propia** (`/conexiones`): página completa con el diseño del workspace, no un cuadro emergente sobre el chat. Reúne Google, voz y Telegram en tarjetas | Funcional |
 | 📲 **Telegram por usuario**: cada cuenta vincula su propio chat con un código de 6 dígitos | Funcional |
@@ -160,6 +161,9 @@ La memoria se inyecta en el prompt como contexto interno: ayuda a dar continuida
 | `GET` | `/api/user/google/start` | Devuelve la URL de consentimiento de Google |
 | `GET` | `/api/user/google/callback` | Recibe el código de Google y guarda el permiso del usuario |
 | `DELETE` | `/api/user/google` | Desconecta su cuenta de Google |
+| `GET` | `/api/user/spotify/start` | Inicia la autorización OAuth de Spotify |
+| `GET` | `/api/user/spotify/callback` | Recibe el permiso y guarda la conexión de Spotify |
+| `DELETE` | `/api/user/spotify` | Desconecta su cuenta de Spotify |
 | `POST` | `/api/user/telegram/code` | Genera el código de vinculación de Telegram |
 | `DELETE` | `/api/user/telegram` | Desvincula su Telegram |
 
@@ -171,6 +175,7 @@ Es una **pantalla completa**, no un cuadro emergente sobre el chat: se entra des
 | --- | --- |
 | Lo que puedes pedirme | Las funciones que el administrador te ha habilitado |
 | Tu cuenta de Google | Conectar, reconectar o desconectar tu Gmail/Calendar |
+| Tu cuenta de Spotify | Conectar, reconectar o desconectar Spotify mediante OAuth |
 | Reconocimiento de voz | Registrar la voz con muestras guiadas, o borrar las grabaciones |
 | Tu Telegram | Pedir el código de vinculación y desvincular |
 
@@ -589,6 +594,17 @@ El administrador puede editar el número receptor en **Conexiones → WhatsApp**
 
 Los usuarios pueden vincular **su propio** Telegram desde su página, en «Conexiones»: piden un código de 6 dígitos y lo envían al bot como `/start <código>`. A partir de ahí Igris los atiende como esa persona, con sus permisos y sus datos, y sus recordatorios le llegan a su chat. El código es de un solo uso y caduca a los 15 minutos. `ALLOWED_TELEGRAM_IDS` sigue funcionando igual para el dueño de la instalación, y solo esos chats pueden usar `/config`, `/setprovider` y `/setfallback`.
 
+### Spotify
+Cada usuario puede conectar su cuenta de Spotify desde **Conexiones** mediante OAuth oficial. La autorización se guarda cifrada y aislada por usuario. Igris puede buscar canciones, artistas y álbumes, listar playlists, crear playlists y añadir o quitar canciones con confirmación. También puede iniciar la reproducción en un dispositivo Spotify activo; esta función requiere Spotify Premium y un dispositivo disponible. Para abrir Spotify instalado, buscar música o reproducirla localmente en Windows se utiliza el agente Windows conectado.
+
+| Variable | Descripción |
+| --- | --- |
+| `SPOTIFY_CLIENT_ID` | Client ID de la aplicación creada en Spotify for Developers |
+| `SPOTIFY_CLIENT_SECRET` | Client secret de la aplicación; solo debe existir en el backend |
+| `SPOTIFY_REDIRECT_URI` | Opcional. Por defecto `https://igris.zottagroup.com/api/user/spotify/callback` |
+
+En Spotify for Developers añade exactamente el valor de `SPOTIFY_REDIRECT_URI` en **Redirect URIs**. El permiso de usuario debe estar habilitado en el panel de administración para que aparezca la conexión y las herramientas de Spotify.
+
 ### Google (correo y calendario)
 Para que los usuarios lean su correo y su calendario hace falta un proyecto en Google Cloud. **Cada usuario conecta su propia cuenta**; el token de cada uno se guarda cifrado en la base.
 
@@ -697,10 +713,12 @@ curl -i -X OPTIONS $API/api/chat \
 ### Recomendación: caché del modelo de Whisper
 La primera nota de voz tras un despliegue descarga el modelo de Whisper (unos 140 MB para `base`). Para no repetirlo en cada redeploy, monta un volumen persistente en `/root/.cache/whisper` (Coolify → backend → Storages).
 ### Agente local de Windows
-El agente de `windows_agent/` permite que IGRIS controle el computador encendido mediante una conexión WebSocket saliente: abrir Chrome, buscar en YouTube, controlar multimedia, ajustar volumen, consultar la pantalla, manejar ventanas, abrir programas, buscar archivos y buscar o reproducir música en Spotify. El agente no acepta comandos shell ni rutas arbitrarias.
+El agente de `windows_agent/` permite que IGRIS controle el computador encendido mediante una conexión WebSocket saliente: abrir Chrome, Edge, Spotify, Steam, Word, Excel y el Explorador; buscar en YouTube, controlar multimedia, ajustar volumen, consultar la pantalla, manejar ventanas, buscar y abrir archivos, y buscar o reproducir música en Spotify. La ejecución se realiza en segundo plano mediante el instalador `IgrisAgentSetup-v9.exe`, sin depender de una ventana de consola. El agente no acepta comandos shell ni rutas arbitrarias.
 
 #### Instalación recomendada
-Desde **Panel admin → Conexiones → Agente Windows**, crea un equipo y genera su token individual. Puedes vincularlo a un usuario concreto. Descarga el instalador versionado `igris-agent-install-v6.ps1` y ejecútalo con PowerShell. La URL está fijada en `wss://igris.zottagroup.com/api/device/ws`; el instalador solo solicita `NODE_TOKEN`.
+Desde **Panel admin → Conexiones → Agente Windows**, crea un equipo y genera su token individual. Puedes vincularlo a un usuario concreto. Descarga `IgrisAgentSetup-v9.exe` y ejecútalo en Windows. La URL está fijada en `wss://igris.zottagroup.com/api/device/ws`; el instalador guarda el `NODE_TOKEN` individual y configura el agente para iniciar con Windows.
+
+El instalador v9 corrige la ejecución sin consola y permite que Spotify tarde unos segundos en iniciar mientras Windows carga la aplicación. Si Spotify está autorizado en el panel, puedes pedir «abre Spotify», «busca música en Spotify» o «reproduce [canción]».
 
 Cada equipo aparece en el panel con su estado y permite regenerar el token, revocarlo o eliminarlo. El token se muestra únicamente al crearlo o regenerarlo; si se pierde, hay que regenerarlo. Un token vinculado a un usuario no puede usarse para controlar el agente desde otra cuenta.
 
