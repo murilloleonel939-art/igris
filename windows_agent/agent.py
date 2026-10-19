@@ -406,7 +406,7 @@ async def main() -> None:
                     raise RuntimeError("El servidor no aceptó el agente")
                 DYNAMIC_PROGRAMS.clear()
                 DYNAMIC_PROGRAMS.update({item["name"].lower(): item["path"] for item in enumerate_programs()})
-                print("Agente local IGRIS conectado")
+                # El ejecutable se compila sin consola; no usar print aquí.
                 while True:
                     raw = await ws.recv()
                     command = json.loads(raw)
@@ -419,7 +419,7 @@ async def main() -> None:
                     result = await asyncio.to_thread(execute, command)
                     await ws.send(json.dumps({"id": command.get("id"), "result": result}))
         except Exception as exc:
-            print(f"Agente desconectado: {exc}; reintentando")
+            # Reintenta en segundo plano sin abrir ni depender de una consola.
             await asyncio.sleep(5)
 
 
