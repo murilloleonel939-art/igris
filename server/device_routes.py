@@ -32,6 +32,11 @@ class AgentTokenCreate(BaseModel):
     user_id: int | None = None
 
 
+class AgentTokenLink(BaseModel):
+    """Vincula o desvincula un equipo ya instalado, sin cambiar su token."""
+    user_id: int | None = None
+
+
 def _token_digest(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
@@ -103,6 +108,41 @@ def list_agent_tokens(_: None = Depends(_require_catalog_access)) -> dict:
     with SessionLocal() as db:
         rows = db.query(AgentToken).order_by(AgentToken.created_at.desc()).all()
         return {"tokens": [{"id": row.id, "device_name": row.device_name, "user_id": row.user_id, "username": row.user.username if row.user else None, "revoked": row.revoked, "created_at": row.created_at.isoformat(), "last_seen_at": row.last_seen_at.isoformat() if row.last_seen_at else None} for row in rows]}
+
+
+@router.post("/api/device/tokens/{token_id}/link")
+def link_agent_token(token_id: int, payload: AgentTokenLink, _: None = Depends(_require_catalog_access)) -> dict:
+    """Vincula el equipo a un usuario para que pueda crear archivos en su PC.
+
+    create_document exige que el equipo pertenezca al usuario que lo pide; sin
+    esta vinculación el agente abre aplicaciones pero no puede guardar archivos.
+    """
+    if payload.user_id is not None:
+        with SessionLocal() as db:
+            user = db.get(User, payload.user_id)
+            if user is None or not user.is_active:
+                raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    with SessionLocal() as db:
+        row = db.get(AgentToken, token_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail="Equipo no encontrado")
+        row.user_id = payload.user_id
+        db.commit()
+        username = row.user.username if row.user else None
+        # Si ese equipo está conectado ahora mismo, el cambio se aplica sin
+        # reiniciar el agente ni regenerar el token.
+        if hub.owner_token_id == token_id:
+            hub.owner_user_id = payload.user_id
+        return {
+            "ok": True,
+            "device_name": row.device_name,
+            "user_id": row.user_id,
+            "username": username,
+            "message": (
+                f"Equipo vinculado a {username}." if payload.user_id is not None
+                else "Equipo desvinculado: solo podrá abrir aplicaciones."
+            ),
+        }
 
 
 @router.post("/api/device/tokens/{token_id}/regenerate")

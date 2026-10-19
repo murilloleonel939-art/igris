@@ -59,9 +59,20 @@ async def create_document(
             )
         }
     if hub.owner_user_id is None:
-        return {"error": "El agente conectado no está vinculado a un usuario. No se creó ningún documento."}
+        return {
+            "error": (
+                "El equipo conectado no está vinculado a ningún usuario, así que no se "
+                "creó el archivo. Abre Panel admin → Conexiones → Tokens por equipo y "
+                "elige tu usuario en la lista del equipo. No hace falta reinstalar nada."
+            )
+        }
     if hub.owner_user_id != user_id:
-        return {"error": "El agente conectado pertenece a otro usuario. No se creó ningún documento."}
+        return {
+            "error": (
+                "El equipo conectado está vinculado a otra cuenta, así que no se creó "
+                "el archivo. Vincula el equipo a tu usuario en Panel admin → Conexiones."
+            )
+        }
 
     clean_sections = documents.normalize_sections(sections)
     if not clean_sections:
