@@ -73,10 +73,11 @@ FEATURES: dict[str, Feature] = {
     "documents": Feature(
         key="documents",
         column="can_use_documents",
-        label="Documentos Word",
+        label="Documentos en el PC",
         description=(
-            "Crear presentaciones, informes, cartas y resúmenes en Word, listos "
-            "para descargar. No depende del computador del usuario."
+            "Crear archivos Word, Excel, PowerPoint, texto y CSV directamente en la "
+            "carpeta Documentos del computador del usuario mediante el agente Windows. "
+            "El servidor no guarda copias."
         ),
     ),
     "email": Feature(

@@ -117,13 +117,19 @@ El administrador decide **qué puede hacer cada usuario**, y ese permiso se comp
 | --- | --- | --- |
 | `time` | Hora y fecha | No |
 | `weather` | El tiempo | No |
+| `documents` | **Crear archivos** Word, Excel, PowerPoint, TXT y CSV en el PC | No |
 | `email` | Leer el correo | Sí |
+| `email_write` | **Enviar y eliminar** correos | Sí |
 | `calendar` | Leer el calendario | Sí |
-| `calendar_write` | **Crear** eventos en el calendario | Sí |
+| `calendar_write` | **Crear, mover y eliminar** eventos del calendario | Sí |
+| `youtube` | Administrar listas de YouTube | Sí |
+| `spotify` | Buscar música y manejar playlists con la cuenta de Spotify | No |
 | `notes` | Notas propias (anotar, buscar, borrar) | No |
 | `reminders` | Recordatorios con aviso por Telegram | No |
+| `tuya` | Dispositivos Smart Life/Tuya y controles infrarrojos | No |
+| `device` | Control del computador local (agente Windows) | No |
 
-`time` y `weather` vienen activas de fábrica; el resto hay que abrirlas desde `/panel/usuarios`. El catálogo vive en `core/capabilities.py`, y el panel se construye a partir de él: añadir una función ahí la hace aparecer sola en la interfaz.
+`time`, `weather` y `documents` vienen activas de fábrica; el resto hay que abrirlas desde `/panel/usuarios`. El catálogo vive en `core/capabilities.py`, y el panel se construye a partir de él: añadir una función ahí la hace aparecer sola en la interfaz.
 
 **Aislamiento de datos.** Cada nota, recordatorio y sesión lleva su `user_id`, que el servidor deriva **solo** de la identidad autenticada (el token de la web o el chat de Telegram vinculado), nunca de lo que envíe el cliente. Un usuario no puede leer, borrar ni alcanzar los datos de otro. `calendar_write` es un permiso aparte a propósito: quien puede leer su agenda no tiene por qué poder escribir en ella.
 
@@ -286,6 +292,11 @@ Igris usa *tool calling*: el modelo decide cuándo llamar a una herramienta. Las
 | `add_note` | Guarda una nota | "Anota que la clave del wifi de la oficina es X" |
 | `list_notes`, `search_notes` | Lista o busca notas (sin importar tildes) | "¿Qué anoté sobre el wifi?" |
 | `delete_note` | Borra UNA nota por id | "Borra la nota del wifi" |
+| `create_document` | Crea Word, Excel, PowerPoint, TXT o CSV en la carpeta Documentos del PC | "Hazme un informe en Excel con las ventas" |
+| `launch_program`, `search_files`, `open_file` | Abre programas y archivos del PC | "Abre Word", "Busca el archivo del contrato" |
+| `capture_screen`, `list_windows`, `type_in_office` | Observa la pantalla, lista ventanas y pega texto en una ventana abierta | "Mira mi pantalla y explícame esto" |
+| `search_youtube`, `search_spotify`, `play_spotify` | Busca y reproduce en YouTube y Spotify | "Reproduce la canción X" |
+| `list_tuya_devices`, `control_tuya_device`, `get_tuya_device_status` | Descubre, controla y consulta dispositivos Tuya | "Enciende el aire acondicionado" |
 ### Crear eventos del calendario (confirmación obligatoria)
 La confirmación se hace cumplir **en el servidor**, no solo con el prompt:
 1. `propose_event` no crea nada: guarda una propuesta pendiente en la sesión y Igris te lee título, día, fecha y hora, y los choques con otros eventos.
@@ -386,14 +397,26 @@ igris/
 │   ├── telegram_links.py      # Vinculación Telegram↔cuenta con código de un solo uso y 15 min de validez
 │   ├── settings_manager.py    # core/settings.json (configuración de IA persistente, con limpieza de proveedores inválidos)
 │   ├── session_store.py       # Sesiones de conversación en memoria (web:<id>, tg:<id>, user:<id>:<conv>)
-│   ├── database.py            # SQLAlchemy: modelos (User, Reminder, Note, GoogleAccount, TelegramLink) e init_db con migraciones
+│   ├── database.py            # SQLAlchemy: modelos (User, Reminder, Note, GoogleAccount, TelegramLink, Device) e init_db con migraciones
 │   ├── scheduler.py           # Planificador de avisos de recordatorios (tarea en segundo plano)
+│   ├── documents.py           # Normalización de secciones y nombres de archivo para create_document
+│   ├── local_agent.py         # Cola de órdenes y hub WebSocket del agente Windows (una conexión por usuario)
+│   ├── memory.py              # Memoria estructurada: estado mental, recuerdos personales y operativos
+│   ├── voice.py               # Perfil de voz por usuario y verificación de hablante
+│   ├── whatsapp.py            # Integración con WhatsApp Business
 │   ├── stt.py, tts.py         # Voz
 │   ├── settings.json
 │   └── tools/                 # Herramientas de Igris (ver lista abajo)
 ├── server/
 │   ├── main.py                # FastAPI: chat, configuración, TTS, acceso con clave, webhook de Telegram y planificador
-│   └── user_routes.py         # Área de usuarios (/api/user/*) y panel de administración (/api/admin/*)
+│   ├── user_routes.py         # Área de usuarios (/api/user/*) y panel de administración (/api/admin/*)
+│   └── device_routes.py       # WebSocket del agente Windows (/api/device/ws) y gestión de equipos
+├── windows_agent/             # Agente para Windows (.exe): control del PC y creación local de archivos
+│   ├── agent.py               # Conexión WebSocket, ejecutor de acciones y generación de archivos
+│   ├── build-exe.ps1          # Compila IgrisAgent.exe con PyInstaller
+│   ├── igris-agent.iss        # Script de Inno Setup para el instalador
+│   ├── validate-workflow.ps1  # Comprueba en CI que el empaquetado incluye lo necesario
+│   └── requirements.txt       # python-docx, openpyxl, python-pptx y dependencias del agente
 ├── node/              # cliente_voice.py, cliente_text.py, cliente_speak.py (Raspberry Pi - opcional)
 ├── scripts/
 │   ├── run_tests.sh           # Ejecuta las cuatro suites en el orden correcto (ver Pruebas)
@@ -454,6 +477,11 @@ igris/
 | `reminders.py` | `create_reminder`, `list_reminders`, `delete_reminder` |
 | `notes.py` | `add_note`, `list_notes`, `search_notes`, `delete_note` |
 | `_common.py` | Utilidades de recordatorios y notas: conversión de fechas (UTC ↔ Colombia), normalización de texto y protección del borrado |
+| `documents_tool.py` | `create_document`: envía el contenido estructurado al agente Windows y devuelve la ruta creada |
+| `device.py` | Herramientas del computador local: abrir programas, buscar y abrir archivos, ventanas, captura de pantalla, `type_in_office` |
+| `spotify.py` | `search_spotify_api`, playlists y reproducción mediante la cuenta de Spotify |
+| `youtube.py` | `list_youtube_playlists`, crear y modificar listas, añadir y quitar videos |
+| `tuya.py` | `list_tuya_devices`, `control_tuya_device`, `get_tuya_device_status` |
 Para añadir una herramienta nueva: crea su función `async` (devuelve un dict en español), agrega su esquema a `TOOLS`, regístrala en `_HANDLERS` y, si necesita la sesión, añádela a `_SESSION_TOOLS` (recibe `_session`; el modelo nunca puede inyectarlo).
 ### Cómo funciona el avatar
 - `useIgris.js` expone un estado reactivo compartido: `igris.state` (`idle`, `listening`, `thinking`, `speaking`) e `igris.level` (volumen de 0 a 1; `-1` significa "simulado").
@@ -721,7 +749,7 @@ El agente de `windows_agent/` permite que IGRIS controle el computador encendido
 #### Instalación recomendada
 Desde **Panel admin → Conexiones → Agente Windows**, crea un equipo y genera su token individual. Puedes vincularlo a un usuario concreto. Descarga `IgrisAgentSetup-v10.exe` y ejecútalo en Windows. La URL está fijada en `wss://igris.zottagroup.com/api/device/ws`; el instalador guarda el `NODE_TOKEN` individual y configura el agente para iniciar con Windows.
 
-El instalador v10 crea los documentos Word en la carpeta Documentos del PC. El texto se envía al agente conectado y el archivo se construye allí; IGRIS no conserva una copia. Si el equipo está desconectado, la herramienta informa que no se creó el documento. Si Spotify está autorizado en el panel, también puedes pedir «abre Spotify», «busca música en Spotify» o «reproduce [canción]».
+El instalador v10 crea archivos Word (`.docx`), Excel (`.xlsx`), PowerPoint (`.pptx`), texto (`.txt`) y CSV (`.csv`) en la carpeta Documentos del PC, incluyendo cuando Windows la redirige a OneDrive. El texto se envía al agente conectado y el archivo se construye allí; IGRIS no conserva una copia. Si el equipo está desconectado, la herramienta informa que no se creó el archivo. Si Spotify está autorizado en el panel, también puedes pedir «abre Spotify», «busca música en Spotify» o «reproduce [canción]».
 
 Cada equipo aparece en el panel con su estado y permite regenerar el token, revocarlo o eliminarlo. El token se muestra únicamente al crearlo o regenerarlo; si se pierde, hay que regenerarlo. Un token vinculado a un usuario no puede usarse para controlar el agente desde otra cuenta.
 
@@ -733,18 +761,26 @@ py -m pip install -r windows_agent/requirements.txt
 py windows_agent/agent.py
 ```
 
-El permiso **Control del computador local** debe habilitarse para el usuario. Para conservar los equipos y tokens después de redeploy, el backend debe usar PostgreSQL persistente mediante `DATABASE_URL`. La compilación de Windows instala las dependencias de `windows_agent/requirements.txt` y empaqueta `python-docx` dentro del ejecutable; no requiere Python en el PC del usuario.
+El permiso **Control del computador local** debe habilitarse para el usuario. Para conservar los equipos y tokens después de redeploy, el backend debe usar PostgreSQL persistente mediante `DATABASE_URL`. La compilación de Windows instala las dependencias de `windows_agent/requirements.txt` y empaqueta `python-docx`, `openpyxl`, `python-pptx`, `lxml` y `XlsxWriter` dentro del ejecutable; no requiere Python en el PC del usuario.
 
-### Documentos Word (`create_document`)
+### Crear archivos en el PC (`create_document`)
 
-La función **Documentos Word** (`can_use_documents`) viene activa de fábrica. El `.docx` se crea íntegramente en el PC mediante el agente Windows conectado. El servidor envía el título y el texto estructurado; no construye, guarda ni ofrece una copia del archivo.
+La función **Documentos** (`can_use_documents`) viene activa de fábrica. El archivo se crea íntegramente en el PC mediante el agente Windows conectado. El servidor envía el título y el texto estructurado; no construye, guarda ni ofrece una copia.
 
-- El agente guarda el documento en la carpeta `Documentos` del usuario y devuelve la ruta real (`C:\Users\...\Documents\archivo.docx`).
+| Formato | Para qué | Librería |
+| --- | --- | --- |
+| `docx` | Documentos de Word con portada, encabezados y viñetas | `python-docx` |
+| `xlsx` | Hojas de cálculo Excel con una columna de contenido por sección | `openpyxl` |
+| `pptx` | Presentaciones; una diapositiva de título y una por sección | `python-pptx` |
+| `txt` | Texto plano con el mismo contenido | — |
+| `csv` | Una sola columna, apta para abrir en Excel | — |
+
+- El agente guarda el archivo en la carpeta `Documentos` del usuario —resuelta con `SHGetKnownFolderPath`, así que respeta la redirección a OneDrive— y devuelve la ruta real (`C:\Users\...\Documents\archivo.docx`).
 - Si el computador no está conectado, o el agente pertenece a otro usuario, no se crea ningún archivo y la herramienta informa el motivo.
-- El agente valida el nombre `.docx` y lo guarda dentro de `Documentos`; `open_after=true` abre el archivo después de guardarlo.
+- El agente valida la extensión contra el formato pedido, rechaza rutas y nombres con caracteres no permitidos, y nunca escribe fuera de `Documentos`. `open_after=true` abre el archivo después de guardarlo.
 - El ejecutable distribuido debe ser `IgrisAgentSetup-v10.exe`. Instala esa versión desde **Panel admin → Conexiones → Agente Windows** para usar la creación local.
 
-`type_in_office` sigue existiendo, pero solo pega texto en una ventana ya abierta: no crea ni guarda archivos. Para entregar un documento se usa siempre `create_document`.
+`type_in_office` sigue existiendo, pero solo pega texto en una ventana ya abierta: no crea ni guarda archivos. Para entregar un archivo se usa siempre `create_document`.
 
 ### PyTorch solo CPU
 El servidor no tiene GPU, así que el `Dockerfile` instala `torch==2.5.1` y `torchaudio==2.5.1` desde el índice de CPU de PyTorch **antes** de `requirements.txt`. `requirements.txt` no vuelve a declarar esos paquetes: si pip los resolviera desde PyPI podría descargar builds CUDA y Triton, ocupando varios GB y provocando `no space left on device` durante el export de la imagen. Así `openai-whisper` y NVIDIA NeMo encuentran PyTorch CPU ya instalado. Para comprobarlo dentro del contenedor del backend: `pip list | grep -i -E "^(torch|torchaudio|nvidia|triton)"` debe mostrar Torch/Torchaudio CPU y no paquetes CUDA ni Triton.
