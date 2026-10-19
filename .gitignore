@@ -28,6 +28,9 @@ venv/
 *.sqlite
 *.sqlite3
 
+# Documentos generados por los usuarios (create_document)
+documents/
+
 # Sesiones locales
 *.ses
 

@@ -735,6 +735,17 @@ py windows_agent/agent.py
 
 El permiso **Control del computador local** debe habilitarse para el usuario. Para conservar los equipos y tokens después de redeploy, el backend debe usar PostgreSQL persistente mediante `DATABASE_URL`.
 
+### Documentos Word (`create_document`)
+
+La función **Documentos Word** (`can_use_documents`) viene activa de fábrica y no depende del equipo del usuario: el `.docx` se genera en el servidor con `python-docx` y se descarga desde el chat con el botón que aparece junto a la respuesta.
+
+- El archivo se guarda en `documents/u<id>/` (`IGRIS_DOCUMENTS_DIR` cambia la ruta).
+- La descarga exige el token del usuario y solo sirve archivos de su propia carpeta.
+- Sin `python-docx` instalado, la herramienta devuelve un error explícito; nunca dice que el documento existe.
+- Si `documents/` no está en un volumen persistente, los archivos se pierden en cada despliegue y hay que volver a pedirlos.
+
+`type_in_office` sigue existiendo, pero solo pega texto en una ventana ya abierta: no crea ni guarda archivos. Para entregar un documento se usa siempre `create_document`.
+
 ### PyTorch solo CPU
 El servidor no tiene GPU, así que el `Dockerfile` instala `torch==2.5.1` y `torchaudio==2.5.1` desde el índice de CPU de PyTorch **antes** de `requirements.txt`. `requirements.txt` no vuelve a declarar esos paquetes: si pip los resolviera desde PyPI podría descargar builds CUDA y Triton, ocupando varios GB y provocando `no space left on device` durante el export de la imagen. Así `openai-whisper` y NVIDIA NeMo encuentran PyTorch CPU ya instalado. Para comprobarlo dentro del contenedor del backend: `pip list | grep -i -E "^(torch|torchaudio|nvidia|triton)"` debe mostrar Torch/Torchaudio CPU y no paquetes CUDA ni Triton.
 ---

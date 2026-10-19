@@ -255,6 +255,13 @@
         <div v-for="(msg, i) in chatMessages" :key="i" class="msg">
           <span :class="['from', msg.from === 'user' ? 'user' : 'igris']">{{ msg.from }}:</span>
           <span class="text">{{ msg.text }}</span>
+          <a
+            v-for="doc in (msg.documents || [])"
+            :key="doc.filename"
+            href="#"
+            class="doc-download"
+            @click.prevent="downloadDocument(doc)"
+          >Descargar {{ doc.filename }}</a>
           <button
             v-if="msg.from === 'igris'"
             @click.stop="playIgrisResponse(msg.text, i)"
@@ -449,8 +456,32 @@ const stopSpeaking = () => {
   }
 }
 
-/* ───────────── Enviar mensaje al backend ───────────── */
-const sendMessage = async (raw) => {
+/* ───────────── Descarga de documentos ───────────── */
+// La ruta del documento exige el token del usuario, así que no sirve un <a href>
+// directo: se pide con el cliente autenticado y se descarga el blob.
+const downloadDocument = async (doc) => {
+  if (!doc?.url) return
+  try {
+    const response = await userApi.get(doc.url, { responseType: 'blob' })
+    const blobUrl = URL.createObjectURL(response.data)
+    const link = document.createElement('a')
+    link.href = blobUrl
+    link.download = doc.filename || 'documento.docx'
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(blobUrl)
+  } catch (err) {
+    console.error('No se pudo descargar el documento:', err)
+    chatMessages.value.push({
+      from: 'igris',
+      text: 'No pude descargar el documento. Comprueba que la sesión siga abierta.',
+    })
+    scrollToBottom()
+  }
+}
+
+/* ───────────── Enviar mensaje al backend ───────────── */const sendMessage = async (raw) => {
   const msg = (raw || '').trim()
   if (!msg || isBusy.value) return
 
@@ -463,7 +494,11 @@ const sendMessage = async (raw) => {
   try {
     const response = await userApi.post('/api/user/chat', { text: msg, session_id: sessionId })
     if (response.data.status === 'ok') {
-      chatMessages.value.push({ from: 'igris', text: response.data.reply })
+      chatMessages.value.push({
+        from: 'igris',
+        text: response.data.reply,
+        documents: response.data.documents || [],
+      })
       scrollToBottom()
       await playIrisResponse(response.data.reply, chatMessages.value.length - 1)
     } else {
@@ -1455,6 +1490,23 @@ onBeforeUnmount(() => {
 }
 .text {
   margin-left: 8px;
+}
+/* Enlace de descarga del documento Word generado por Igris. */
+.doc-download {
+  flex: none;
+  align-self: center;
+  margin-left: 10px;
+  padding: 4px 10px;
+  border: 1px solid #2563eb66;
+  border-radius: 6px;
+  background: #2563eb22;
+  color: #bfdbfe;
+  font-size: .82em;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.doc-download:hover {
+  background: #2563eb44;
 }
 .speaker {
   flex: none;

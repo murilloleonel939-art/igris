@@ -13,7 +13,7 @@ import logging
 
 from core.capabilities import denial_message
 from core.local_agent import reset_agent_user, set_agent_user
-from core.tools import calendar_write, device, gcalendar, gmail, notes, reminders, spotify, time_tools, tuya, weather, youtube
+from core.tools import calendar_write, device, documents_tool, gcalendar, gmail, notes, reminders, spotify, time_tools, tuya, weather, youtube
 
 logger = logging.getLogger(__name__)
 
@@ -513,8 +513,38 @@ TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "type_in_office", "description": "Escribe texto dictado por el usuario en Word, Excel o el bloc de notas que esté activo.",
+            "name": "type_in_office", "description": "Pega texto dictado en la ventana de Word, Excel o el bloc de notas que YA esté abierta y activa. No crea archivos ni los guarda: para entregar un documento, usa create_document.",
             "parameters": {"type": "object", "properties": {"text": {"type": "string"}, "application": {"type": "string", "enum": ["word", "excel", "notepad", ""]}}, "required": ["text"]},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_document",
+            "description": "Crea un documento Word (.docx) real y lo deja listo para descargar. Úsala siempre que el usuario pida un documento, informe, presentación, carta o resumen escrito: el archivo se crea de verdad y recibes su nombre y su enlace. NO uses type_in_office para esto.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string", "description": "Título del documento. Aparece en la portada y da nombre al archivo."},
+                    "subtitle": {"type": "string", "description": "Subtítulo opcional de la portada."},
+                    "author": {"type": "string", "description": "Autor o destinatario opcional, bajo la portada."},
+                    "cover": {"type": "boolean", "description": "Si es true (por defecto) añade portada y salto de página."},
+                    "sections": {
+                        "type": "array",
+                        "description": "Secciones del documento, en orden.",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "heading": {"type": "string", "description": "Título de la sección. Vacío si es texto continuo."},
+                                "body": {"type": "array", "items": {"type": "string"}, "description": "Párrafos de la sección. Un elemento por párrafo."},
+                                "bullets": {"type": "boolean", "description": "Si es true, los párrafos salen como viñetas."},
+                            },
+                            "required": ["body"],
+                        },
+                    },
+                },
+                "required": ["title", "sections"],
+            },
         },
     },
     {
@@ -715,6 +745,7 @@ _HANDLERS = {
     "search_files": device.search_files,
     "open_file": device.open_file,
     "type_in_office": device.type_in_office,
+    "create_document": documents_tool.create_document,
     "search_spotify": device.search_spotify,
     "play_spotify": device.play_spotify,
     "search_spotify_api": spotify.search_spotify_api,
@@ -745,6 +776,7 @@ _SESSION_TOOLS = {
     "list_youtube_playlists", "create_youtube_playlist", "add_video_to_youtube_playlist", "remove_video_from_youtube_playlist",
     "search_spotify_api", "list_spotify_playlists", "create_spotify_playlist", "add_tracks_to_spotify_playlist", "remove_tracks_from_spotify_playlist", "start_spotify_playback",
     "list_tuya_devices", "get_tuya_device_status", "control_tuya_device",
+    "create_document",
 }
 
 

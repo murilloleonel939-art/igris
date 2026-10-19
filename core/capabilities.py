@@ -29,6 +29,7 @@ from typing import FrozenSet, Optional
 FEATURE_ORDER = (
     "time",
     "weather",
+    "documents",
     "email",
     "email_write",
     "calendar",
@@ -44,7 +45,7 @@ FEATURE_ORDER = (
 # Funciones que están activas de fábrica. Son inofensivas: no tocan datos de
 # nadie. Todo lo que lee datos personales (correo, calendario) o escribe algo
 # (notas, recordatorios) lo tiene que abrir el administrador a mano.
-DEFAULT_FEATURES: FrozenSet[str] = frozenset({"time", "weather"})
+DEFAULT_FEATURES: FrozenSet[str] = frozenset({"time", "weather", "documents"})
 
 
 @dataclass(frozen=True)
@@ -68,6 +69,15 @@ FEATURES: dict[str, Feature] = {
         column="can_use_weather",
         label="Clima",
         description="Consultar el clima y el pronóstico de una ciudad.",
+    ),
+    "documents": Feature(
+        key="documents",
+        column="can_use_documents",
+        label="Documentos Word",
+        description=(
+            "Crear presentaciones, informes, cartas y resúmenes en Word, listos "
+            "para descargar. No depende del computador del usuario."
+        ),
     ),
     "email": Feature(
         key="email",
@@ -147,6 +157,7 @@ FEATURES: dict[str, Feature] = {
 TOOL_FEATURES: dict[str, str] = {
     "get_time": "time",
     "get_weather": "weather",
+    "create_document": "documents",
     "list_emails": "email",
     "read_email": "email",
     "propose_email": "email_write",

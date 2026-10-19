@@ -134,6 +134,7 @@ class User(Base):
     # administrador desde el panel.
     can_use_time = Column(Boolean, default=True, nullable=False)
     can_use_weather = Column(Boolean, default=True, nullable=False)
+    can_use_documents = Column(Boolean, default=True, nullable=False)
     can_use_email = Column(Boolean, default=False, nullable=False)
     can_use_email_write = Column(Boolean, default=False, nullable=False)
     can_use_calendar = Column(Boolean, default=False, nullable=False)
@@ -496,6 +497,7 @@ def _run_migrations(engine) -> None:
         permission_defaults = (
             ("can_use_time", "TRUE"),
             ("can_use_weather", "TRUE"),
+            ("can_use_documents", "TRUE"),
             ("can_use_email", "FALSE"),
             ("can_use_email_write", "FALSE"),
             ("can_use_calendar", "FALSE"),
