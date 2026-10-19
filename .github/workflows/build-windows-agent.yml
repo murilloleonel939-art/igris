@@ -29,7 +29,11 @@ jobs:
         run: choco install innosetup --no-progress -y
       - name: Build installer
         shell: pwsh
-        run: '& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" windows_agent\igris-agent.iss'
+        run: |
+          $iscc = Get-ChildItem "C:\Program Files (x86)\Inno Setup 6\ISCC.exe", "C:\Program Files\Inno Setup 6\ISCC.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $iscc) { throw "No se encontró ISCC.exe después de instalar Inno Setup" }
+          & $iscc.FullName "windows_agent\igris-agent.iss"
+          if ($LASTEXITCODE -ne 0) { throw "ISCC.exe terminó con código $LASTEXITCODE" }
       - name: Validate installer naming
         shell: pwsh
         run: .\windows_agent\validate-workflow.ps1
