@@ -28,9 +28,9 @@ foreach ($dependency in @("python-docx", "openpyxl", "python-pptx")) {
 $iss = Get-Content (Join-Path $PSScriptRoot "igris-agent.iss") -Raw
 foreach ($directive in @(
     'OutputBaseFilename=IgrisAgentSetup-v11',
-    'Name: "{group}\\IGRIS Windows Agent"',
-    'Name: "{group}\\Configurar IGRIS"',
-    'Name: "{group}\\Desinstalar IGRIS Windows Agent"',
+    'Name: "{group}\IGRIS Windows Agent"',
+    'Name: "{group}\Configurar IGRIS"',
+    'Name: "{group}\Desinstalar IGRIS Windows Agent"',
     'CreateUninstallRegKey=yes',
     'UninstallDisplayName=IGRIS Windows Agent'
 )) {
