@@ -493,17 +493,17 @@ def execute(command: dict) -> dict:
                 if isinstance(body, str):
                     body = body.splitlines()
                 rows.extend(str(line).strip()[:6000] for line in body[:80] if str(line).strip())
-            separator = "," if file_format == "csv" else "\n"
             if file_format == "csv":
                 import csv
                 import io
 
                 buffer = io.StringIO(newline="")
                 writer = csv.writer(buffer)
-                writer.writerows([[line] for line in rows])
+                # Una sola columna: la fila separadora vacía debe quedar vacía, no como "".
+                writer.writerows([[line] if line else [] for line in rows])
                 text_content = buffer.getvalue()
             else:
-                text_content = separator.join(rows) + "\n"
+                text_content = "\n".join(rows) + "\n"
 
         # Windows puede redirigir Documentos a OneDrive u otra ubicación; usa
         # la ruta conocida del shell antes de recurrir a USERPROFILE\Documents.

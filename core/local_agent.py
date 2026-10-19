@@ -1,4 +1,4 @@
-"""Cola de órdenes para un agente local conectado por sondeo HTTPS."""
+"""Cola de órdenes para el agente local Windows conectado por WebSocket."""
 from __future__ import annotations
 
 import asyncio

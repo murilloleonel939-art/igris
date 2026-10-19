@@ -1,7 +1,8 @@
-"""Herramienta para crear documentos directamente en el computador del usuario.
+"""Herramienta para crear archivos directamente en el computador del usuario.
 
-El backend no genera ni guarda el .docx. Solo envía el contenido estructurado al
-agente Windows conectado; el ejecutable crea el archivo en la carpeta Documentos.
+El backend no genera ni guarda el archivo. Solo envía el contenido estructurado al
+agente Windows conectado; el ejecutable crea el .docx, .xlsx, .pptx, .txt o .csv en
+la carpeta Documentos del PC.
 """
 from __future__ import annotations
 
