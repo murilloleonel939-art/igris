@@ -51,14 +51,10 @@ async def create_document(
         return {"error": "Los datos de portada superan el tamaño permitido."}
     if not save_to_computer:
         return {"error": "La creación de documentos exige guardarlo en el computador."}
-    if not hub.connected:
-        return {
-            "error": (
-                "El computador del usuario no está conectado. No se creó ni se guardó "
-                "ningún documento. Inicia el IGRIS Windows Agent y vuelve a intentarlo."
-            )
-        }
-    if hub.owner_user_id is None:
+    agent, reason = hub.resolve(user_id)
+    if agent is None:
+        return {"error": f"No se creó el archivo. {reason}"}
+    if agent.user_id is None:
         return {
             "error": (
                 "El equipo conectado no está vinculado a ningún usuario, así que no se "
@@ -66,11 +62,11 @@ async def create_document(
                 "elige tu usuario en la lista del equipo. No hace falta reinstalar nada."
             )
         }
-    if hub.owner_user_id != user_id:
+    if agent.user_id != user_id:
         return {
             "error": (
-                "El equipo conectado está vinculado a otra cuenta, así que no se creó "
-                "el archivo. Vincula el equipo a tu usuario en Panel admin → Conexiones."
+                "Tu equipo no está conectado, y el que lo está pertenece a otra cuenta. "
+                "Vincula el equipo a tu usuario en Panel admin → Conexiones."
             )
         }
 

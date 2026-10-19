@@ -753,6 +753,8 @@ El instalador v10 crea archivos Word (`.docx`), Excel (`.xlsx`), PowerPoint (`.p
 
 Cada equipo aparece en el panel con su estado y permite regenerar el token, revocarlo o eliminarlo. El token se muestra únicamente al crearlo o regenerarlo; si se pierde, hay que regenerarlo. Un token vinculado a un usuario no puede usarse para controlar el agente desde otra cuenta.
 
+Se pueden tener **varios equipos conectados a la vez**, cada uno con su token y su propia cola de órdenes: una orden para el PC de un usuario nunca puede ejecutarse en el PC de otro. Cada equipo tiene su propio canal con el servidor, aunque compartan las aplicaciones autorizadas, que son globales. Un equipo sin usuario vinculado solo puede abrir aplicaciones; para crear archivos hay que asignarle un dueño en la lista del panel.
+
 #### Instalación manual
 ```powershell
 $env:IGRIS_DEVICE_URL = "wss://igris.zottagroup.com/api/device/ws"

@@ -87,8 +87,7 @@ async def update_device_program_access(payload: ProgramAccessUpdate) -> dict:
 async def sync_device_programs() -> dict:
     if not hub.connected:
         raise HTTPException(status_code=409, detail="El agente Windows no está conectado")
-    result = await hub.enqueue("sync_programs")
-    return result
+    return await hub.sync_programs()
 
 
 @router.post("/api/device/tokens")
@@ -108,9 +107,10 @@ def create_agent_token(payload: AgentTokenCreate, _: None = Depends(_require_cat
 
 @router.get("/api/device/tokens")
 def list_agent_tokens(_: None = Depends(_require_catalog_access)) -> dict:
+    online = {agent.token_id for agent in hub.live_agents()}
     with SessionLocal() as db:
         rows = db.query(AgentToken).order_by(AgentToken.created_at.desc()).all()
-        return {"tokens": [{"id": row.id, "device_name": row.device_name, "user_id": row.user_id, "username": row.user.username if row.user else None, "revoked": row.revoked, "created_at": row.created_at.isoformat(), "last_seen_at": row.last_seen_at.isoformat() if row.last_seen_at else None} for row in rows]}
+        return {"tokens": [{"id": row.id, "device_name": row.device_name, "user_id": row.user_id, "username": row.user.username if row.user else None, "revoked": row.revoked, "online": row.id in online, "created_at": row.created_at.isoformat(), "last_seen_at": row.last_seen_at.isoformat() if row.last_seen_at else None} for row in rows]}
 
 
 @router.post("/api/device/tokens/{token_id}/link")
@@ -134,8 +134,7 @@ def link_agent_token(token_id: int, payload: AgentTokenLink, _: None = Depends(_
         username = row.user.username if row.user else None
         # Si ese equipo está conectado ahora mismo, el cambio se aplica sin
         # reiniciar el agente ni regenerar el token.
-        if hub.owner_token_id == token_id:
-            hub.owner_user_id = payload.user_id
+        hub.set_connection_user(token_id, payload.user_id)
         return {
             "ok": True,
             "device_name": row.device_name,
@@ -169,8 +168,9 @@ def delete_agent_token(token_id: int, _: None = Depends(_require_catalog_access)
             raise HTTPException(status_code=404, detail="Equipo no encontrado")
         db.delete(row)
         db.commit()
-    if hub.owner_token_id == token_id:
-        hub.disconnect()
+    connection = hub.connection_for_token(token_id)
+    if connection is not None:
+        hub.drop(connection)
     return {"ok": True}
 
 
@@ -208,41 +208,28 @@ async def device_ws(websocket: WebSocket) -> None:
         await websocket.close(code=1008)
         return
 
-    # Una reinstalación deja vivo el proceso anterior hasta que Windows cierra
-    # la sesión, así que el equipo vuelve con el MISMO token. En ese caso la
-    # conexión nueva sustituye a la vieja en vez de ser rechazada: si no, el
-    # puesto queda ocupado por una conexión muerta y el agente reinstalado
-    # reintenta cada 5 s sin poder entrar nunca.
-    same_device = (
-        hub.connected
-        and agent_row is not None
-        and hub.owner_token_id == agent_row.id
-    )
-    if same_device:
-        logger.info("El equipo '%s' reconectó: se reemplaza la conexión anterior.", agent_row.device_name)
-        hub.disconnect()
-
-    if hub.connected:
-        logger.warning(
-            "Agente rechazado: ya hay otro equipo conectado (%s). "
-            "Solo se admite uno a la vez.",
-            f"equipo {hub.owner_token_id}" if hub.owner_token_id else "token heredado NODE_TOKEN",
-        )
-        await websocket.close(code=1013)
-        return
-
+    # Cada equipo tiene su propia conexión y su propia cola: se admiten varios a
+    # la vez, uno por token. Si reconecta el MISMO equipo (una reinstalación deja
+    # vivo el proceso anterior), register() cierra la conexión vieja y deja
+    # entrar a la nueva en lugar de rechazarla.
     await websocket.accept()
-    hub.owner_user_id = agent_row.user_id if agent_row is not None else None
-    hub.owner_token_id = agent_row.id if agent_row is not None else None
-    hub.active_websocket = websocket
-    hub.connected = True
+    agent = hub.register(
+        agent_row.id if agent_row is not None else None,
+        agent_row.user_id if agent_row is not None else None,
+        websocket,
+    )
+    logger.info(
+        "Equipo conectado: %s (%d equipos activos).",
+        agent_row.device_name if agent_row is not None else "token heredado NODE_TOKEN",
+        len(hub.live_agents()),
+    )
     try:
         hello = json.loads(await websocket.receive_text())
         if hello.get("type") != "hello":
             await websocket.close(code=1008)
             return
         programs = hello.get("programs") if isinstance(hello.get("programs"), list) else []
-        hub.update_programs(programs)
+        hub.update_programs(programs, agent=agent)
         await websocket.send_json({"type": "hello_ack", "agent_version": hello.get("agent_version", "unknown")})
         while True:
             if agent_row is not None:
@@ -250,23 +237,21 @@ async def device_ws(websocket: WebSocket) -> None:
                     current = db.get(AgentToken, agent_row.id)
                     if current is None or current.revoked:
                         await websocket.close(code=1008)
-                        hub.disconnect(websocket)
+                        hub.drop(agent)
                         return
-            command = await hub.next_command(websocket)
+            command = await agent.next_command()
             await websocket.send_json(command)
             raw = await websocket.receive_text()
-            if websocket is not hub.active_websocket:
-                raise WebSocketDisconnect(code=1000)
             response = json.loads(raw)
             if response.get("id") != command.get("id") or not isinstance(response.get("result"), dict):
-                hub.complete(command["id"], {"ok": False, "error": "El agente devolvió una respuesta inválida."}, websocket=websocket)
+                agent.complete(command["id"], {"ok": False, "error": "El agente devolvió una respuesta inválida."})
                 continue
             result = response["result"]
             if command.get("action") == "sync_programs":
-                hub.update_programs(result.get("programs", []))
-            hub.complete(command["id"], result, websocket=websocket)
+                hub.update_programs(result.get("programs", []), agent=agent)
+            agent.complete(command["id"], result)
     except (WebSocketDisconnect, json.JSONDecodeError):
-        hub.disconnect(websocket)
+        hub.drop(agent)
     except Exception:
-        hub.disconnect(websocket)
+        hub.drop(agent)
         raise
