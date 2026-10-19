@@ -178,7 +178,7 @@ def get_api_base(provider: str) -> str:
 
     default_bases = {
         "nemotron": "https://integrate.api.nvidia.com/v1",
-        "openai": "https://api.openai.com/v1",
+        "openai": "https://api.pateway.ai/v1",
         "anthropic": "https://api.anthropic.com/v1",
         "local": "http://localhost:11434",
     }

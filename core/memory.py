@@ -65,7 +65,7 @@ def _embedding_client():
     api_key = os.environ.get("OPENAI_API_KEY", "").strip()
     if not api_key:
         return None
-    base_url = os.environ.get("OPENAI_API_BASE", "https://api.openai.com/v1")
+    base_url = os.environ.get("OPENAI_API_BASE", "https://api.pateway.ai/v1")
     cache_key = (api_key, base_url)
     if _CLIENT_CACHE["client"] is not None and _CLIENT_CACHE["key"] == cache_key:
         return _CLIENT_CACHE["client"]
