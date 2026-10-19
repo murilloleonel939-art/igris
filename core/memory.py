@@ -11,6 +11,9 @@ usa como fuente de permisos ni identidad: solo aporta contexto al prompt.
 """
 from __future__ import annotations
 
+import json
+import math
+import os
 import re
 from dataclasses import dataclass
 from typing import Iterable, Optional
@@ -23,6 +26,64 @@ MAX_MEMORY_CHARS = 260
 MAX_MEMORIES_PER_KIND = 12
 MAX_SUMMARY_CHARS = 1600
 MAX_SUMMARY_TURNS = 4
+SEMANTIC_LINK_THRESHOLD = float(
+    os.environ.get("IGRIS_MEMORY_SEMANTIC_THRESHOLD", "0.72")
+)
+EMBEDDING_MODEL = os.environ.get(
+    "IGRIS_MEMORY_EMBEDDING_MODEL", "text-embedding-3-small"
+)
+EMBEDDINGS_ENABLED = os.environ.get(
+    "IGRIS_MEMORY_EMBEDDINGS_ENABLED", "false"
+).lower() in {"1", "true", "yes", "on"}
+
+
+def _cosine_similarity(left: list[float], right: list[float]) -> float:
+    if not left or not right or len(left) != len(right):
+        return 0.0
+    dot = sum(a * b for a, b in zip(left, right))
+    left_norm = math.sqrt(sum(a * a for a in left))
+    right_norm = math.sqrt(sum(b * b for b in right))
+    return dot / (left_norm * right_norm) if left_norm and right_norm else 0.0
+
+
+def _embedding_client():
+    """Construye un cliente compatible con la API de embeddings si está configurado."""
+    if not EMBEDDINGS_ENABLED:
+        return None
+    api_key = os.environ.get("OPENAI_API_KEY", "").strip()
+    if not api_key:
+        return None
+    try:
+        from openai import OpenAI
+        return OpenAI(
+            api_key=api_key,
+            base_url=os.environ.get("OPENAI_API_BASE", "https://api.openai.com/v1"),
+            timeout=20,
+        )
+    except Exception:
+        return None
+
+
+def _embedding_for(text: str) -> Optional[list[float]]:
+    client = _embedding_client()
+    if client is None:
+        return None
+    try:
+        result = client.embeddings.create(model=EMBEDDING_MODEL, input=text)
+        vector = result.data[0].embedding
+        return [float(value) for value in vector]
+    except Exception:
+        return None
+
+
+def _decode_embedding(value: Optional[str]) -> Optional[list[float]]:
+    if not value:
+        return None
+    try:
+        vector = json.loads(value)
+        return [float(item) for item in vector] if isinstance(vector, list) else None
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return None
 
 _PERSONAL_HINTS = (
     "recuerda que",
@@ -112,11 +173,15 @@ def remember_from_text(db: Session, user_id: Optional[int], user_text: str) -> i
         if exists is not None:
             exists.updated_at = utcnow()
             continue
-        db.add(UserMemory(
+        row = UserMemory(
             user_id=user_id,
             kind=candidate.kind,
             content=candidate.content,
-        ))
+        )
+        vector = _embedding_for(candidate.content)
+        if vector is not None:
+            row.embedding = json.dumps(vector, separators=(",", ":"))
+        db.add(row)
         created += 1
     if created:
         db.commit()
@@ -126,25 +191,37 @@ def remember_from_text(db: Session, user_id: Optional[int], user_text: str) -> i
 def link_memories(db: Session, user_id: Optional[int], limit: int = 24) -> int:
     """Relaciona recuerdos recientes de ambas memorias del mismo usuario.
 
-    La relación se basa en palabras significativas compartidas. Es una capa ligera
-    y local: no reemplaza las dos memorias ni exige un proveedor de embeddings.
+    Conserva el enlace léxico como respaldo y añade similitud por embeddings cuando
+    está habilitada. No reemplaza las dos memorias ni exige un proveedor semántico.
     """
     if not user_id:
         return 0
     rows = db.query(UserMemory).filter(UserMemory.user_id == user_id).order_by(
         UserMemory.updated_at.desc(), UserMemory.id.desc()
     ).limit(limit).all()
-    created = 0
     changed = False
+    # Completa vectores de recuerdos antiguos cuando hay un proveedor configurado.
+    for row in rows:
+        if not row.embedding:
+            vector = _embedding_for(row.content)
+            if vector is not None:
+                row.embedding = json.dumps(vector, separators=(",", ":"))
+                changed = True
+
+    created = 0
     for index, left in enumerate(rows):
         left_words = set(re.findall(r"[a-záéíóúñü]{4,}", left.content.lower()))
-        if not left_words:
-            continue
         for right in rows[index + 1:]:
             if left.kind == right.kind:
                 continue
             shared = left_words.intersection(re.findall(r"[a-záéíóúñü]{4,}", right.content.lower()))
-            if not shared or left.id == right.id:
+            semantic_score = _cosine_similarity(
+                _decode_embedding(left.embedding) or [],
+                _decode_embedding(right.embedding) or [],
+            )
+            if not shared and semantic_score < SEMANTIC_LINK_THRESHOLD:
+                continue
+            if left.id == right.id:
                 continue
             exists = db.query(MemoryLink).filter(
                 MemoryLink.user_id == user_id,
@@ -153,7 +230,7 @@ def link_memories(db: Session, user_id: Optional[int], limit: int = 24) -> int:
                 | ((MemoryLink.from_memory_id == right.id) & (MemoryLink.to_memory_id == left.id)),
             ).first()
             if exists:
-                new_weight = len(shared)
+                new_weight = max(len(shared), round(semantic_score * 10))
                 if exists.weight != new_weight:
                     exists.weight = new_weight
                     exists.updated_at = utcnow()
@@ -161,7 +238,7 @@ def link_memories(db: Session, user_id: Optional[int], limit: int = 24) -> int:
                 continue
             db.add(MemoryLink(
                 user_id=user_id, from_memory_id=left.id, to_memory_id=right.id,
-                relation="relacionado_con", weight=len(shared),
+                relation="relacionado_con", weight=max(len(shared), round(semantic_score * 10)),
             ))
             created += 1
             changed = True

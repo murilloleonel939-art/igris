@@ -486,6 +486,9 @@ Los **usuarios** no usan esta variable: tienen su propia cuenta (usuario y contr
 | `OPENAI_API_KEY` | Clave de OpenAI (con pateway, la que emite pateway) | `sk-...` |
 | `OPENAI_API_BASE` | URL base del proveedor `openai` (opcional) | `https://api.pateway.ai/v1` |
 | `IGRIS_OPENAI_MODEL` | Modelo del proveedor `openai` (opcional) | `gpt-6-luna` |
+| `IGRIS_MEMORY_EMBEDDINGS_ENABLED` | Activa relaciones semánticas entre memorias usando embeddings | `false` |
+| `IGRIS_MEMORY_EMBEDDING_MODEL` | Modelo de embeddings compatible con la API configurada | `text-embedding-3-small` |
+| `IGRIS_MEMORY_SEMANTIC_THRESHOLD` | Similitud mínima para crear una conexión semántica | `0.72` |
 | `ANTHROPIC_API_KEY` | Clave de Anthropic (con pateway, la que emite pateway) | `sk-...` |
 | `ANTHROPIC_API_BASE` | URL base del proveedor `anthropic` (opcional) | `https://api.pateway.ai` |
 | `IGRIS_ANTHROPIC_MODEL` | Modelo del proveedor `anthropic` (opcional) | `claude-haiku-4-5-20251001` |

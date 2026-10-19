@@ -313,6 +313,7 @@ class UserMemory(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
     kind = Column(String(32), nullable=False, index=True)
     content = Column(Text, nullable=False)
+    embedding = Column(Text, nullable=True)  # vector JSON; opcional para búsqueda semántica
     source = Column(String(32), default="chat", nullable=False)
     created_at = Column(DateTime, default=utcnow, nullable=False)
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
@@ -462,6 +463,16 @@ def _run_migrations(engine) -> None:
         if not _table_exists(conn, dialect, "users"):
             logger.info("Migraciones omitidas: la tabla 'users' todavía no existe")
             return
+
+        # ── user_memories.embedding ─────────────────────────────────────────
+        # Los recuerdos existentes se rellenan progresivamente al usarse; esta
+        # columna permite desplegar embeddings sin una migración destructiva.
+        if (
+            _table_exists(conn, dialect, "user_memories")
+            and not _column_exists(conn, dialect, "user_memories", "embedding")
+        ):
+            conn.execute(text("ALTER TABLE user_memories ADD COLUMN embedding TEXT"))
+            logger.info("Migración aplicada: user_memories.embedding (%s)", dialect)
 
         # ── profiles.voice_print ────────────────────────────────────────────
         # Los embeddings cifrados pueden superar 255 caracteres.
