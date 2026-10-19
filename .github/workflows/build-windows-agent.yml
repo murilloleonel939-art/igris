@@ -29,7 +29,7 @@ jobs:
         run: choco install innosetup --no-progress -y
       - name: Build installer
         shell: pwsh
-        run: '& "C:\\Program Files (x86)\\Inno Setup 6\\ISCC.exe" windows_agent\\igris-agent.iss'
+        run: '& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" windows_agent\igris-agent.iss'
       - name: Validate installer naming
         shell: pwsh
         run: .\windows_agent\validate-workflow.ps1
