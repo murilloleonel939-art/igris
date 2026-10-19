@@ -1,6 +1,6 @@
 # Agente local de IGRIS para Windows
 
-El agente se conecta hacia el backend por WebSocket seguro. El PC debe estar encendido; al apagarlo se desconecta y al iniciar sesión vuelve a conectarse.
+El agente se conecta hacia el backend por WebSocket seguro. El PC debe estar encendido; al apagarlo se desconecta y al iniciar sesión vuelve a conectarse. La versión v11 fue validada en Windows y comprobada con el backend desplegado: inicia automáticamente y mantiene la comunicación con IGRIS.
 
 ## Instalación desde el ejecutable
 Descarga `IgrisAgentSetup-v11.exe` desde **Panel admin → Conexiones → Agente Windows**. Haz doble clic, pega el `NODE_TOKEN` individual del equipo y termina el asistente. El agente queda en segundo plano y arranca automáticamente con Windows. En **Inicio → IGRIS Windows Agent** encontrarás el agente y **Configurar IGRIS** permite cambiar el token sin desinstalar. Crea archivos Word (`.docx`), Excel (`.xlsx`), PowerPoint (`.pptx`), texto (`.txt`) y CSV directamente en la carpeta Documentos del PC; el servidor no guarda copias. Para quitarlo, ve a **Configuración → Aplicaciones → Aplicaciones instaladas → IGRIS Windows Agent → Desinstalar**; se borra también el token local.

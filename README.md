@@ -759,6 +759,8 @@ Desde **Panel admin → Conexiones → Agente Windows**, crea un equipo y genera
 
 El instalador v11 añade accesos visibles en Inicio para abrir el agente y configurar el token sin reinstalar, y conserva el token existente al actualizar. También crea archivos Word (`.docx`), Excel (`.xlsx`), PowerPoint (`.pptx`), texto (`.txt`) y CSV (`.csv`) en la carpeta Documentos del PC, incluyendo cuando Windows la redirige a OneDrive. El texto se envía al agente conectado y el archivo se construye allí; IGRIS no conserva una copia. Si el equipo está desconectado, la herramienta informa que no se creó el archivo. Si Spotify está autorizado en el panel, también puedes pedir «abre Spotify», «busca música en Spotify» o «reproduce [canción]».
 
+**Estado validado:** la versión v11 fue instalada en Windows y comprobada después del redeploy del backend. El agente inicia con Windows, mantiene la conexión WebSocket y se comunica correctamente con IGRIS sin regenerar el token.
+
 Cada equipo aparece en el panel con su estado y permite regenerar el token, revocarlo o eliminarlo. El token se muestra únicamente al crearlo o regenerarlo; si se pierde, hay que regenerarlo. Un token vinculado a un usuario no puede usarse para controlar el agente desde otra cuenta.
 
 Se pueden tener **varios equipos conectados a la vez**, cada uno con su token y su propia cola de órdenes: una orden para el PC de un usuario nunca puede ejecutarse en el PC de otro. Cada equipo tiene su propio canal con el servidor, aunque compartan las aplicaciones autorizadas, que son globales. Un equipo sin usuario vinculado solo puede abrir aplicaciones; para crear archivos hay que asignarle un dueño en la lista del panel.
