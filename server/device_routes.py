@@ -191,10 +191,16 @@ async def device_ws(websocket: WebSocket) -> None:
     token = authorization.removeprefix("Bearer ").strip()
     expected = os.getenv("NODE_TOKEN", "")
     agent_row = None
+    agent_token_id = None
+    agent_user_id = None
+    agent_device_name = None
     if token.startswith("igris_"):
         with SessionLocal() as db:
             agent_row = db.query(AgentToken).filter(AgentToken.token_hash == _token_digest(token), AgentToken.revoked.is_(False)).first()
             if agent_row:
+                agent_token_id = agent_row.id
+                agent_user_id = agent_row.user_id
+                agent_device_name = agent_row.device_name
                 agent_row.last_seen_at = _now()
                 db.commit()
     valid_legacy = bool(expected and secrets.compare_digest(token, expected))
@@ -214,13 +220,13 @@ async def device_ws(websocket: WebSocket) -> None:
     # entrar a la nueva en lugar de rechazarla.
     await websocket.accept()
     agent = hub.register(
-        agent_row.id if agent_row is not None else None,
-        agent_row.user_id if agent_row is not None else None,
+        agent_token_id,
+        agent_user_id,
         websocket,
     )
     logger.info(
         "Equipo conectado: %s (%d equipos activos).",
-        agent_row.device_name if agent_row is not None else "token heredado NODE_TOKEN",
+        agent_device_name if agent_device_name is not None else "token heredado NODE_TOKEN",
         len(hub.live_agents()),
     )
     try:
@@ -232,9 +238,9 @@ async def device_ws(websocket: WebSocket) -> None:
         hub.update_programs(programs, agent=agent)
         await websocket.send_json({"type": "hello_ack", "agent_version": hello.get("agent_version", "unknown")})
         while True:
-            if agent_row is not None:
+            if agent_token_id is not None:
                 with SessionLocal() as db:
-                    current = db.get(AgentToken, agent_row.id)
+                    current = db.get(AgentToken, agent_token_id)
                     if current is None or current.revoked:
                         await websocket.close(code=1008)
                         hub.drop(agent)
