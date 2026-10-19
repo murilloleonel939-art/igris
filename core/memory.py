@@ -12,15 +12,19 @@ usa como fuente de permisos ni identidad: solo aporta contexto al prompt.
 from __future__ import annotations
 
 import json
+import logging
 import math
 import os
 import re
+import threading
 from dataclasses import dataclass
 from typing import Iterable, Optional
 
 from sqlalchemy.orm import Session
 
 from core.database import MemoryLink, UserMemory, utcnow
+
+logger = logging.getLogger(__name__)
 
 MAX_MEMORY_CHARS = 260
 MAX_MEMORIES_PER_KIND = 12
@@ -33,7 +37,7 @@ EMBEDDING_MODEL = os.environ.get(
     "IGRIS_MEMORY_EMBEDDING_MODEL", "text-embedding-3-small"
 )
 EMBEDDINGS_ENABLED = os.environ.get(
-    "IGRIS_MEMORY_EMBEDDINGS_ENABLED", "false"
+    "IGRIS_MEMORY_EMBEDDINGS_ENABLED", "true"
 ).lower() in {"1", "true", "yes", "on"}
 
 
@@ -46,22 +50,33 @@ def _cosine_similarity(left: list[float], right: list[float]) -> float:
     return dot / (left_norm * right_norm) if left_norm and right_norm else 0.0
 
 
+_CLIENT_CACHE: dict = {"client": None, "key": None}
+
+
 def _embedding_client():
-    """Construye un cliente compatible con la API de embeddings si está configurado."""
+    """Cliente de embeddings reutilizable.
+
+    Construir uno nuevo por cada recuerdo dejaría varios clientes HTTP abiertos
+    por mensaje. Se cachea uno solo y se rehace únicamente si cambia la
+    configuración, para que un cambio de clave o de URL surta efecto.
+    """
     if not EMBEDDINGS_ENABLED:
         return None
     api_key = os.environ.get("OPENAI_API_KEY", "").strip()
     if not api_key:
         return None
+    base_url = os.environ.get("OPENAI_API_BASE", "https://api.openai.com/v1")
+    cache_key = (api_key, base_url)
+    if _CLIENT_CACHE["client"] is not None and _CLIENT_CACHE["key"] == cache_key:
+        return _CLIENT_CACHE["client"]
     try:
         from openai import OpenAI
-        return OpenAI(
-            api_key=api_key,
-            base_url=os.environ.get("OPENAI_API_BASE", "https://api.openai.com/v1"),
-            timeout=20,
-        )
+        client = OpenAI(api_key=api_key, base_url=base_url, timeout=20)
     except Exception:
         return None
+    _CLIENT_CACHE["client"] = client
+    _CLIENT_CACHE["key"] = cache_key
+    return client
 
 
 def _embedding_for(text: str) -> Optional[list[float]]:
@@ -84,6 +99,66 @@ def _decode_embedding(value: Optional[str]) -> Optional[list[float]]:
         return [float(item) for item in vector] if isinstance(vector, list) else None
     except (TypeError, ValueError, json.JSONDecodeError):
         return None
+
+
+_BACKFILL_INFLIGHT: set[int] = set()
+_BACKFILL_LOCK = threading.Lock()
+
+
+def _backfill_embeddings(user_id: int, limit: int = 24) -> None:
+    """Genera en segundo plano los vectores que falten para un usuario.
+
+    Se ejecuta en un hilo propio con su propia sesión: la llamada a la API es
+    lenta y no puede bloquear el bucle de eventos del servidor ni la sesión de
+    la petición que la originó.
+    """
+    from core.database import SessionLocal
+
+    db = SessionLocal()
+    try:
+        rows = db.query(UserMemory).filter(
+            UserMemory.user_id == user_id,
+        ).order_by(UserMemory.updated_at.desc(), UserMemory.id.desc()).limit(limit).all()
+        changed = False
+        for row in rows:
+            if row.embedding:
+                continue
+            vector = _embedding_for(row.content)
+            if vector is None:
+                break  # proveedor no disponible: no seguir intentando
+            row.embedding = json.dumps(vector, separators=(",", ":"))
+            changed = True
+        if changed:
+            db.commit()
+    except Exception as exc:
+        logger.warning("No se pudieron calcular embeddings de memoria: %s", exc)
+        db.rollback()
+    finally:
+        db.close()
+
+
+def schedule_embedding_backfill(user_id: Optional[int], limit: int = 24) -> None:
+    """Programa el cálculo de embeddings sin bloquear la petición en curso.
+
+    Si el usuario ya tiene un cálculo en marcha no se lanza otro: el siguiente
+    mensaje volverá a intentarlo. Desactivado por defecto mediante
+    IGRIS_MEMORY_EMBEDDINGS_ENABLED.
+    """
+    if not user_id or not EMBEDDINGS_ENABLED:
+        return
+    with _BACKFILL_LOCK:
+        if user_id in _BACKFILL_INFLIGHT:
+            return
+        _BACKFILL_INFLIGHT.add(user_id)
+
+    def _run() -> None:
+        try:
+            _backfill_embeddings(user_id, limit)
+        finally:
+            with _BACKFILL_LOCK:
+                _BACKFILL_INFLIGHT.discard(user_id)
+
+    threading.Thread(target=_run, name=f"mem-emb-{user_id}", daemon=True).start()
 
 _PERSONAL_HINTS = (
     "recuerda que",
@@ -178,13 +253,13 @@ def remember_from_text(db: Session, user_id: Optional[int], user_text: str) -> i
             kind=candidate.kind,
             content=candidate.content,
         )
-        vector = _embedding_for(candidate.content)
-        if vector is not None:
-            row.embedding = json.dumps(vector, separators=(",", ":"))
         db.add(row)
         created += 1
     if created:
         db.commit()
+        # El vector se calcula después, fuera de la petición: guardar el recuerdo
+        # nunca espera a la API de embeddings.
+        schedule_embedding_backfill(user_id)
     return created
 
 
@@ -200,13 +275,9 @@ def link_memories(db: Session, user_id: Optional[int], limit: int = 24) -> int:
         UserMemory.updated_at.desc(), UserMemory.id.desc()
     ).limit(limit).all()
     changed = False
-    # Completa vectores de recuerdos antiguos cuando hay un proveedor configurado.
-    for row in rows:
-        if not row.embedding:
-            vector = _embedding_for(row.content)
-            if vector is not None:
-                row.embedding = json.dumps(vector, separators=(",", ":"))
-                changed = True
+    # Los vectores que falten se calculan en segundo plano; aquí solo se usan
+    # los que ya estén disponibles para no retrasar la respuesta.
+    schedule_embedding_backfill(user_id, limit)
 
     created = 0
     for index, left in enumerate(rows):
