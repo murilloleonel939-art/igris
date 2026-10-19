@@ -281,6 +281,25 @@ class Note(Base):
     created_at = Column(DateTime, default=utcnow, nullable=False)
 
 
+class MemoryLink(Base):
+    """Relación entre recuerdos de las dos memorias persistentes del usuario."""
+    __tablename__ = "memory_links"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    from_memory_id = Column(Integer, ForeignKey("user_memories.id"), nullable=False, index=True)
+    to_memory_id = Column(Integer, ForeignKey("user_memories.id"), nullable=False, index=True)
+    relation = Column(String(64), nullable=False, default="relacionado_con")
+    weight = Column(Integer, nullable=False, default=1)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "from_memory_id", "to_memory_id", "relation", name="uq_memory_link"),
+        Index("ix_memory_links_user_weight", "user_id", "weight"),
+    )
+
+
 class UserMemory(Base):
     """Memoria estructurada de Igris para un usuario.
 

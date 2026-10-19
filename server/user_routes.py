@@ -50,9 +50,9 @@ from core.capabilities import (
     admin_capabilities,
     capabilities_from_user,
 )
-from core.database import GoogleAccount, Note, Profile, Reminder, SpotifyAccount, TelegramLink, User, UserMemory, get_db
+from core.database import GoogleAccount, MemoryLink, Note, Profile, Reminder, SpotifyAccount, TelegramLink, User, UserMemory, get_db
 from core.settings_manager import get_settings
-from core.memory import load_memories, remember_from_text
+from core.memory import link_memories, linked_memories_block, load_memories, remember_from_text
 from core.tools import gcalendar, gmail
 from core.tools.time_tools import DEFAULT_TZ, _format
 from core import stt, voice
@@ -574,6 +574,10 @@ def admin_delete_user_memory(
     ).first()
     if memory is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No se encontró ese recuerdo")
+    db.query(MemoryLink).filter(
+        MemoryLink.user_id == user_id,
+        (MemoryLink.from_memory_id == memory.id) | (MemoryLink.to_memory_id == memory.id),
+    ).delete(synchronize_session=False)
     db.delete(memory)
     db.commit()
     return {"status": "ok"}
@@ -852,6 +856,10 @@ def delete_user_memory(
     ).first()
     if memory is None:
         raise HTTPException(status_code=404, detail="No se encontró ese recuerdo")
+    db.query(MemoryLink).filter(
+        MemoryLink.user_id == user.id,
+        (MemoryLink.from_memory_id == memory.id) | (MemoryLink.to_memory_id == memory.id),
+    ).delete(synchronize_session=False)
     db.delete(memory)
     db.commit()
     return {"status": "ok"}
@@ -998,8 +1006,10 @@ def _bind_identity(session, user: User, db: Session) -> None:
     link = db.query(TelegramLink).filter(TelegramLink.user_id == user.id).first()
     session.telegram_linked = bool(link and link.chat_id)
 
+    link_memories(db, user.id)
     session.personal_memory = load_memories(db, user.id, "personal")
     session.operational_memory = load_memories(db, user.id, "operational")
+    session.linked_memory = linked_memories_block(db, user.id)
 
 
 @router.post("/api/user/voice-profile")

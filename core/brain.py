@@ -285,6 +285,7 @@ def _system_message(addressing_instruction: Optional[str] = None, session=None) 
             getattr(session, "personal_memory", []),
             getattr(session, "operational_memory", []),
             getattr(session, "conversation_summary", ""),
+            getattr(session, "linked_memory", []),
         )
     if memory:
         base = f"{base}\n\n{memory}"
@@ -549,6 +550,7 @@ class BrainSession:
         self.personal_memory: List[str] = []
         self.operational_memory: List[str] = []
         self.conversation_summary: str = ""
+        self.linked_memory: List[str] = []
 
     async def _try_quick_confirm(self, text: str) -> Optional[str]:
         """Si hay una propuesta pendiente y el usuario acaba de confirmarla, la crea

@@ -23,7 +23,7 @@ from core.capabilities import admin_capabilities, capabilities_from_user
 from core.database import GoogleAccount, Profile, TelegramLink, User
 from core.auth import ALGORITHM, SECRET_KEY, hash_password
 from core.settings_manager import get_settings
-from core.memory import load_memories, remember_from_text
+from core.memory import link_memories, linked_memories_block, load_memories, remember_from_text
 from core import tts, voice
 from core.database import init_db, engine
 from core.session_store import SessionStore
@@ -299,8 +299,10 @@ def _bind_admin_identity_from_bearer(session, authorization: Optional[str], text
         session.telegram_linked = bool(link and link.chat_id)
         if text:
             remember_from_text(db, user.id, text)
+        link_memories(db, user.id)
         session.personal_memory = load_memories(db, user.id, "personal")
         session.operational_memory = load_memories(db, user.id, "operational")
+        session.linked_memory = linked_memories_block(db, user.id)
 
 # Instancia global del cerebro y almacén de sesiones (historial por conversación)
 brain = Brain()
@@ -975,8 +977,10 @@ async def _get_igris_reply(text: str, session_key: Optional[str] = None) -> str:
                     ).first()
                     session.google_linked = account.email if account is not None else None
                     remember_from_text(db, linked_user.id, text)
+                    link_memories(db, linked_user.id)
                     session.personal_memory = load_memories(db, linked_user.id, "personal")
                     session.operational_memory = load_memories(db, linked_user.id, "operational")
+                    session.linked_memory = linked_memories_block(db, linked_user.id)
             else:
                 # Chat autorizado por la lista del entorno (uso personal del dueño):
                 # sin límites, como antes.
