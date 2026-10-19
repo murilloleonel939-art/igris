@@ -10,7 +10,7 @@
     <template v-if="tab === 'agente'">
     <section id="agente-windows" class="agent-card">
       <div><span class="agent-kicker">Conexión local</span><h2>Agente Windows</h2><p>Descarga e instala el agente para que IGRIS controle tu computador Windows: aplicaciones, archivos, navegador, Spotify, Steam, Word, Excel y energía del equipo.</p></div>
-      <a href="/downloads/IgrisAgentSetup-v10.exe" download class="agent-download">Descargar agente Windows v10 <span>↓</span></a>
+      <a href="/downloads/IgrisAgentSetup-v11.exe" download class="agent-download">Descargar agente Windows v11 <span>↓</span></a>
     </section>
     <section class="agent-manual">
       <div><span class="agent-kicker">Credenciales del agente</span><h2>Tokens por equipo</h2><div class="agent-token-form"><input v-model="newDeviceName" placeholder="Nombre del equipo" maxlength="120" /><select v-model="newTokenUser"><option value="">Sin usuario específico</option><option v-for="user in users" :key="user.id" :value="String(user.id)">{{ user.username }}</option></select><button class="connect" :disabled="tokenSaving || !newDeviceName.trim()" @click="createToken">{{ tokenSaving ? 'Generando…' : 'Generar token' }}</button></div><p v-if="newToken" class="agent-token-result">Token nuevo (guárdalo ahora): <code>{{ newToken }}</code></p><p v-if="tokenError" class="agent-note">{{ tokenError }}</p><p v-if="!agentTokens.length" class="agent-note">Todavía no hay equipos creados. Genera el primer token para registrarlo.</p><div v-for="token in agentTokens" :key="token.id" class="agent-token-row"><span><b>{{ token.device_name }}</b><small>{{ token.revoked ? 'Revocado' : token.online ? 'En línea' : token.last_seen_at ? 'Conectado recientemente' : 'Sin conexión registrada' }} · {{ token.username ? `Vinculado a ${token.username}` : 'Sin usuario: solo abre aplicaciones' }}</small></span><span><select :value="token.user_id ? String(token.user_id) : ''" class="agent-token-link" :disabled="linking === token.id" @change="linkToken(token, $event.target.value)"><option value="">Sin usuario específico</option><option v-for="user in users" :key="user.id" :value="String(user.id)">{{ user.username }}</option></select><button class="connect" @click="regenerateToken(token)">Regenerar</button><button v-if="!token.revoked" class="unlink" @click="revokeToken(token)">Revocar</button><button class="unlink" @click="deleteToken(token)">Eliminar equipo</button></span></div><span class="agent-kicker">Permisos de aplicaciones</span><h2>Aplicaciones autorizadas</h2><p class="agent-note">Marca las aplicaciones que Igris puede abrir y controlar.</p></div>
@@ -21,7 +21,7 @@
     <section class="agent-manual">
       <div><span class="agent-kicker">Manual rápido</span><h2>Cómo instalarlo y conectarlo</h2></div>
       <ol>
-        <li><b>Descarga el instalador.</b> Pulsa el botón anterior y guarda el archivo <code>IgrisAgentSetup-v10.exe</code>.</li>
+        <li><b>Descarga el instalador.</b> Pulsa el botón anterior y guarda el archivo <code>IgrisAgentSetup-v11.exe</code>.</li>
         <li><b>Instala el ejecutable.</b> Haz doble clic en el archivo descargado y sigue el asistente. Si Windows muestra una advertencia, permite ejecutar el instalador descargado.</li>
         <li><b>Introduce el token.</b> Pega en el instalador el token del equipo generado arriba y termina la instalación.</li>
         <li><b>Comprueba la conexión.</b> El agente se inicia automáticamente con Windows y el equipo aparecerá conectado en este panel.</li>

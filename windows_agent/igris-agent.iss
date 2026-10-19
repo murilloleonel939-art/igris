@@ -1,6 +1,6 @@
 ; Inno Setup: instala IgrisAgent.exe y crea desinstalador.
 #define MyAppName "IGRIS Windows Agent"
-#define MyAppVersion "10.0.0"
+#define MyAppVersion "11.0.0"
 #define MyAppPublisher "IGRIS"
 #define MyAppExeName "IgrisAgent.exe"
 
@@ -11,18 +11,28 @@ AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
 DefaultDirName={localappdata}\IGRIS\agent
 DisableProgramGroupPage=yes
-OutputBaseFilename=IgrisAgentSetup-v10
+DefaultGroupName={#MyAppName}
+OutputBaseFilename=IgrisAgentSetup-v11
 Compression=lzma
 SolidCompression=yes
 OutputDir=output
 PrivilegesRequired=lowest
 UninstallDisplayName=IGRIS Windows Agent
+UninstallDisplayIcon={app}\IgrisAgent.exe
+CreateUninstallRegKey=yes
 
 [Files]
 Source: "dist\IgrisAgent.exe"; DestDir: "{app}"; Flags: ignoreversion
 
+[Tasks]
+Name: "desktopicon"; Description: "Crear acceso directo de configuración en el escritorio"; GroupDescription: "Accesos directos:"
+
 [Icons]
 Name: "{userstartup}\IGRIS Windows Agent"; Filename: "{app}\IgrisAgent.exe"; WorkingDir: "{app}"
+Name: "{group}\IGRIS Windows Agent"; Filename: "{app}\IgrisAgent.exe"; WorkingDir: "{app}"
+Name: "{group}\Configurar IGRIS"; Filename: "{app}\IgrisAgent.exe"; Parameters: "--configure"; WorkingDir: "{app}"
+Name: "{group}\Desinstalar IGRIS Windows Agent"; Filename: "{uninstallexe}"
+Name: "{userdesktop}\Configurar IGRIS"; Filename: "{app}\IgrisAgent.exe"; Parameters: "--configure"; WorkingDir: "{app}"; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\IgrisAgent.exe"; Description: "Iniciar IGRIS Windows Agent"; Flags: nowait postinstall skipifsilent
@@ -33,9 +43,15 @@ var
   TokenFile: String;
 
 procedure InitializeWizard;
+var
+  ExistingTokenFile: String;
+  ExistingToken: String;
 begin
   TokenPage := CreateInputQueryPage(wpSelectDir, 'Conexión de IGRIS', 'Token del agente', 'Pega el NODE_TOKEN generado en el panel de administración.');
-  TokenPage.Add('NODE_TOKEN:', False);
+  TokenPage.Add('NODE_TOKEN:', True);
+  ExistingTokenFile := ExpandConstant('{localappdata}\IGRIS\node_token.txt');
+  if FileExists(ExistingTokenFile) and LoadStringFromFile(ExistingTokenFile, ExistingToken) then
+    TokenPage.Values[0] := Trim(ExistingToken);
 end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;
@@ -72,11 +88,19 @@ begin
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  ResultCode: Integer;
 begin
   if CurUninstallStep = usUninstall then
   begin
+    Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM IgrisAgent.exe',
+      '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
     TokenFile := ExpandConstant('{localappdata}\IGRIS\node_token.txt');
     if FileExists(TokenFile) then
       DeleteFile(TokenFile);
   end;
 end;
+
+[UninstallDelete]
+Type: files; Name: "{localappdata}\IGRIS\agent.log"
+Type: files; Name: "{localappdata}\IGRIS\node_token.txt"

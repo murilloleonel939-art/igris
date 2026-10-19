@@ -653,17 +653,89 @@ def execute(command: dict) -> dict:
     return {"ok": False, "error": "Acción desconocida"}
 
 
+def token_path() -> Path:
+    return Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "IGRIS" / "node_token.txt"
+
+
 def load_node_token() -> str:
+    # La configuración editable del usuario tiene prioridad sobre la variable
+    # heredada, para que cambiar el token no exija reinstalar el agente.
+    config = token_path()
+    if config.is_file():
+        try:
+            value = config.read_text(encoding="utf-8").strip()
+            if value:
+                return value
+        except OSError:
+            pass
     token = os.environ.get("NODE_TOKEN", "").strip()
     if token:
         return token
-    config = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "IGRIS" / "node_token.txt"
-    if not config.is_file():
-        config = Path(sys.executable if getattr(sys, "frozen", False) else __file__).with_name("node_token.txt")
+    bundled_config = Path(sys.executable if getattr(sys, "frozen", False) else __file__).with_name("node_token.txt")
     try:
-        return config.read_text(encoding="utf-8").strip()
+        return bundled_config.read_text(encoding="utf-8").strip()
     except OSError:
         return ""
+
+
+def save_node_token(token: str) -> None:
+    token = token.strip()
+    if not token:
+        raise ValueError("El token no puede estar vacío")
+    config = token_path()
+    config.parent.mkdir(parents=True, exist_ok=True)
+    temporary = config.with_suffix(".tmp")
+    temporary.write_text(token + "\n", encoding="utf-8")
+    temporary.replace(config)
+
+
+def configure_token() -> int:
+    """Muestra una ventana para cambiar el token sin reinstalar el agente."""
+    import tkinter as tk
+    from tkinter import messagebox
+
+    root = tk.Tk()
+    root.title("Configurar IGRIS")
+    root.geometry("520x190")
+    root.resizable(False, False)
+    root.configure(padx=20, pady=18)
+    tk.Label(root, text="Token del equipo", font=("Segoe UI", 11, "bold")).pack(anchor="w")
+    tk.Label(root, text="Pega el token generado en Panel → Conexiones → Agente Windows.").pack(anchor="w", pady=(4, 10))
+    value = tk.StringVar(value=load_node_token())
+    entry = tk.Entry(root, textvariable=value, show="*", width=62)
+    entry.pack(fill="x")
+    entry.focus_set()
+
+    def save() -> None:
+        try:
+            save_node_token(value.get())
+        except (OSError, ValueError) as exc:
+            messagebox.showerror("IGRIS", f"No se pudo guardar el token: {exc}", parent=root)
+            return
+        executable = str(Path(sys.executable if getattr(sys, "frozen", False) else __file__).resolve())
+        current_pid = os.getpid()
+        try:
+            # El proceso configurador se separa antes de cerrar el agente actual.
+            # Excluye su propio PID para que la ventana pueda cerrarse normalmente.
+            import subprocess
+            escaped_executable = executable.replace(chr(39), chr(39) + chr(39))
+            subprocess.Popen(
+                ["powershell.exe", "-NoProfile", "-WindowStyle", "Hidden", "-Command",
+                 f"Start-Sleep -Milliseconds 500; Get-Process -Name IgrisAgent -ErrorAction SilentlyContinue | Where-Object {{$_.Id -ne {current_pid}}} | Stop-Process -Force; Start-Process -FilePath '{escaped_executable}'"],
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+        except OSError:
+            pass
+        messagebox.showinfo("IGRIS", "Token guardado. IGRIS se reiniciará con la nueva credencial.", parent=root)
+        root.destroy()
+
+    buttons = tk.Frame(root)
+    buttons.pack(anchor="e", pady=(18, 0))
+    tk.Button(buttons, text="Cancelar", command=root.destroy, width=12).pack(side="left", padx=(0, 8))
+    tk.Button(buttons, text="Guardar", command=save, width=12).pack(side="left")
+    root.bind("<Return>", lambda _event: save())
+    root.mainloop()
+    return 0
 
 
 def log_path() -> Path:
@@ -684,18 +756,20 @@ def log(message: str) -> None:
 
 
 async def main() -> None:
+    if "--configure" in sys.argv:
+        raise SystemExit(configure_token())
     url = "wss://igris.zottagroup.com/api/device/ws"
     token = load_node_token()
     if not token:
-        log("ERROR: no se encontró NODE_TOKEN. Reinstala el agente y proporciona el token.")
-        raise RuntimeError("No se encontró NODE_TOKEN. Reinstala el agente y proporciona el token.")
-    log(f"Iniciando agente. Token de {len(token)} caracteres, empieza por '{token[:6]}'.")
+        log("ERROR: no se encontró token. Abre Configurar IGRIS y proporciona el token.")
+        raise RuntimeError("No se encontró token. Abre Configurar IGRIS y proporciona el token.")
+    log(f"Iniciando agente. Token cargado ({len(token)} caracteres).")
     while True:
         try:
             async with websockets.connect(url, additional_headers={"Authorization": f"Bearer {token}"}, ping_interval=20, ping_timeout=20) as ws:
                 await ws.send(json.dumps({
                     "type": "hello",
-                    "agent_version": "2.0",
+                    "agent_version": "2.1",
                     "machine_id": socket.gethostname(),
                     "hostname": socket.gethostname(),
                     "programs": enumerate_programs(),

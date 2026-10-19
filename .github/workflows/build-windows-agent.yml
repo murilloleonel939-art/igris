@@ -6,7 +6,7 @@ on:
     branches: [main]
     paths:
       - 'windows_agent/**'
-      - 'requirements.txt'
+      - 'windows_agent/requirements.txt'
       - '.github/workflows/build-windows-agent.yml'
     tags: ['agent-v*']
 
@@ -35,21 +35,21 @@ jobs:
         run: .\windows_agent\validate-workflow.ps1
       - uses: actions/upload-artifact@v4
         with:
-          name: IgrisAgentSetup-v10
-          path: windows_agent/output/IgrisAgentSetup-v10.exe
+          name: IgrisAgentSetup-v11
+          path: windows_agent/output/IgrisAgentSetup-v11.exe
       - name: Copy installer into frontend
         shell: pwsh
-        run: Copy-Item windows_agent/output/IgrisAgentSetup-v10.exe web/public/downloads/IgrisAgentSetup-v10.exe -Force
+        run: Copy-Item windows_agent/output/IgrisAgentSetup-v11.exe web/public/downloads/IgrisAgentSetup-v11.exe -Force
       - name: Publish installer in repository
         if: github.ref == 'refs/heads/main'
         shell: pwsh
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add web/public/downloads/IgrisAgentSetup-v10.exe
+          git add web/public/downloads/IgrisAgentSetup-v11.exe
           git diff --cached --quiet
           if ($LASTEXITCODE -ne 0) {
-            git commit -m "build: publicar instalador IgrisAgent v10"
+            git commit -m "build: publicar instalador IgrisAgent v11"
             if ($LASTEXITCODE -ne 0) { throw "No se pudo crear el commit del instalador" }
             git push origin HEAD:main
             if ($LASTEXITCODE -ne 0) { throw "No se pudo publicar el instalador en main" }
@@ -58,4 +58,4 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: windows_agent/output/IgrisAgentSetup-v10.exe
+          files: windows_agent/output/IgrisAgentSetup-v11.exe
