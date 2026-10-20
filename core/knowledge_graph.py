@@ -6,14 +6,49 @@ progresivamente y conservar el origen, la confianza y la vigencia de cada dato.
 from __future__ import annotations
 
 from datetime import datetime
+import json
+import logging
+import os
 import re
+import threading
 from typing import Optional
 
 from dataclasses import dataclass
 
+logger = logging.getLogger(__name__)
+_GRAPH_BACKFILL_INFLIGHT: set[int] = set()
+_GRAPH_BACKFILL_LOCK = threading.Lock()
+_GRAPH_EMBEDDINGS_ENABLED = os.environ.get("IGRIS_MEMORY_EMBEDDINGS_ENABLED", "false").lower() in {"1", "true", "yes", "on"}
+
 from sqlalchemy.orm import Session
 
 from core.database import KnowledgeNode, KnowledgeRelation, utcnow
+
+
+def _embedding_for(text: str) -> Optional[list[float]]:
+    """Reutiliza el proveedor opcional de embeddings de la memoria textual."""
+    from core.memory import _embedding_for as memory_embedding_for
+    return memory_embedding_for(text)
+
+
+def _decode_embedding(value: Optional[str]) -> Optional[list[float]]:
+    if not value:
+        return None
+    try:
+        decoded = json.loads(value)
+        return [float(item) for item in decoded] if isinstance(decoded, list) else None
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return None
+
+
+def _cosine_similarity(left: Optional[list[float]], right: Optional[list[float]]) -> float:
+    if not left or not right or len(left) != len(right):
+        return 0.0
+    left_norm = sum(value * value for value in left) ** 0.5
+    right_norm = sum(value * value for value in right) ** 0.5
+    if not left_norm or not right_norm:
+        return 0.0
+    return sum(a * b for a, b in zip(left, right)) / (left_norm * right_norm)
 
 
 def _bounded(value: int, default: int = 50) -> int:
@@ -64,6 +99,50 @@ def upsert_node(
     node.valid_until = valid_until if valid_until is not None else node.valid_until
     node.updated_at = utcnow()
     return node
+
+
+def _backfill_node_embeddings(user_id: int, limit: int = 24) -> None:
+    from core.database import SessionLocal
+    db = SessionLocal()
+    try:
+        rows = db.query(KnowledgeNode).filter(
+            KnowledgeNode.user_id == user_id,
+            KnowledgeNode.status == "active",
+        ).order_by(KnowledgeNode.updated_at.desc(), KnowledgeNode.id.desc()).limit(limit).all()
+        changed = False
+        for node in rows:
+            if node.embedding:
+                continue
+            vector = _embedding_for(f"{node.node_type}: {node.name}. {node.description or ''}")
+            if vector is None:
+                break
+            node.embedding = json.dumps(vector, separators=(",", ":"))
+            changed = True
+        if changed:
+            db.commit()
+    except Exception as exc:
+        logger.warning("No se pudieron calcular embeddings del grafo: %s", exc)
+        db.rollback()
+    finally:
+        db.close()
+
+
+def schedule_node_embedding_backfill(user_id: Optional[int], limit: int = 24) -> None:
+    if not user_id or not _GRAPH_EMBEDDINGS_ENABLED:
+        return
+    with _GRAPH_BACKFILL_LOCK:
+        if user_id in _GRAPH_BACKFILL_INFLIGHT:
+            return
+        _GRAPH_BACKFILL_INFLIGHT.add(user_id)
+
+    def run() -> None:
+        try:
+            _backfill_node_embeddings(user_id, limit)
+        finally:
+            with _GRAPH_BACKFILL_LOCK:
+                _GRAPH_BACKFILL_INFLIGHT.discard(user_id)
+
+    threading.Thread(target=run, name=f"graph-emb-{user_id}", daemon=True).start()
 
 
 def upsert_relation(
@@ -230,6 +309,7 @@ def remember_explicit_facts(
         upsert_relation(db, user_id, subject, fact.relation, target, confidence=95, source=source, source_ref=source_ref)
     if facts or corrected:
         db.commit()
+        schedule_node_embedding_backfill(user_id)
     return len(facts)
 
 
@@ -245,13 +325,18 @@ def graph_context(db: Session, user_id: Optional[int], query: Optional[str] = No
         KnowledgeRelation.weight.desc(),
         KnowledgeRelation.updated_at.desc(),
     ).all()
+    query_vector = _embedding_for(query.strip()) if query and query.strip() else None
     tokens = {token.lower() for token in re.findall(r"[\wáéíóúñü]{3,}", query or "")}
-    if tokens:
-        rows.sort(key=lambda relation: (
-            bool(tokens & {relation.from_node.name.lower(), relation.to_node.name.lower()}),
-            relation.confidence,
-            relation.weight,
-        ), reverse=True)
+    def relevance(relation: KnowledgeRelation) -> tuple[float, int, int]:
+        names = {relation.from_node.name.lower(), relation.to_node.name.lower()}
+        lexical = 1.0 if tokens & names else 0.0
+        semantic = max(
+            _cosine_similarity(query_vector, _decode_embedding(relation.from_node.embedding)),
+            _cosine_similarity(query_vector, _decode_embedding(relation.to_node.embedding)),
+        ) if query_vector else 0.0
+        return (max(lexical, semantic), relation.confidence, relation.weight)
+    if tokens or query_vector:
+        rows.sort(key=relevance, reverse=True)
     output = []
     for relation in rows[:limit]:
         left = relation.from_node
