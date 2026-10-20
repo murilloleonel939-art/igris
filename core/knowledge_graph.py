@@ -314,8 +314,8 @@ def remember_explicit_facts(
 
 
 def graph_context(db: Session, user_id: Optional[int], query: Optional[str] = None, limit: int = 8) -> list[str]:
-    """Devuelve conexiones activas, priorizando las relacionadas con el mensaje."""
-    if not user_id:
+    """Devuelve conexiones activas relevantes, incluyendo un segundo salto acotado."""
+    if not user_id or limit <= 0:
         return []
     rows = db.query(KnowledgeRelation).filter(
         KnowledgeRelation.user_id == user_id,
@@ -324,9 +324,15 @@ def graph_context(db: Session, user_id: Optional[int], query: Optional[str] = No
         KnowledgeRelation.confidence.desc(),
         KnowledgeRelation.weight.desc(),
         KnowledgeRelation.updated_at.desc(),
-    ).all()
+    ).limit(500).all()
+    active_rows = [
+        relation for relation in rows
+        if relation.from_node and relation.to_node
+        and relation.from_node.status == "active" and relation.to_node.status == "active"
+    ]
     query_vector = _embedding_for(query.strip()) if query and query.strip() else None
     tokens = {token.lower() for token in re.findall(r"[\wáéíóúñü]{3,}", query or "")}
+
     def relevance(relation: KnowledgeRelation) -> tuple[float, int, int]:
         names = {relation.from_node.name.lower(), relation.to_node.name.lower()}
         lexical = 1.0 if tokens & names else 0.0
@@ -335,16 +341,47 @@ def graph_context(db: Session, user_id: Optional[int], query: Optional[str] = No
             _cosine_similarity(query_vector, _decode_embedding(relation.to_node.embedding)),
         ) if query_vector else 0.0
         return (max(lexical, semantic), relation.confidence, relation.weight)
-    if tokens or query_vector:
-        rows.sort(key=relevance, reverse=True)
-    output = []
-    for relation in rows[:limit]:
-        left = relation.from_node
-        right = relation.to_node
-        if left is None or right is None or left.status != "active" or right.status != "active":
-            continue
-        output.append(f"{left.name} —{relation.relation_type}→ {right.name}")
-    return output
+
+    ranked = sorted(active_rows, key=relevance, reverse=True)
+    primary_limit = min(limit, max(1, limit // 2)) if query else limit
+    selected = ranked[:primary_limit]
+    # Si hay una conexión relevante, incorpora sus relaciones adyacentes como contexto
+    # de segundo salto, sin repetir relaciones ni superar el límite solicitado.
+    anchor_ids = {node_id for relation in selected for node_id in (relation.from_node_id, relation.to_node_id)}
+    if anchor_ids and len(selected) < limit:
+        adjacent = [
+            relation for relation in active_rows
+            if relation not in selected
+            and (relation.from_node_id in anchor_ids or relation.to_node_id in anchor_ids)
+        ]
+        selected.extend(sorted(adjacent, key=relevance, reverse=True)[:limit - len(selected)])
+    return [
+        f"{relation.from_node.name} —{relation.relation_type}→ {relation.to_node.name}"
+        for relation in selected
+    ]
+
+
+def search_graph_nodes(db: Session, user_id: Optional[int], query: str, limit: int = 20) -> list[dict]:
+    """Busca entidades activas del usuario por nombre o descripción."""
+    if not user_id or not query or limit <= 0:
+        return []
+    clean_query = query.strip()[:120]
+    if not clean_query:
+        return []
+    pattern = f"%{clean_query}%"
+    rows = db.query(KnowledgeNode).filter(
+        KnowledgeNode.user_id == user_id,
+        KnowledgeNode.status == "active",
+        (KnowledgeNode.name.ilike(pattern) | KnowledgeNode.description.ilike(pattern)),
+    ).order_by(
+        KnowledgeNode.importance.desc(),
+        KnowledgeNode.confidence.desc(),
+        KnowledgeNode.updated_at.desc(),
+    ).limit(min(limit, 100)).all()
+    return [
+        {"id": node.id, "type": node.node_type, "name": node.name, "description": node.description}
+        for node in rows
+    ]
 
 
 def graph_neighbors(db: Session, user_id: Optional[int], node_id: int, limit: int = 20) -> list[dict]:
@@ -388,5 +425,5 @@ def save_graph(db: Session) -> None:
 
 __all__ = [
     "GraphFact", "extract_explicit_facts", "remember_explicit_facts",
-    "graph_context", "graph_neighbors", "upsert_node", "upsert_relation", "save_graph",
+    "graph_context", "graph_neighbors", "search_graph_nodes", "upsert_node", "upsert_relation", "save_graph",
 ]

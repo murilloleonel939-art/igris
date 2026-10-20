@@ -53,7 +53,7 @@ from core.capabilities import (
 from core.database import GoogleAccount, KnowledgeNode, MemoryLink, Note, Profile, Reminder, SpotifyAccount, TelegramLink, User, UserMemory, get_db
 from core.settings_manager import get_settings
 from core.memory import link_memories, linked_memories_block, load_memories, remember_from_text
-from core.knowledge_graph import graph_context, graph_neighbors
+from core.knowledge_graph import graph_context, graph_neighbors, search_graph_nodes
 from core.tools import gcalendar, gmail
 from core.tools.time_tools import DEFAULT_TZ, _format
 from core import stt, voice
@@ -773,10 +773,13 @@ def user_me(user: User = Depends(require_user), db: Session = Depends(get_db)):
 @router.get("/api/user/knowledge-graph")
 def list_user_graph(
     node_id: int | None = None,
+    q: str | None = None,
     user: User = Depends(require_user),
     db: Session = Depends(get_db),
 ):
     """Consulta entidades y vecinos del grafo propio, sin exponer otras cuentas."""
+    if q:
+        return {"nodes": search_graph_nodes(db, user.id, q)}
     if node_id is not None:
         node = db.query(KnowledgeNode).filter(
             KnowledgeNode.id == node_id,
