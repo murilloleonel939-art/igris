@@ -43,3 +43,4 @@ pyjwt
 email-validator
 piper-tts
 edge-tts
+websockets==12.0

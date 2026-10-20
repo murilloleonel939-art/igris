@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import time
+from types import SimpleNamespace
 from typing import List, Optional, Tuple
 
 from openai import AsyncOpenAI
@@ -334,11 +335,95 @@ def _system_message(addressing_instruction: Optional[str] = None, session=None) 
     return base
 
 
-async def _complete_with_tools(client, model: str, messages: List[dict], session=None) -> Tuple[str, List[dict]]:
+class _StreamFunction:
+    """Nombre y argumentos acumulados de una herramienta pedida en streaming."""
+
+    __slots__ = ("name", "arguments")
+
+    def __init__(self, name: str, arguments: str):
+        self.name = name
+        self.arguments = arguments
+
+
+class _StreamToolCall:
+    """Imita la forma del tool_call del SDK para reutilizar el bucle de herramientas."""
+
+    __slots__ = ("id", "type", "function")
+
+    def __init__(self, call_id: str, name: str, arguments: str):
+        self.id = call_id
+        self.type = "function"
+        self.function = _StreamFunction(name, arguments)
+
+
+async def _stream_chat(client, kwargs: dict, on_delta) -> Tuple[str, list, Optional[str]]:
+    """Llama al modelo en streaming y reenvía cada fragmento de texto.
+
+    Devuelve (texto, tool_calls, finish_reason). Las herramientas se reconstruyen
+    a partir de los deltas, porque en streaming llegan por partes.
+
+    Si el modelo pide una herramienta, el texto de esa ronda no se entrega: los
+    proveedores envían las llamadas antes del contenido, y mostrar ese texto
+    dejaría en pantalla una respuesta que luego se descarta.
+    """
+    stream = await client.chat.completions.create(**kwargs, stream=True)
+    content_parts: List[str] = []
+    accumulated: dict = {}
+    finish_reason = None
+    emitted = False
+    cancelled = False
+    async for chunk in stream:
+        choices = getattr(chunk, "choices", None)
+        if not choices:
+            continue
+        choice = choices[0]
+        if choice.finish_reason:
+            finish_reason = choice.finish_reason
+        delta = getattr(choice, "delta", None)
+        if delta is None:
+            continue
+        for tc in getattr(delta, "tool_calls", None) or []:
+            entry = accumulated.setdefault(getattr(tc, "index", 0) or 0, {"id": "", "name": "", "arguments": ""})
+            if getattr(tc, "id", None):
+                entry["id"] = tc.id
+            fn = getattr(tc, "function", None)
+            if fn is not None:
+                if getattr(fn, "name", None):
+                    entry["name"] += fn.name
+                if getattr(fn, "arguments", None):
+                    entry["arguments"] += fn.arguments
+            cancelled = True
+        text = getattr(delta, "content", None)
+        if text:
+            content_parts.append(text)
+            if on_delta is not None and not cancelled:
+                try:
+                    await on_delta(text)
+                    emitted = True
+                except Exception:
+                    # Un fallo al entregar el texto no debe tumbar la respuesta.
+                    logger.exception("Falló la entrega progresiva del texto")
+    calls = [
+        _StreamToolCall(entry["id"] or f"call_{index}", entry["name"], entry["arguments"])
+        for index, entry in sorted(accumulated.items())
+        if entry["name"]
+    ]
+    if calls and emitted:
+        logger.warning("El modelo envió texto y herramientas en la misma ronda; el texto se descarta")
+        content_parts = []
+    return "".join(content_parts), calls, finish_reason
+
+
+async def _complete_with_tools(
+    client, model: str, messages: List[dict], session=None, on_delta=None
+) -> Tuple[str, List[dict]]:
     """Llama al modelo y resuelve las llamadas a herramientas hasta obtener texto final.
 
     Devuelve (respuesta, mensajes_nuevos): los mensajes nuevos incluyen las llamadas a
     herramientas, sus resultados y la respuesta final, para guardarlos en el historial.
+
+    Si se pasa ``on_delta`` se usa streaming y cada fragmento de texto se entrega en
+    cuanto llega; el resultado final es idéntico al camino sin streaming.
     """
     work = list(messages)  # copia: el bucle añade mensajes de herramientas
     base_len = len(work)
@@ -359,15 +444,31 @@ async def _complete_with_tools(client, model: str, messages: List[dict], session
             # extra_body lo incorpora al JSON enviado a Pateway.
             kwargs.setdefault("extra_body", {})["reasoning_effort"] = REASONING_EFFORT
         # En la última ronda no se ofrecen herramientas: fuerza una respuesta final.
-        if round_no < MAX_TOOL_ROUNDS and tools:
+        offer_tools = round_no < MAX_TOOL_ROUNDS and bool(tools)
+        if offer_tools:
             kwargs["tools"] = tools
 
-        resp = await client.chat.completions.create(**kwargs)
-        choice = resp.choices[0]
-        logger.info("MODEL_CALL_END id=%s provider=openai_compatible model=%s round=%d elapsed_ms=%.1f finish_reason=%s tool_calls=%d", _trace_id(session), model, round_no, (time.perf_counter() - call_started) * 1000, choice.finish_reason, len(choice.message.tool_calls or []))
-        msg = choice.message
+        # Se hace streaming también cuando hay herramientas: si el modelo decide
+        # llamar a una, el texto de esa ronda no se entrega y la respuesta final
+        # llega en la ronda siguiente.
+        if on_delta is not None:
+            content, tool_calls, finish_reason = await _stream_chat(client, kwargs, on_delta)
+            logger.info("MODEL_CALL_END id=%s provider=openai_compatible model=%s round=%d elapsed_ms=%.1f finish_reason=%s tool_calls=%d stream=true", _trace_id(session), model, round_no, (time.perf_counter() - call_started) * 1000, finish_reason, len(tool_calls))
+            if tool_calls:
+                msg = SimpleNamespace(content=content or "", tool_calls=tool_calls)
+                choice = SimpleNamespace(finish_reason=finish_reason)
+            else:
+                reply = (content or "").strip()
+                if not reply:
+                    raise ValueError(f"respuesta vacía (finish_reason={finish_reason})")
+                return reply, work[base_len:] + [{"role": "assistant", "content": reply}]
+        else:
+            resp = await client.chat.completions.create(**kwargs)
+            choice = resp.choices[0]
+            logger.info("MODEL_CALL_END id=%s provider=openai_compatible model=%s round=%d elapsed_ms=%.1f finish_reason=%s tool_calls=%d", _trace_id(session), model, round_no, (time.perf_counter() - call_started) * 1000, choice.finish_reason, len(choice.message.tool_calls or []))
+            msg = choice.message
 
-        if msg.tool_calls:
+        if offer_tools and msg.tool_calls:
             work.append({
                 "role": "assistant",
                 "content": msg.content or "",
@@ -710,6 +811,68 @@ class BrainSession:
                 await client.close()
 
         # El turno no ocurrió: no consumirlo, para no invalidar una propuesta pendiente
+        self.turn_no, self.last_user_text = prev_turn_no, prev_user_text
+        raise RuntimeError("Todos los proveedores fallaron -> " + " | ".join(errors))
+
+
+    async def say_stream(self, text: str, on_delta, context: Optional[dict] = None) -> str:
+        """Igual que ``say`` pero entrega el texto por fragmentos a ``on_delta``.
+
+        El resultado y el historial son idénticos a ``say``. Si el proveedor no
+        soporta streaming (Anthropic) se entrega la respuesta completa de una vez.
+        """
+        context = context or {}
+        user_msg = {"role": "user", "content": _user_content(text, context.get("image_data"), context.get("image_mime", "image/png"))}
+        prev_turn_no, prev_user_text = self.turn_no, self.last_user_text
+        self.turn_no += 1
+        self.last_user_text = text
+        logger.info(
+            f"say_stream: sesion_obj={id(self)} turno={self.turn_no} "
+            f"historial={len(self.turns)} pendiente={bool(self.pending_event)}"
+        )
+        if self.pending_event and self.turn_no > self.pending_event["turn"] + 1:
+            self.pending_event = None
+
+        quick = await self._try_quick_confirm(text)
+        if quick is not None:
+            self.turns.append([user_msg, {"role": "assistant", "content": quick}])
+            self.turns = self.turns[-MAX_HISTORY_TURNS:]
+            self.conversation_summary = update_conversation_summary(self.conversation_summary, self.turns)
+            await on_delta(quick)
+            return quick
+
+        messages = [{"role": "system", "content": _system_message(self.addressing_instruction, self)}]
+        for turn in self.turns[-MAX_HISTORY_TURNS:]:
+            messages += turn
+        messages.append(user_msg)
+
+        errors = []
+        for name in self.brain.fallback_chain:
+            built = _build_client(name)
+            if not built:
+                errors.append(f"{name}: no configurado")
+                continue
+            client, model = built
+            logger.info(f"Intentando proveedor (stream): {name} ({model})")
+            provider_started = time.perf_counter()
+            try:
+                if name == "anthropic":
+                    reply, new_msgs = await _complete_with_anthropic(client, model, messages, self)
+                    await on_delta(reply)
+                else:
+                    reply, new_msgs = await _complete_with_tools(client, model, messages, self, on_delta=on_delta)
+                self.turns.append([user_msg] + new_msgs)
+                self.turns = self.turns[-MAX_HISTORY_TURNS:]
+                self.conversation_summary = update_conversation_summary(self.conversation_summary, self.turns)
+                logger.info("PROVIDER_END id=%s provider=%s elapsed_ms=%.1f status=ok stream=true", _trace_id(self), name, (time.perf_counter() - provider_started) * 1000)
+                return reply
+            except Exception as e:
+                logger.error(f"Proveedor '{name}' falló (stream): {e}")
+                logger.info("PROVIDER_END id=%s provider=%s elapsed_ms=%.1f status=error", _trace_id(self), name, (time.perf_counter() - provider_started) * 1000)
+                errors.append(f"{name}: {e}")
+            finally:
+                await client.close()
+
         self.turn_no, self.last_user_text = prev_turn_no, prev_user_text
         raise RuntimeError("Todos los proveedores fallaron -> " + " | ".join(errors))
 

@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import hmac
+import json
 import logging
 import os
 import re
@@ -30,7 +31,7 @@ from threading import Lock
 from typing import Any, Optional
 
 import httpx
-from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Request, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect, status
 from jose import JWTError, jwt
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
@@ -65,9 +66,15 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 DEEPGRAM_URL = "https://api.deepgram.com/v1/listen"
+DEEPGRAM_LIVE_URL = "wss://api.deepgram.com/v1/listen"
+
+# Fin de frase para el TTS progresivo: corta al puntuar, sin romper abreviaturas
+# ni decimales habituales en español.
+_SENTENCE_END = re.compile(r"[.!?…]+[\"'»)]*\s+")
 
 
 async def transcribe_user_audio(data: bytes, content_type: str = "audio/webm") -> str:
+
     """Transcribe audio con Deepgram cuando está configurado y usa Whisper como respaldo."""
     configured = get_settings().get_stt_config()
     provider = configured.get("provider", "deepgram")
@@ -100,6 +107,7 @@ async def transcribe_user_audio(data: bytes, content_type: str = "audio/webm") -
     except Exception:
         logger.exception("Falló la transcripción con Deepgram; se intentará Whisper local")
         return (await asyncio.to_thread(stt.transcribe, data, ".webm")).strip()
+
 
 # ============= CONFIGURACIÓN =============
 
@@ -199,57 +207,34 @@ async def require_admin_key(
     await require_key(request, x_igris_key, authorization)
 
 
-def require_user(
-    authorization: Optional[str] = Header(default=None),
-    db: Session = Depends(get_db),
-) -> User:
-    """Valida el token del área /u y devuelve el usuario.
-
-    Exige role == "user". Un token sin ese rol (por ejemplo uno manipulado, o
-    la respuesta de un futuro login de administrador) se rechaza aquí.
-    """
+def _user_from_bearer(authorization: Optional[str], db: Session) -> User:
+    """Valida un Bearer JWT del área /u para HTTP o WebSocket."""
     if not authorization or not authorization.lower().startswith("bearer "):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Sesión no válida",
-        )
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Sesión no válida")
 
     token = authorization.split(" ", 1)[1].strip()
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
     except JWTError:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Sesión expirada o no válida",
-        )
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Sesión expirada o no válida")
 
-    if payload.get("role") != "user":
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Sesión expirada o no válida",
-        )
+    if payload.get("role") != "user" or not isinstance(payload.get("user_id"), int):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Sesión expirada o no válida")
 
-    user_id = payload.get("user_id")
-    if not isinstance(user_id, int):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Sesión expirada o no válida",
-        )
-
-    user = db.query(User).filter(User.id == user_id).first()
+    user = db.query(User).filter(User.id == payload["user_id"]).first()
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Sesión expirada o no válida",
-        )
-    # Cuenta desactivada después de emitir el token: se corta el acceso ya
-    # mismo, sin esperar a que el token caduque.
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Sesión expirada o no válida")
     if not user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Tu cuenta está desactivada. Contacta al administrador.",
-        )
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tu cuenta está desactivada. Contacta al administrador.")
     return user
+
+
+def require_user(
+    authorization: Optional[str] = Header(default=None),
+    db: Session = Depends(get_db),
+) -> User:
+    """Valida el token del área /u y devuelve el usuario."""
+    return _user_from_bearer(authorization, db)
 
 
 # ============= MODELOS =============
@@ -1298,6 +1283,260 @@ async def user_voice_chat(
         return result
     except Exception as exc:
         return {"status": "error", "message": str(exc)}
+
+
+@router.websocket("/api/user/voice-ws")
+async def user_voice_ws(websocket: WebSocket) -> None:
+    """Canal de voz por fragmentos para el área de usuarios.
+
+    El primer mensaje debe ser JSON ``hello`` con el JWT, session_id y mime_type.
+    Los siguientes mensajes binarios son fragmentos WebM; ``end`` inicia la
+    verificación, transcripción y respuesta. El POST /voice-chat se conserva
+    como respaldo para navegadores o proxies sin WebSocket.
+    """
+    await websocket.accept()
+    db = SessionLocal()
+    try:
+        hello = json.loads(await asyncio.wait_for(websocket.receive_text(), timeout=10))
+        if hello.get("type") != "hello":
+            await websocket.send_json({"type": "error", "message": "Se esperaba la inicialización de voz."})
+            await websocket.close(code=1008)
+            return
+
+        try:
+            user = _user_from_bearer(f"Bearer {hello.get('token', '')}", db)
+        except HTTPException as exc:
+            await websocket.send_json({"type": "error", "message": str(exc.detail)})
+            await websocket.close(code=1008)
+            return
+
+        mime_type = str(hello.get("mime_type") or "audio/webm")[:100]
+        session_id = str(hello.get("session_id") or "")[:64]
+        await websocket.send_json({"type": "ready"})
+        audio_parts: list[bytes] = []
+        audio_size = 0
+        max_audio_bytes = 12 * 1024 * 1024
+        deepgram_socket = None
+        deepgram_reader = None
+        deepgram_transcripts: list[str] = []
+        try:
+            configured_stt = get_settings().get_stt_config()
+            deepgram_key = os.getenv("DEEPGRAM_API_KEY", "").strip()
+            if configured_stt.get("provider") == "deepgram" and deepgram_key:
+                import websockets
+                params = {
+                    "model": configured_stt.get("cloud_model") or os.getenv("DEEPGRAM_MODEL", "nova-3"),
+                    "language": configured_stt.get("language") or os.getenv("DEEPGRAM_LANGUAGE", "es"),
+                    "smart_format": "true", "punctuate": "true", "interim_results": "false",
+                    "container": "webm" if "webm" in mime_type.lower() else "ogg",
+                }
+                live_url = f"{DEEPGRAM_LIVE_URL}?{httpx.QueryParams(params)}"
+                deepgram_socket = await websockets.connect(
+                    live_url,
+                    extra_headers={"Authorization": f"Token {deepgram_key}"},
+                    open_timeout=10,
+                    close_timeout=5,
+                )
+
+                async def read_deepgram():
+                    async for raw_result in deepgram_socket:
+                        result = json.loads(raw_result)
+                        if result.get("is_final"):
+                            alternatives = result.get("channel", {}).get("alternatives", [])
+                            phrase = (alternatives[0].get("transcript") or "").strip() if alternatives else ""
+                            if phrase:
+                                deepgram_transcripts.append(phrase)
+
+                deepgram_reader = asyncio.create_task(read_deepgram())
+        except Exception:
+            logger.exception("No se pudo abrir Deepgram Live; se usará STT por lotes")
+            deepgram_socket = None
+
+        while True:
+            message = await websocket.receive()
+            if message.get("bytes") is not None:
+                chunk = message["bytes"]
+                audio_size += len(chunk)
+                if audio_size > max_audio_bytes:
+                    await websocket.send_json({"type": "error", "message": "La grabación supera el límite permitido."})
+                    await websocket.close(code=1009)
+                    return
+                audio_parts.append(chunk)
+                if deepgram_socket is not None:
+                    try:
+                        await deepgram_socket.send(chunk)
+                    except Exception:
+                        logger.exception("Falló el envío de audio a Deepgram Live")
+                        await deepgram_socket.close()
+                        deepgram_socket = None
+                continue
+
+            raw = message.get("text")
+            if raw is None:
+                continue
+            event = json.loads(raw)
+            if event.get("type") == "cancel":
+                await websocket.send_json({"type": "cancelled"})
+                return
+            if event.get("type") != "end":
+                continue
+            break
+
+        if deepgram_socket is not None:
+            try:
+                await deepgram_socket.send(json.dumps({"type": "CloseStream"}))
+            except Exception:
+                logger.exception("Falló el cierre de Deepgram Live")
+        if deepgram_reader is not None:
+            try:
+                await asyncio.wait_for(deepgram_reader, timeout=3)
+            except Exception:
+                deepgram_reader.cancel()
+        if deepgram_socket is not None:
+            try:
+                await deepgram_socket.close()
+            except Exception:
+                pass
+        audio = b"".join(audio_parts)
+        if len(audio) < 1_000:
+            await websocket.send_json({"type": "error", "message": "El audio está vacío o es demasiado corto."})
+            return
+
+        profile = db.query(Profile).filter(
+            Profile.user_id == user.id,
+            Profile.name == "Voz principal",
+            Profile.is_authorized.is_(True),
+        ).first()
+        if profile is None or not profile.voice_print:
+            await websocket.send_json({"type": "error", "message": "Registra tu perfil de voz antes de usar comandos por voz."})
+            return
+
+        await websocket.send_json({"type": "state", "state": "processing"})
+        try:
+            verified, score = await asyncio.to_thread(voice.verify, audio, profile.voice_print, ".webm")
+        except Exception:
+            logger.exception("Falló la verificación de voz por WebSocket")
+            await websocket.send_json({"type": "error", "message": "No se pudo verificar la voz."})
+            return
+        if not verified:
+            await websocket.send_json({"type": "error", "message": f"Voz no reconocida (similitud {score:.2f})."})
+            return
+
+        try:
+            text = " ".join(deepgram_transcripts).strip()
+            if not text:
+                text = await transcribe_user_audio(audio, mime_type)
+        except Exception:
+            logger.exception("Falló la transcripción de voz por WebSocket")
+            await websocket.send_json({"type": "error", "message": "No se pudo transcribir el audio."})
+            return
+        if not text:
+            await websocket.send_json({"type": "error", "message": "No se entendió la orden."})
+            return
+
+        await websocket.send_json({"type": "transcript", "text": text, "voice_score": round(score, 3)})
+        if _sessions is None:
+            await websocket.send_json({"type": "error", "message": "El chat no está disponible en este momento."})
+            return
+
+        session_key = _session_key(user.id, session_id)
+        session = _sessions.get(session_key)
+        _bind_identity(session, user, db, query=text)
+        remember_from_text(db, user.id, text, session_key=session_key)
+        session.neural_memory = neural_memory_context(db, user.id, text)
+
+        # Cada frase se sintetiza y se envía en cuanto el modelo la termina: no se
+        # espera a la respuesta completa. El texto también se envía por frases para
+        # que el cliente pueda mostrarlo mientras IGRIS habla.
+        tts_mime = "audio/wav" if tts.TTS_PROVIDER == "local" else "audio/mpeg"
+        limited = {"chars": 0}
+
+        async def speak(sentence: str) -> None:
+            sentence = sentence.strip()
+            if not sentence:
+                return
+            # Tope global de caracteres para no sintetizar respuestas enormes.
+            room = TTS_MAX_CHARS - limited["chars"]
+            if room <= 0:
+                return
+            sentence = sentence[:room]
+            limited["chars"] += len(sentence)
+            await websocket.send_json({"type": "sentence", "text": sentence})
+            try:
+                if tts.TTS_PROVIDER == "edge" and getattr(tts, "_edge_available", False):
+                    voice_name = os.environ.get("IGRIS_TTS_VOICE", tts._TTS_CFG.get("voice", "es-ES-AlvaroNeural"))
+                    communicator = tts.edge_tts.Communicate(
+                        sentence, voice_name, rate=tts.TTS_RATE, pitch=tts.TTS_PITCH, volume="+0%",
+                    )
+                    buffer = bytearray()
+                    async for frame in communicator.stream():
+                        if frame.get("type") == "audio" and frame.get("data"):
+                            buffer.extend(frame["data"])
+                    if not buffer:
+                        return
+                    await websocket.send_bytes(bytes(buffer))
+                else:
+                    await websocket.send_bytes(await tts.synthesize(sentence))
+                await websocket.send_json({"type": "tts_chunk"})
+            except Exception:
+                logger.exception("Falló el TTS de una frase")
+
+        # Buzón secuencial: el texto llega más rápido que el audio, así que las
+        # frases se encolan y se sintetizan en orden sin bloquear al modelo.
+        queue: asyncio.Queue = asyncio.Queue()
+        buffer_text = ""
+
+        async def worker() -> None:
+            while True:
+                sentence = await queue.get()
+                if sentence is None:
+                    queue.task_done()
+                    return
+                await speak(sentence)
+                queue.task_done()
+
+        async def on_delta(fragment: str) -> None:
+            nonlocal buffer_text
+            buffer_text += fragment
+            # Cortar en fin de frase cuando el fragmento ya la contiene.
+            while True:
+                match = _SENTENCE_END.search(buffer_text)
+                if not match:
+                    return
+                sentence, buffer_text = buffer_text[:match.end()], buffer_text[match.end():]
+                queue.put_nowait(sentence)
+
+        speaker = asyncio.create_task(worker())
+        await websocket.send_json({"type": "tts_start", "mime_type": tts_mime})
+        try:
+            reply = await session.say_stream(text, on_delta)
+        except Exception:
+            logger.exception("Falló el chat de voz por WebSocket (stream)")
+            queue.put_nowait(None)
+            await speaker
+            await websocket.send_json({"type": "error", "message": "No se pudo procesar la orden."})
+            return
+
+        # Resto sin puntuación final.
+        if buffer_text.strip():
+            queue.put_nowait(buffer_text)
+        queue.put_nowait(None)
+        await speaker
+
+        try:
+            learn_from_assistant(db, user.id, reply, source="chat", session_key=session_key)
+        except Exception:
+            logger.exception("No se pudo guardar el aprendizaje de la respuesta de voz")
+        await websocket.send_json({"type": "reply", "reply": reply})
+        await websocket.send_json({"type": "tts_end"})
+    except (WebSocketDisconnect, asyncio.TimeoutError, json.JSONDecodeError):
+        return
+    finally:
+        db.close()
+        try:
+            await websocket.close()
+        except Exception:
+            pass
 
 
 @router.post("/api/user/chat")

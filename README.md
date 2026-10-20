@@ -13,6 +13,7 @@
 | 📲 **Instalable como app (PWA)**, con una app para el administrador y otra para los usuarios | Funcional |
 | 🧑‍🎤 Avatar animado (video) a pantalla completa que cambia según escucha, piensa o habla | Funcional |
 | 🎧 Modo manos libres con corte automático por silencio: solo le hablas | Funcional (Chrome/Edge) |
+| 🔌 **Voz en canal bidireccional (WebSocket)**: envío de audio mientras hablas, transcripción en vivo con Deepgram, respuesta en streaming y voz por frases | Funcional |
 | 🔊 Respuesta hablada automática (`/api/tts`) y botón de altavoz para repetir cada respuesta | Funcional |
 | ⌨️ Botón Enviar que abre un cuadro de texto para escribir | Funcional |
 | 🤖 Bot de Telegram (texto) | Funcional |
@@ -182,6 +183,7 @@ Igris incluye una red neuronal local tipo MLP por usuario, ejecutada con PyTorch
 | `POST` | `/api/user/voice-profile` | Registra la voz con varias muestras guiadas |
 | `DELETE` | `/api/user/voice-profile` | Borra el perfil/grabaciones de validación de voz |
 | `POST` | `/api/user/voice-chat` | Verifica la voz, transcribe con Whisper y ejecuta el comando |
+| `WS` | `/api/user/voice-ws` | Canal de voz bidireccional: audio por fragmentos, transcripción en vivo, respuesta en streaming y TTS por frases |
 | `GET` | `/api/user/connections` | Qué tiene conectado y qué le falta (alimenta la pantalla «Conexiones») |
 | `GET` | `/api/user/google/start` | Devuelve la URL de consentimiento de Google |
 | `GET` | `/api/user/google/callback` | Recibe el código de Google y guarda el permiso del usuario |
@@ -368,7 +370,7 @@ La pantalla del chat del administrador funciona como un asistente de voz:
 - **Conexiones del usuario (`/conexiones`):** pantalla completa con Google, voz y Telegram en tarjetas. Al abrirla se ocultan el historial y los controles del chat, para que se vea como una pantalla de ajustes y no como el chat con algo encima.
 - **Instalar como app:** en las pantallas de acceso (`/acceso` y `/u/login`) aparece un botón **📲 Instalar** (ver **Instalable como aplicación (PWA)**).
 ### Requisitos y límites del navegador
-- **Voz en navegador:** el panel admin mantiene reconocimiento del navegador donde aplica; el área de usuarios graba con `MediaRecorder` y envía el audio al backend para verificar voz y transcribir con Whisper. Requiere HTTPS y permiso de micrófono. Si el navegador no soporta la captura de audio, se puede escribir con el botón Enviar.
+- **Voz en navegador:** el panel admin mantiene reconocimiento del navegador donde aplica; el área de usuarios graba con `MediaRecorder`, envía el audio por el canal WebSocket mientras habla y mantiene el envío HTTP como respaldo. Requiere HTTPS y permiso de micrófono. Si el navegador no soporta la captura de audio, se puede escribir con el botón Enviar.
 - **Micrófono:** la primera vez el navegador pide permiso; hay que aceptarlo. Si se bloquea, se corrige desde el candado de la barra de direcciones y pulsando "Manos libres".
 - **Sonido:** los navegadores no reproducen audio hasta que haya un clic o toque en la página. Si lo bloquean, aparece el aviso "Toca la pantalla para activar el sonido"; con un toque basta.
 - **Video:** el video es vertical (480×800). En un monitor horizontal ocupa todo el alto y los costados se funden con el fondo; en el celular llena toda la pantalla.
@@ -392,9 +394,12 @@ La pantalla del chat del administrador funciona como un asistente de voz:
 - **Viven en memoria:** se pierden al reiniciar o redesplegar el backend (también una propuesta de evento pendiente de confirmar). Funciona con un solo worker de Uvicorn. Las cuentas de usuario, los recordatorios y las notas sí se guardan en la base de datos.
 ### Voz
 - **Web (entrada):** el área de usuarios graba audio con `MediaRecorder`, corta automáticamente cuando detecta silencio y lo envía al backend. Si existe un perfil registrado, `core/voice.py` limpia el audio con ffmpeg, calcula embeddings locales con NVIDIA NeMo/TitaNet y compara contra ese perfil antes de enviarlo a transcripción.
+- **Canal bidireccional (`WS /api/user/voice-ws`):** el navegador abre el canal antes de grabar y envía bloques de 250 ms mientras hablas. El primer mensaje es `{"type":"hello", token, session_id, mime_type}`; después van los binarios y `{"type":"end"}` cierra la toma. El servidor responde con `ready`, `state`, `transcript`, `sentence`, audio binario, `tts_chunk`, `reply`, `tts_end` y `error`. `{"type":"cancel"}` descarta la toma sin procesarla.
+- **Progresividad real:** el audio se reenvía a **Deepgram Live** (`wss://api.deepgram.com/v1/listen`) según llega; el modelo responde en streaming (`say_stream`) y cada frase se sintetiza y se envía en cuanto está lista, sin esperar al final. La verificación de voz se mantiene por lote sobre el audio completo, porque compara embeddings.
+- **Respaldo HTTP:** si el navegador, un proxy o un despliegue no admiten el WebSocket, el mismo flujo sigue funcionando por `POST /api/user/voice-chat` con un único archivo de audio.
 - **Perfil de voz:** se registra desde `/conexiones` con seis muestras guiadas que varían distancia, volumen, posición y ruido ambiental. El usuario puede borrar su perfil con **Borrar grabaciones** para desactivar esa validación. El panel del administrador muestra si cada cuenta tiene la voz registrada, y su botón lleva a la misma pantalla personal.
-- **STT en el backend:** el proveedor (Whisper local u OpenAI cloud) se selecciona desde Configuración del panel admin y se aplica inmediatamente; las variables de Coolify son valores base. Whisper cloud necesita una clave OpenAI directa `IGRIS_STT_API_KEY`; no comparte la clave de Pateway.
-- **TTS (texto a voz):** `core/tts.py`, expuesto en `POST /api/tts`. La web lo reproduce automáticamente tras cada respuesta y mide su volumen con la Web Audio API para animar al avatar.
+- **STT en el backend:** el proveedor (Whisper local, OpenAI cloud o Deepgram) se selecciona desde Configuración del panel admin y se aplica inmediatamente; las variables de Coolify son valores base. Whisper cloud necesita una clave OpenAI directa `IGRIS_STT_API_KEY`; no comparte la clave de Pateway.
+- **TTS (texto a voz):** `core/tts.py`, expuesto en `POST /api/tts` (admin) y `POST /api/user/tts` (usuario). Con `edge` se usa `Communicate.stream()` frase a frase; Piper devuelve WAV y edge/OpenAI, MP3. La web lo reproduce automáticamente y mide su volumen con la Web Audio API para animar el avatar.
 ### Configuración de IA
 - **Proveedores:** `nemotron`, `openai`, `anthropic`, `local` (Ollama). `nemotron`, `openai` y `local` se consumen con el SDK de OpenAI (APIs compatibles con `/v1/chat/completions`). **`anthropic` es la excepción:** Claude solo se sirve por el protocolo nativo de Anthropic (`/v1/messages`, con `x-api-key`), así que usa el SDK `anthropic` y su propio bucle de herramientas (`_complete_with_anthropic`); enviarlo por `/v1/chat/completions` devuelve `protocol_mismatch`. Por eso su URL base **no lleva `/v1`**: el SDK añade `/v1/messages`. La lista válida está en `PROVIDERS` de `core/brain.py` y debe coincidir con `AVAILABLE_PROVIDERS` de `core/config.py`.
 - **Cadena por defecto:** nemotron → openai → anthropic → local.
@@ -434,12 +439,12 @@ igris/
 │   ├── memory.py              # Memoria estructurada: estado mental, recuerdos personales y operativos
 │   ├── voice.py               # Perfil de voz por usuario y verificación de hablante
 │   ├── whatsapp.py            # Integración con WhatsApp Business
-│   ├── stt.py, tts.py         # Voz
-│   ├── settings.json
+│   ├── stt.py                 # STT por lotes (Whisper local, OpenAI o helper compartido)
+│   ├── tts.py                 # TTS por lotes (Piper, edge-tts u OpenAI); el stream por frases vive en user_routes│   ├── settings.json
 │   └── tools/                 # Herramientas de Igris (incluye búsqueda web aislada)
 ├── server/
 │   ├── main.py                # FastAPI: chat, configuración, TTS, acceso con clave, webhook de Telegram y planificador
-│   ├── user_routes.py         # Área de usuarios (/api/user/*) y panel de administración (/api/admin/*)
+│   ├── user_routes.py         # Área de usuarios (/api/user/*), voz en WebSocket y panel de administración (/api/admin/*)
 │   ├── device_routes.py       # WebSocket del agente Windows (/api/device/ws) y gestión de equipos
 │   └── tvbox_routes.py        # WebSocket del agente Android TV Box (/api/tvbox/ws) y emparejamiento
 ├── android_tv_agent/          # Agente Android independiente para TV Box (APK)
@@ -497,7 +502,7 @@ igris/
 │           ├── AdminConnections.vue # Conexiones de todos los usuarios (solo admin)
 │           ├── ChatSurface.vue    # Elige la superficie según haya token de usuario o clave
 │           ├── UserLogin.vue      # Acceso de usuarios (usuario y contraseña)
-│           └── UserChat.vue       # Chat del usuario y pantalla de Conexiones
+│           └── UserChat.vue       # Chat del usuario: voz en WebSocket con respaldo HTTP y pantalla de Conexiones
 ├── Dockerfile         # Imagen del backend (Python 3.12-slim + ffmpeg + PyTorch solo CPU)
 ├── Dockerfile.web     # Imagen del frontend (Node.js + vite build)
 ├── requirements.txt
@@ -595,12 +600,15 @@ Las credenciales OAuth que usan `core/tools/google_client.py`, `gmail.py` y `gca
 ### Voz
 | Variable | Descripción | Ejemplo / por defecto |
 | --- | --- | --- |
-| `IGRIS_STT_PROVIDER` | Proveedor STT inicial, modificable desde Configuración: `local` u `openai` | `local` |
+| `IGRIS_STT_PROVIDER` | Proveedor STT inicial, modificable desde Configuración: `local`, `openai` o `deepgram` | `local` |
 | `IGRIS_WHISPER_MODEL` | Modelo local Whisper (`tiny`, `base`, `small`, `medium`) | `tiny` |
 | `IGRIS_STT_API_KEY` | Clave de API OpenAI directa para Whisper cloud (separada de Pateway) | — |
 | `IGRIS_STT_API_BASE` | Base URL de Whisper cloud | `https://api.openai.com/v1` |
 | `IGRIS_STT_MODEL` | Modelo de transcripción cloud | `whisper-1` |
 | `IGRIS_STT_LANGUAGE` | Idioma del audio a transcribir (código de 2 letras) | `es` |
+| `DEEPGRAM_API_KEY` | Clave de Deepgram. Habilita la transcripción por lotes y el canal Live del WebSocket | — |
+| `DEEPGRAM_MODEL` | Modelo de Deepgram para transcripción | `nova-3` |
+| `DEEPGRAM_LANGUAGE` | Idioma de Deepgram | `es` |
 
 #### Configuración recomendada en Coolify
 
@@ -620,6 +628,7 @@ IGRIS_STT_MODEL=whisper-1
 
 - **Whisper local:** no necesita una clave de OpenAI. `base` es el modelo recomendado para un equilibrio entre velocidad y precisión; también se admiten `tiny`, `small` y `medium`.
 - **Whisper OpenAI:** requiere `IGRIS_STT_API_KEY` con una clave **directa de OpenAI** y usa `whisper-1`. Esta clave no puede ser la de Pateway.
+- **Deepgram:** con `DEEPGRAM_API_KEY` y el proveedor en `deepgram`, el canal WebSocket transcribe en vivo mientras hablas y `POST /api/user/voice-chat` usa la ruta por lotes. Si la clave falta o la conexión falla, se cae a Whisper sin interrumpir la orden.
 - Las variables actúan como valores base; la selección hecha en el panel se guarda de forma persistente y tiene prioridad sobre `IGRIS_STT_PROVIDER`.
 - Si se agregan o cambian variables en Coolify, hay que redeplegar el backend para que las lea.
 
@@ -860,7 +869,10 @@ El servidor no tiene GPU, así que el `Dockerfile` instala `torch==2.5.1` y `tor
 | Aviso "Toca la pantalla para activar el sonido" | El navegador bloquea el audio hasta que haya una interacción | Hacer clic o tocar la página una vez |
 | La voz registrada marca similitud baja o rechaza al usuario correcto | Muestras con ruido, volumen/distancia muy distintos, o perfil antiguo | Regrabar el perfil con las muestras guiadas; si no se quiere validación por voz, usar **Borrar grabaciones** |
 | La primera transcripción tarda mucho después de redeploy | Whisper descargó de nuevo el modelo local | Montar volumen persistente en `/root/.cache/whisper` |
-| Igris responde en texto pero no habla | Falla de `/api/tts` en el backend | Revisar los logs del backend y la configuración de `IGRIS_TTS_*` |
+| Igris responde en texto pero no habla | Falla de `/api/tts` o de `/api/user/tts` en el backend | Revisar los logs y la configuración de `IGRIS_TTS_*` |
+| El canal de voz no conecta y siempre usa HTTP | WebSocket bloqueado por proxy, CDN o el navegador | Revisar que `/api/user/voice-ws` llegue al backend con soporte de upgrade; mientras tanto el respaldo HTTP mantiene la voz |
+| El WebSocket responde `No se pudo procesar la orden` | Fallo del modelo o de una herramienta durante el streaming | Revisar los logs `PROVIDER_END`/`TOOL_END`; la ruta HTTP sigue operativa |
+| No se usa la transcripción en vivo | Falta `DEEPGRAM_API_KEY` o el proveedor STT no es `deepgram` | Definir la clave y seleccionar Deepgram; el sistema cae solo a Whisper |
 | Igris se responde a sí mismo en bucle | Altavoces muy fuertes cerca del micrófono | Usar audífonos o bajar el volumen |
 | `Proveedor 'nemotron' falló: respuesta vacía` | El modelo razona y agota los tokens antes de responder | Subir `IGRIS_MAX_TOKENS` (2048 o más); el log indica el `finish_reason` |
 | `Proveedor 'openai'/'anthropic' falló: ... crédito/quota` | Cuenta sin saldo | Recargar saldo o quitar el proveedor de la cadena |

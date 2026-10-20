@@ -325,7 +325,7 @@
           >Guardado en {{ doc.local_path || 'tu carpeta Documentos' }}</span>
           <button
             v-if="msg.from === 'igris'"
-            @click.stop="playIgrisResponse(msg.text, i)"
+            @click.stop="playIrisResponse(msg.text, i)"
             :disabled="isPlayingTTS[i]"
             class="speaker"
             title="Reproducir respuesta"
@@ -373,7 +373,7 @@
 <script setup>
 import { ref, computed, nextTick, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import userApi, { getUser, clearSession, errorMessage } from '../userApi'
+import userApi, { getToken, getUser, clearSession, errorMessage } from '../userApi'
 import { getKey } from '../api'
 import { igris, setIgrisState } from '../composables/useIgris'
 import IgrisHero from '../components/IgrisHero.vue'
@@ -586,6 +586,164 @@ const sendChat = async () => {
 /* ───────────── Reconocimiento de voz ───────────── */
 let recognition = null
 
+function voiceSocketUrl() {
+  const base = userApi.defaults.baseURL || window.location.origin
+  return `${base.replace(/^http/, 'ws')}/api/user/voice-ws`
+}
+
+function openVoiceSocket(mimeType, onAudioChunk = null, onReply = null, onSentence = null, onTranscript = null) {
+  let socket = null
+  let ready = false
+  let ended = false
+  let settled = false
+  let failure = null
+  const pending = []
+  let resolveResult
+  let rejectResult
+  const result = new Promise((resolve, reject) => { resolveResult = resolve; rejectResult = reject })
+  // El resultado se espera tras detener MediaRecorder; evita una advertencia si
+  // el WebSocket falla antes de que termine la captura.
+  result.catch(() => {})
+  let reply = ''
+  let transcript = ''
+  const audioReplies = []
+  // Cada fragmento se reproduce en cuanto llega, en orden estricto, para que
+  // IGRIS empiece a hablar sin esperar a que se sintetice toda la respuesta.
+  let playback = Promise.resolve()
+  let playedInline = false
+  const timeout = window.setTimeout(() => fail('El canal de voz tardó demasiado en responder.'), 45000)
+
+  const fail = (message, handled = false) => {
+    if (settled) return
+    failure = new Error(message)
+    failure.voiceSocketHandled = handled
+    if (socket && socket.readyState === WebSocket.OPEN) socket.close()
+    if (ended) {
+      settled = true
+      window.clearTimeout(timeout)
+      rejectResult(failure)
+    }
+  }
+  const sendEnd = () => {
+    if (socket?.readyState === WebSocket.OPEN && ready && !settled) socket.send(JSON.stringify({ type: 'end' }))
+  }
+  try {
+    socket = new WebSocket(voiceSocketUrl())
+    socket.onopen = () => socket.send(JSON.stringify({
+      type: 'hello', token: getToken(), session_id: sessionId, mime_type: mimeType || 'audio/webm',
+    }))
+    socket.onmessage = async ({ data }) => {
+      if (data instanceof Blob) {
+        audioReplies.push(data)
+        if (onAudioChunk) {
+          playedInline = true
+          playback = playback.then(() => onAudioChunk(data)).catch(() => {})
+        }
+        return
+      }
+      let event
+      try { event = JSON.parse(data) } catch { return }
+      if (event.type === 'ready') {
+        ready = true
+        pending.splice(0).forEach((chunk) => socket.send(chunk))
+        if (ended) sendEnd()
+      } else if (event.type === 'state') {
+        setIgrisState(event.state)
+      } else if (event.type === 'transcript') {
+        transcript = event.text || ''
+        if (onTranscript) onTranscript(transcript)
+      } else if (event.type === 'sentence') {
+        // Texto que ya se está sintetizando: se muestra mientras suena.
+        if (onSentence) onSentence(event.text || '')
+      } else if (event.type === 'reply') {
+        reply = event.reply || ''
+        if (onReply) onReply({ text: transcript, reply })
+      } else if (event.type === 'tts_end' || event.type === 'tts_error') {
+        if (!settled) {
+          settled = true
+          window.clearTimeout(timeout)
+          socket.close()
+          // Si los fragmentos ya se reprodujeron en línea, el flujo de voz solo
+          // necesita el texto y no debe repetir el audio.
+          await playback
+          resolveResult({
+            text: transcript,
+            reply,
+            audio: event.type === 'tts_end' && !playedInline ? audioReplies : null,
+          })
+        }
+      } else if (event.type === 'error') {
+        fail(event.message || 'No se pudo procesar la voz.', true)
+      }
+    }
+    socket.onerror = () => fail('No se pudo abrir el canal de voz.')
+    socket.onclose = () => {
+      if (ended && !settled && !failure) fail('El canal de voz se cerró inesperadamente.')
+    }
+  } catch {
+    fail('Tu navegador no soporta el canal de voz.')
+  }
+
+  return {
+    send(chunk) {
+      if (settled || failure || !chunk?.size) return
+      if (ready && socket?.readyState === WebSocket.OPEN) socket.send(chunk)
+      else pending.push(chunk)
+    },
+    finish() {
+      ended = true
+      if (failure) {
+        settled = true
+        window.clearTimeout(timeout)
+        rejectResult(failure)
+      } else sendEnd()
+      return result
+    },
+    cancel() {
+      if (settled) return
+      settled = true
+      window.clearTimeout(timeout)
+      if (socket?.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({ type: 'cancel' }))
+        socket.close()
+      }
+    },
+  }
+}
+
+// Reproduce un único fragmento y resuelve al terminar o si el audio falla.
+async function playSocketChunk(audioBlob) {
+  let audioUrl = null
+  try {
+    audioUrl = URL.createObjectURL(audioBlob)
+    const audio = new Audio(audioUrl)
+    currentAudio = audio
+    await new Promise((resolve) => {
+      audio.onplay = () => { needsTap.value = false; setIgrisState('speaking'); startLevelMeter(audio) }
+      audio.onended = resolve
+      audio.onerror = resolve
+      audio.play().catch(() => { needsTap.value = true; resolve() })
+    })
+  } finally {
+    stopLevelMeter()
+    if (audioUrl) URL.revokeObjectURL(audioUrl)
+    currentAudio = null
+  }
+}
+
+async function playSocketAudio(audioBlobs, index) {
+  if (!audioBlobs?.length) return false
+  const marking = index !== undefined && index !== null
+  if (marking) isPlayingTTS.value[index] = true
+  try {
+    for (const audioBlob of audioBlobs) await playSocketChunk(audioBlob)
+    return true
+  } finally {
+    if (marking) isPlayingTTS.value[index] = false
+    setIgrisState('idle')
+  }
+}
+
 function listenOnce() {
   return new Promise(async (resolve) => {
     if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
@@ -596,6 +754,7 @@ function listenOnce() {
     let stream
     let recorder
     let rec = null
+    let voiceSocket = null
     const chunks = []
     let meterContext
     let meterSource
@@ -607,6 +766,8 @@ function listenOnce() {
     let text = ''
     let error = null
     let settled = false
+    let replyShown = false
+    let transcriptText = ''
     let stopCapture = null
     try {
       stream = await navigator.mediaDevices.getUserMedia({
@@ -644,8 +805,39 @@ function listenOnce() {
       sample()
       const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : undefined
       recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream)
-      recorder.ondataavailable = (event) => event.data.size && chunks.push(event.data)
-      recorder.start()
+      // El servidor conserva el audio completo para verificar la voz y transcribir,
+      // pero los fragmentos salen inmediatamente por el canal bidireccional.
+      voiceSocket = openVoiceSocket(recorder.mimeType || 'audio/webm', playSocketChunk, (payload) => {
+        // El texto definitivo llega al final: corrige lo mostrado por frases.
+        if (!payload.reply) return
+        if (!replyShown) {
+          replyShown = true
+          chatMessages.value.push({ from: 'user', text: payload.text })
+          chatMessages.value.push({ from: 'igris', text: payload.reply })
+        } else {
+          const last = chatMessages.value[chatMessages.value.length - 1]
+          if (last && last.from === 'igris') last.text = payload.reply
+        }
+        scrollToBottom()
+      }, (sentence) => {
+        // Mostrar cada frase mientras se sintetiza, sin esperar a la respuesta completa.
+        if (!sentence) return
+        if (!replyShown) {
+          replyShown = true
+          chatMessages.value.push({ from: 'user', text: transcriptText })
+          chatMessages.value.push({ from: 'igris', text: sentence })
+        } else {
+          const last = chatMessages.value[chatMessages.value.length - 1]
+          if (last && last.from === 'igris') last.text += ` ${sentence}`
+        }
+        scrollToBottom()
+      }, (value) => { transcriptText = value })
+      recorder.ondataavailable = (event) => {
+        if (!event.data.size) return
+        chunks.push(event.data)
+        voiceSocket?.send(event.data)
+      }
+      recorder.start(250)
     } catch (err) {
       resolve({ text: '', audio: null, error: 'not-allowed' })
       return
@@ -660,7 +852,9 @@ function listenOnce() {
       isListening.value = false
       stream.getTracks().forEach((track) => track.stop())
       const audio = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' })
-      resolve({ text, audio: heardSpeech ? audio : null, error })
+      const voiceResult = heardSpeech && voiceSocket ? voiceSocket.finish() : null
+      if (!heardSpeech) voiceSocket?.cancel()
+      resolve({ text, audio: heardSpeech ? audio : null, voiceResult, error, replyShown })
     }
 
     // Whisper del backend es la única fuente de transcripción. Chrome no
@@ -710,7 +904,7 @@ const runHandsFree = async () => {
         await sleep(200)
         continue
       }
-      const { text, audio, error } = await listenOnce()
+      const { text, audio, voiceResult, error, replyShown } = await listenOnce()
       if (!handsFree.value) break
       if (reportVoiceError(error)) {
         handsFree.value = false
@@ -720,22 +914,37 @@ const runHandsFree = async () => {
       // capturado la voz. El backend verifica la voz localmente y luego transcribe.
       if (audio) {
         setIgrisState('processing')
-        const form = new FormData()
-        form.append('audio', audio, 'voice.webm')
-        form.append('session_id', sessionId)
         try {
-          const response = await userApi.post('/api/user/voice-chat', form, {
-            headers: { 'Content-Type': 'multipart/form-data' },
-          })
-          if (response.data.status === 'ok') {
+          let result
+          try {
+            result = voiceResult ? await voiceResult : null
+            if (!result) throw new Error('El canal de voz no devolvió respuesta.')
+          } catch (socketError) {
+            if (socketError.voiceSocketHandled) throw socketError
+            // Compatibilidad con navegadores, proxies o despliegues aún sin WS.
+            const form = new FormData()
+            form.append('audio', audio, 'voice.webm')
+            form.append('session_id', sessionId)
+            const response = await userApi.post('/api/user/voice-chat', form, {
+              headers: { 'Content-Type': 'multipart/form-data' },
+            })
+            result = { text: response.data.text, reply: response.data.reply, audio: null }
+          }
+          if (result?.reply) {
             setNotice('')
-            chatMessages.value.push({ from: 'user', text: response.data.text })
-            chatMessages.value.push({ from: 'igris', text: response.data.reply })
-            scrollToBottom()
-            await playIrisResponse(response.data.reply, chatMessages.value.length - 1)
+            // Con WebSocket el mensaje ya se mostró al recibir la respuesta y el
+            // audio se reprodujo por fragmentos; aquí solo queda el respaldo HTTP.
+            if (!replyShown) {
+              chatMessages.value.push({ from: 'user', text: result.text })
+              chatMessages.value.push({ from: 'igris', text: result.reply })
+              scrollToBottom()
+            }
+            const messageIndex = chatMessages.value.length - 1
+            if (result.audio?.length) await playSocketAudio(result.audio, messageIndex)
+            else if (!replyShown) await playIrisResponse(result.reply, messageIndex)
           }
         } catch (err) {
-          setNotice(err.response?.data?.detail || 'Voz no reconocida. Orden rechazada.')
+          setNotice(err.response?.data?.detail || err.message || 'Voz no reconocida. Orden rechazada.')
         }
       } else if (error && error !== 'no-speech' && error !== 'aborted') {
         await sleep(5000)
