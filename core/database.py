@@ -157,6 +157,8 @@ class User(Base):
     spotify_account = relationship("SpotifyAccount", back_populates="user", uselist=False, cascade="all, delete-orphan")
     telegram_link = relationship("TelegramLink", back_populates="user", uselist=False, cascade="all, delete-orphan")
     memories = relationship("UserMemory", back_populates="user", cascade="all, delete-orphan")
+    knowledge_nodes = relationship("KnowledgeNode", back_populates="user", cascade="all, delete-orphan")
+    knowledge_relations = relationship("KnowledgeRelation", back_populates="user", cascade="all, delete-orphan")
 
 
 class TwoFactorAuth(Base):
@@ -327,6 +329,85 @@ class UserMemory(Base):
     )
 
 
+class KnowledgeNode(Base):
+    """Entidad persistente del grafo de conocimiento de un usuario.
+
+    El texto conserva la información legible; el embedding permite localizar
+    entidades parecidas sin obligar al modelo a repetir literalmente el dato.
+    status distingue memoria activa de datos archivados o corregidos.
+    """
+    __tablename__ = "knowledge_nodes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    node_type = Column(String(32), nullable=False, index=True)
+    name = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    embedding = Column(Text, nullable=True)
+    importance = Column(Integer, nullable=False, default=1)
+    confidence = Column(Integer, nullable=False, default=50)
+    source = Column(String(32), nullable=False, default="chat")
+    source_ref = Column(String(255), nullable=True)
+    status = Column(String(20), nullable=False, default="active")
+    valid_from = Column(DateTime, nullable=True)
+    valid_until = Column(DateTime, nullable=True)
+    last_used_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
+
+    user = relationship("User", back_populates="knowledge_nodes")
+    outgoing_relations = relationship(
+        "KnowledgeRelation", foreign_keys="KnowledgeRelation.from_node_id",
+        back_populates="from_node", cascade="all, delete-orphan",
+    )
+    incoming_relations = relationship(
+        "KnowledgeRelation", foreign_keys="KnowledgeRelation.to_node_id",
+        back_populates="to_node", cascade="all, delete-orphan",
+    )
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "node_type", "name", name="uq_knowledge_node_name"),
+        Index("ix_knowledge_nodes_user_status", "user_id", "status"),
+    )
+
+
+class KnowledgeRelation(Base):
+    """Conexión tipada entre dos entidades del grafo del mismo usuario."""
+    __tablename__ = "knowledge_relations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    from_node_id = Column(Integer, ForeignKey("knowledge_nodes.id", ondelete="CASCADE"), nullable=False, index=True)
+    to_node_id = Column(Integer, ForeignKey("knowledge_nodes.id", ondelete="CASCADE"), nullable=False, index=True)
+    relation_type = Column(String(64), nullable=False, default="related_to")
+    confidence = Column(Integer, nullable=False, default=50)
+    weight = Column(Integer, nullable=False, default=1)
+    source = Column(String(32), nullable=False, default="chat")
+    source_ref = Column(String(255), nullable=True)
+    status = Column(String(20), nullable=False, default="active")
+    valid_from = Column(DateTime, nullable=True)
+    valid_until = Column(DateTime, nullable=True)
+    last_confirmed_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
+
+    user = relationship("User", back_populates="knowledge_relations")
+    from_node = relationship(
+        "KnowledgeNode", foreign_keys=[from_node_id], back_populates="outgoing_relations",
+    )
+    to_node = relationship(
+        "KnowledgeNode", foreign_keys=[to_node_id], back_populates="incoming_relations",
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "from_node_id", "to_node_id", "relation_type",
+            name="uq_knowledge_relation",
+        ),
+        Index("ix_knowledge_relations_user_status", "user_id", "status"),
+    )
+
+
 class GoogleAccount(Base):
     """Cuenta de Google que un usuario ha autorizado (Gmail y Calendar).
 
@@ -464,6 +545,11 @@ def _run_migrations(engine) -> None:
         if not _table_exists(conn, dialect, "users"):
             logger.info("Migraciones omitidas: la tabla 'users' todavía no existe")
             return
+
+        # ── knowledge graph ─────────────────────────────────────────────────
+        # Las tablas nuevas se crean mediante metadata.create_all(); este bloque
+        # queda como recordatorio explícito de que la migración es no destructiva.
+        # No se modifica ninguna tabla existente ni se borran recuerdos.
 
         # ── user_memories.embedding ─────────────────────────────────────────
         # Los recuerdos existentes se rellenan progresivamente al usarse; esta

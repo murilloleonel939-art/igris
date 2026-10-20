@@ -147,6 +147,8 @@ La captura de memoria es conservadora y se hace en servidor con reglas simples: 
 
 La memoria se inyecta en el prompt como contexto interno: ayuda a dar continuidad, pero **no es autoridad**, no reemplaza permisos, no identifica al usuario y no elimina confirmaciones obligatorias para acciones sensibles. Cada usuario puede revisar, añadir, editar y borrar sus recuerdos desde la opción **Mi memoria** de su propia sesión en `/u`. El administrador también puede gestionar la memoria personal y operativa de cada cuenta desde la pestaña **Memoria** de `/panel/usuarios`. La memoria se aísla por cuenta y las operaciones administrativas comprueban el `user_id` junto con el id del recuerdo.
 
+La primera capa de **memoria relacional** ya está definida de forma aditiva. `knowledge_nodes` guarda entidades del usuario (persona, proyecto, preferencia, tarea, archivo o concepto) con descripción, embedding opcional, importancia, confianza, fuente, vigencia y estado. `knowledge_relations` guarda conexiones dirigidas y tipadas entre entidades, con peso, confianza, fuente, vigencia y confirmación. Esta capa convive con `user_memories` y `memory_links`: todavía no duplica automáticamente cada recuerdo ni reemplaza la memoria existente; primero permite incorporar hechos explícitos de forma controlada y después conectar su recuperación con el contexto del modelo.
+
 ### Área de usuarios (`/u`)
 
 | Método | Ruta | Qué hace |
