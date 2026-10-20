@@ -510,6 +510,33 @@ def list_users(
     return {"users": [_public_user(u, db) for u in users]}
 
 
+@router.get("/api/admin/users/{user_id}/neural-network")
+def admin_neural_status(
+    user_id: int,
+    _: None = Depends(require_admin_key),
+    db: Session = Depends(get_db),
+):
+    """Consulta el estado neuronal de cualquier cuenta desde administración."""
+    user = db.query(User).filter(User.id == user_id).first()
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado")
+    return {"user_id": user.id, "username": user.username, **model_status(db, user.id)}
+
+
+@router.post("/api/admin/users/{user_id}/neural-network/train")
+def admin_train_neural(
+    user_id: int,
+    _: None = Depends(require_admin_key),
+    db: Session = Depends(get_db),
+):
+    """Reentrena la red neuronal local del usuario seleccionado."""
+    user = db.query(User).filter(User.id == user_id).first()
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado")
+    result = train_user_model(db, user.id)
+    return {"user_id": user.id, "username": user.username, **result, **model_status(db, user.id)}
+
+
 @router.get("/api/admin/users/{user_id}/memories")
 def admin_list_user_memories(
     user_id: int,
