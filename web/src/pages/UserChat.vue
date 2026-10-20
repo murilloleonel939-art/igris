@@ -248,6 +248,26 @@
             </div>
           </section>
 
+          <section>
+            <h3>Mi TV Box</h3>
+            <p class="conn-note">Descarga el agente Android, genera un código temporal y escríbelo una sola vez en tu TV Box.</p>
+            <div class="conn-actions">
+              <a class="btn primary" href="/downloads/IgrisTvAgent.apk" download>Descargar agente Android</a>
+              <button class="btn ghost" :disabled="conn.tvboxCreating" @click="createTvBoxCode">
+                {{ conn.tvboxCreating ? 'Generando…' : 'Conectando…' }}
+              </button>
+            </div>
+            <div v-if="conn.tvboxCode" class="conn-code">
+              <p>Introduce este código en el agente Android:</p>
+              <code>{{ conn.tvboxCode }}</code>
+              <p class="conn-note">Caduca a las {{ tvboxExpiryLabel }}. Está vinculado únicamente a tu cuenta.</p>
+            </div>
+            <div v-for="box in conn.tvBoxes" :key="box.id" class="conn-note mt-3">
+              <b>{{ box.device_name }}</b>{{ box.model ? ` · ${box.model}` : '' }} · {{ box.online ? 'En línea' : 'Sin conexión' }}
+              <button class="btn ghost small ml-2" @click="deleteTvBox(box)">Desvincular</button>
+            </div>
+          </section>
+
           <section v-if="conn.features.includes('reminders')">
             <h3>Tu Telegram</h3>
             <p v-if="conn.telegram.linked" class="conn-ok">
@@ -1001,7 +1021,41 @@ const conn = ref({
   telegram: { linked: false, username: null },
   telegramCode: '',
   telegramCodeMinutes: 15,
+  tvBoxes: [],
+  tvboxCode: '',
+  tvboxExpiresAt: '',
+  tvboxCreating: false,
 })
+
+const tvboxExpiryLabel = computed(() => {
+  if (!conn.value.tvboxExpiresAt) return ''
+  return new Date(conn.value.tvboxExpiresAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+})
+
+async function createTvBoxCode() {
+  const deviceName = window.prompt('Nombre para tu TV Box', 'Mi TV Box')?.trim()
+  if (!deviceName) return
+  conn.value.tvboxCreating = true
+  try {
+    const res = await userApi.post('/api/user/tvbox/pairing-codes', { device_name: deviceName })
+    conn.value.tvboxCode = res.data?.code || ''
+    conn.value.tvboxExpiresAt = res.data?.expires_at || ''
+  } catch (e) {
+    conn.value.error = errorMessage(e, 'No se pudo generar el código del TV Box')
+  } finally {
+    conn.value.tvboxCreating = false
+  }
+}
+
+async function deleteTvBox(box) {
+  if (!window.confirm(`¿Desvincular ${box.device_name}?`)) return
+  try {
+    await userApi.delete(`/api/user/tvbox/${box.id}`)
+    await refreshConnections()
+  } catch (e) {
+    conn.value.error = errorMessage(e, 'No se pudo desvincular el TV Box')
+  }
+}
 
 function featureLabel(key) {
   const nombres = {
@@ -1105,6 +1159,7 @@ async function refreshConnections() {
     conn.value.youtube = res.data?.youtube || null
     conn.value.spotify = res.data?.spotify || null
     conn.value.telegram = res.data?.telegram || { linked: false, username: null }
+    conn.value.tvBoxes = res.data?.tv_boxes || []
     // El código caduca: si el usuario ya se vinculó, se deja de mostrar.
     if (conn.value.telegram.linked) conn.value.telegramCode = ''
   } catch (e) {

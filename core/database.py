@@ -219,6 +219,38 @@ class AgentToken(Base):
     user = relationship("User")
 
 
+class TvBoxToken(Base):
+    """Credencial independiente para agentes Android TV Box."""
+    __tablename__ = "tvbox_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    token_hash = Column(String(128), unique=True, nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    device_name = Column(String(120), nullable=False)
+    model = Column(String(120), nullable=True)
+    android_version = Column(String(40), nullable=True)
+    revoked = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+    last_seen_at = Column(DateTime, nullable=True)
+
+    user = relationship("User")
+
+
+class TvBoxPairingCode(Base):
+    """Código corto temporal para vincular un agente Android TV Box."""
+    __tablename__ = "tvbox_pairing_codes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    code_hash = Column(String(128), unique=True, nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    device_name = Column(String(120), nullable=True)
+    expires_at = Column(DateTime, nullable=False)
+    used = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+
+    user = relationship("User")
+
+
 class AIConfig(Base):
     """Configuración de proveedores AI por usuario"""
     __tablename__ = "ai_config"
@@ -582,6 +614,14 @@ def _run_migrations(engine) -> None:
         # Las tablas nuevas se crean mediante metadata.create_all(); este bloque
         # queda como recordatorio explícito de que la migración es no destructiva.
         # No se modifica ninguna tabla existente ni se borran recuerdos.
+
+        # ── tvbox_pairing_codes.device_name ─────────────────────────────────
+        if (
+            _table_exists(conn, dialect, "tvbox_pairing_codes")
+            and not _column_exists(conn, dialect, "tvbox_pairing_codes", "device_name")
+        ):
+            conn.execute(text("ALTER TABLE tvbox_pairing_codes ADD COLUMN device_name VARCHAR(120)"))
+            logger.info("Migración aplicada: tvbox_pairing_codes.device_name (%s)", dialect)
 
         # ── user_memories.embedding ─────────────────────────────────────────
         # Los recuerdos existentes se rellenan progresivamente al usarse; esta

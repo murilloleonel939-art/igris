@@ -30,6 +30,7 @@ from core.database import init_db, engine
 from core.session_store import SessionStore
 from core.scheduler import run_reminder_loop
 from server.device_routes import router as device_router
+from server.tvbox_routes import router as tvbox_router
 
 # Telegram imports
 from telegram import Update, Bot
@@ -127,6 +128,7 @@ app = FastAPI(
     version="1.0.0"
 )
 app.include_router(device_router)
+app.include_router(tvbox_router)
 
 # CORS - solo el frontend (y el servidor de desarrollo local).
 # Sin allow_credentials: ni la clave ni el token viajan en cookies.

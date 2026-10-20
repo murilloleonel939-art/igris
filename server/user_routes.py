@@ -32,7 +32,7 @@ from typing import Any, Optional
 import httpx
 from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Request, UploadFile, status
 from jose import JWTError, jwt
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
 from core import tts
@@ -50,7 +50,8 @@ from core.capabilities import (
     admin_capabilities,
     capabilities_from_user,
 )
-from core.database import GoogleAccount, KnowledgeNode, MemoryLink, Note, Profile, Reminder, SpotifyAccount, TelegramLink, User, UserMemory, get_db
+from core.database import GoogleAccount, KnowledgeNode, MemoryLink, Note, Profile, Reminder, SpotifyAccount, TelegramLink, TvBoxPairingCode, TvBoxToken, User, UserMemory, get_db
+from server.tvbox_routes import _connections, _digest
 from core.settings_manager import get_settings
 from core.memory import link_memories, linked_memories_block, load_memories, neural_memory_context, remember_from_text
 from core.neural import model_status, train_user_model
@@ -1470,6 +1471,10 @@ def user_connections(
     spotify_account = db.query(SpotifyAccount).filter(SpotifyAccount.user_id == user.id).first()
     from core.tools import google_client, spotify
 
+    tv_boxes = db.query(TvBoxToken).filter(
+        TvBoxToken.user_id == user.id,
+        TvBoxToken.revoked.is_(False),
+    ).order_by(TvBoxToken.created_at.desc()).all()
     return {
         "features": sorted(caps.features, key=FEATURE_ORDER.index),
         "google": _google_status(user, db),
@@ -1493,7 +1498,94 @@ def user_connections(
             "username": link.username if link else None,
             "bot_url": None,  # lo rellena el frontend con la variable de build
         },
+        "tv_boxes": [{
+            "id": row.id,
+            "device_name": row.device_name,
+            "model": row.model,
+            "android_version": row.android_version,
+            "online": row.id in _connections,
+            "last_seen_at": row.last_seen_at.isoformat() if row.last_seen_at else None,
+        } for row in tv_boxes],
     }
+
+
+class UserTvBoxPairingCode(BaseModel):
+    device_name: str = Field(min_length=1, max_length=120)
+    expires_minutes: int = Field(default=10, ge=1, le=30)
+
+
+class UserTvBoxCommand(BaseModel):
+    action: str = Field(pattern="^(launch_app|key|volume|device_info)$")
+    params: dict[str, Any] = Field(default_factory=dict)
+
+
+@router.post("/api/user/tvbox/pairing-codes")
+def create_user_tvbox_pairing_code(
+    payload: UserTvBoxPairingCode,
+    user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+):
+    """Crea un código temporal enlazado al usuario autenticado, nunca a otro."""
+    alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+    code = "".join(secrets.choice(alphabet) for _ in range(8))
+    expires_at = datetime.utcnow() + timedelta(minutes=payload.expires_minutes)
+    db.query(TvBoxPairingCode).filter(
+        TvBoxPairingCode.user_id == user.id,
+        TvBoxPairingCode.used.is_(False),
+        TvBoxPairingCode.expires_at < datetime.utcnow(),
+    ).update({TvBoxPairingCode.used: True})
+    db.add(TvBoxPairingCode(
+        code_hash=_digest(code),
+        user_id=user.id,
+        device_name=payload.device_name.strip(),
+        expires_at=expires_at,
+    ))
+    db.commit()
+    return {
+        "code": code,
+        "device_name": payload.device_name.strip(),
+        "expires_at": expires_at.isoformat(),
+        "websocket_url": "wss://igris.zottagroup.com/api/tvbox/ws",
+    }
+
+
+@router.post("/api/user/tvbox/{device_id}/command")
+async def send_user_tvbox_command(
+    device_id: int,
+    payload: UserTvBoxCommand,
+    user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+):
+    row = db.query(TvBoxToken).filter(
+        TvBoxToken.id == device_id,
+        TvBoxToken.user_id == user.id,
+        TvBoxToken.revoked.is_(False),
+    ).first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="TV Box no encontrado")
+    websocket = _connections.get(device_id)
+    if websocket is None:
+        raise HTTPException(status_code=409, detail="El TV Box no está conectado")
+    await websocket.send_json({"type": "command", "action": payload.action, **payload.params})
+    return {"ok": True, "device_id": device_id}
+
+
+@router.delete("/api/user/tvbox/{device_id}")
+def delete_user_tvbox(
+    device_id: int,
+    user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+):
+    row = db.query(TvBoxToken).filter(
+        TvBoxToken.id == device_id,
+        TvBoxToken.user_id == user.id,
+    ).first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="TV Box no encontrado")
+    db.delete(row)
+    db.commit()
+    _connections.pop(device_id, None)
+    return {"ok": True}
 
 
 @router.get("/api/user/google/start")
