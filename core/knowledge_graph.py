@@ -567,16 +567,34 @@ def validate_graph_payload(payload: dict) -> dict:
     relations = payload.get("relations", [])
     if not isinstance(nodes, list) or not isinstance(relations, list) or len(nodes) > 1000 or len(relations) > 2000:
         raise ValueError("El grafo excede los límites permitidos")
+    node_keys = set()
     for item in nodes:
         if not isinstance(item, dict) or not isinstance(item.get("type"), str) or not isinstance(item.get("name"), str):
             raise ValueError("Entidad inválida en el grafo")
+        node_key = (item["type"].strip().lower()[:32], item["name"].strip()[:255])
+        if not node_key[0] or not node_key[1] or node_key in node_keys:
+            raise ValueError("Hay entidades vacías o duplicadas en el grafo")
+        node_keys.add(node_key)
         if item.get("status", "active") not in {"active", "archived"}:
             raise ValueError("Estado de entidad inválido")
         _import_datetime(item.get("valid_from"), "valid_from")
         _import_datetime(item.get("valid_until"), "valid_until")
+    relation_keys = set()
     for item in relations:
         if not isinstance(item, dict) or not isinstance(item.get("from"), dict) or not isinstance(item.get("to"), dict):
             raise ValueError("Relación inválida en el grafo")
+        source = item["from"]
+        target = item["to"]
+        if not isinstance(source.get("type"), str) or not isinstance(source.get("name"), str) or not isinstance(target.get("type"), str) or not isinstance(target.get("name"), str):
+            raise ValueError("Referencia de relación inválida")
+        source_key = (source["type"].strip().lower()[:32], source["name"].strip()[:255])
+        target_key = (target["type"].strip().lower()[:32], target["name"].strip()[:255])
+        relation_key = (source_key, target_key, str(item.get("relation", "related_to")).strip().lower()[:64])
+        if source_key not in node_keys or target_key not in node_keys or source_key == target_key:
+            raise ValueError("La relación referencia entidades inválidas")
+        if relation_key in relation_keys:
+            raise ValueError("Hay relaciones duplicadas en el grafo")
+        relation_keys.add(relation_key)
         if item.get("status", "active") not in {"active", "archived", "superseded"}:
             raise ValueError("Estado de relación inválido")
         _import_datetime(item.get("valid_from"), "valid_from")
@@ -592,6 +610,14 @@ def import_graph(db: Session, user_id: Optional[int], payload: dict) -> dict:
     validate_graph_payload(payload)
     raw_nodes = payload.get("nodes", [])
     raw_relations = payload.get("relations", [])
+    try:
+        return _import_graph_atomic(db, user_id, raw_nodes, raw_relations)
+    except Exception:
+        db.rollback()
+        raise
+
+
+def _import_graph_atomic(db: Session, user_id: int, raw_nodes: list, raw_relations: list) -> dict:
     node_map = {}
     for item in raw_nodes:
         if not isinstance(item, dict) or not isinstance(item.get("type"), str) or not isinstance(item.get("name"), str):
