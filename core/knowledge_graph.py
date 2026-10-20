@@ -186,6 +186,32 @@ def _apply_corrections(db: Session, user_id: int, user_text: str) -> bool:
     return changed
 
 
+def _supersede_conflicting_relations(
+    db: Session,
+    user_id: int,
+    subject: KnowledgeNode,
+    relation_type: str,
+    target: KnowledgeNode,
+) -> bool:
+    """Conserva un solo valor activo para relaciones funcionalmente exclusivas."""
+    exclusive = {"works_on", "prefers", "lives_in", "has_goal", "name"}
+    if relation_type not in exclusive or subject.id is None or target.id is None:
+        return False
+    rows = db.query(KnowledgeRelation).filter(
+        KnowledgeRelation.user_id == user_id,
+        KnowledgeRelation.from_node_id == subject.id,
+        KnowledgeRelation.relation_type == relation_type,
+        KnowledgeRelation.status == "active",
+        KnowledgeRelation.to_node_id != target.id,
+    ).all()
+    changed = False
+    for relation in rows:
+        relation.status = "superseded"
+        relation.updated_at = utcnow()
+        changed = True
+    return changed
+
+
 def remember_explicit_facts(
     db: Session,
     user_id: int,
@@ -200,6 +226,7 @@ def remember_explicit_facts(
     for fact in facts:
         subject = upsert_node(db, user_id, fact.subject_type, fact.subject, confidence=95, importance=3, source=source, source_ref=source_ref)
         target = upsert_node(db, user_id, fact.object_type, fact.object, confidence=95, importance=3, source=source, source_ref=source_ref)
+        _supersede_conflicting_relations(db, user_id, subject, fact.relation, target)
         upsert_relation(db, user_id, subject, fact.relation, target, confidence=95, source=source, source_ref=source_ref)
     if facts or corrected:
         db.commit()
@@ -235,6 +262,40 @@ def graph_context(db: Session, user_id: Optional[int], query: Optional[str] = No
     return output
 
 
+def graph_neighbors(db: Session, user_id: Optional[int], node_id: int, limit: int = 20) -> list[dict]:
+    """Devuelve vecinos activos del nodo, siempre dentro del usuario autenticado."""
+    if not user_id or not node_id:
+        return []
+    node = db.query(KnowledgeNode).filter(
+        KnowledgeNode.id == node_id,
+        KnowledgeNode.user_id == user_id,
+        KnowledgeNode.status == "active",
+    ).first()
+    if node is None:
+        return []
+    rows = db.query(KnowledgeRelation).filter(
+        KnowledgeRelation.user_id == user_id,
+        KnowledgeRelation.status == "active",
+        (KnowledgeRelation.from_node_id == node_id) | (KnowledgeRelation.to_node_id == node_id),
+    ).order_by(KnowledgeRelation.weight.desc(), KnowledgeRelation.confidence.desc()).limit(limit).all()
+    result = []
+    for relation in rows:
+        neighbor = relation.to_node if relation.from_node_id == node_id else relation.from_node
+        if neighbor is None or neighbor.status != "active":
+            continue
+        result.append({
+            "relation_id": relation.id,
+            "node_id": neighbor.id,
+            "node_type": neighbor.node_type,
+            "name": neighbor.name,
+            "relation": relation.relation_type,
+            "direction": "outgoing" if relation.from_node_id == node_id else "incoming",
+            "confidence": relation.confidence,
+            "weight": relation.weight,
+        })
+    return result
+
+
 def save_graph(db: Session) -> None:
     """Confirma una operación de grafo en una sola transacción."""
     db.commit()
@@ -242,5 +303,5 @@ def save_graph(db: Session) -> None:
 
 __all__ = [
     "GraphFact", "extract_explicit_facts", "remember_explicit_facts",
-    "graph_context", "upsert_node", "upsert_relation", "save_graph",
+    "graph_context", "graph_neighbors", "upsert_node", "upsert_relation", "save_graph",
 ]

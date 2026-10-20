@@ -50,10 +50,10 @@ from core.capabilities import (
     admin_capabilities,
     capabilities_from_user,
 )
-from core.database import GoogleAccount, MemoryLink, Note, Profile, Reminder, SpotifyAccount, TelegramLink, User, UserMemory, get_db
+from core.database import GoogleAccount, KnowledgeNode, MemoryLink, Note, Profile, Reminder, SpotifyAccount, TelegramLink, User, UserMemory, get_db
 from core.settings_manager import get_settings
 from core.memory import link_memories, linked_memories_block, load_memories, remember_from_text
-from core.knowledge_graph import graph_context
+from core.knowledge_graph import graph_context, graph_neighbors
 from core.tools import gcalendar, gmail
 from core.tools.time_tools import DEFAULT_TZ, _format
 from core import stt, voice
@@ -768,6 +768,33 @@ def user_me(user: User = Depends(require_user), db: Session = Depends(get_db)):
 
 
 # ============= MEMORIA DEL USUARIO =============
+
+
+@router.get("/api/user/knowledge-graph")
+def list_user_graph(
+    node_id: int | None = None,
+    user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+):
+    """Consulta entidades y vecinos del grafo propio, sin exponer otras cuentas."""
+    if node_id is not None:
+        node = db.query(KnowledgeNode).filter(
+            KnowledgeNode.id == node_id,
+            KnowledgeNode.user_id == user.id,
+            KnowledgeNode.status == "active",
+        ).first()
+        if node is None:
+            raise HTTPException(status_code=404, detail="No se encontró esa entidad")
+        return {
+            "node": {"id": node.id, "type": node.node_type, "name": node.name, "description": node.description},
+            "neighbors": graph_neighbors(db, user.id, node.id),
+        }
+    nodes = db.query(KnowledgeNode).filter(
+        KnowledgeNode.user_id == user.id,
+        KnowledgeNode.status == "active",
+    ).order_by(KnowledgeNode.updated_at.desc()).limit(100).all()
+    return {"nodes": [{"id": n.id, "type": n.node_type, "name": n.name, "description": n.description} for n in nodes]}
+
 
 def _memory_json(memory: UserMemory) -> dict[str, Any]:
     return {
