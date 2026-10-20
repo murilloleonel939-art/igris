@@ -179,6 +179,19 @@
             <span class="ml-2 rounded px-2 py-0.5 text-xs" :class="rel.status === 'active' ? 'text-emerald-300' : 'text-slate-500'">{{ rel.status }}</span>
           </div>
         </section>
+        <section class="mt-4 rounded-lg border border-slate-700 bg-slate-800/40 p-4">
+          <div class="mb-3 flex items-center justify-between gap-2">
+            <div><h4 class="text-sm font-semibold text-white">Red neuronal propia</h4><p class="mt-1 text-xs text-slate-400">Autoaprendizaje local de {{ memoryModal.username }}.</p></div>
+            <button class="act" :disabled="neuralModal.training" @click="openNeural({ id: memoryModal.id, username: memoryModal.username })">Ver estado</button>
+          </div>
+          <p v-if="neuralModal.id === memoryModal.id && neuralModal.data" class="text-xs text-slate-400">
+            {{ neuralModal.data.backend }} · {{ neuralModal.data.samples }} experiencias · {{ neuralModal.data.accuracy }}% precisión · {{ neuralModal.data.auto_learning ? 'autoaprendizaje activo' : 'aprendizaje pausado' }}
+          </p>
+          <p v-else class="text-xs text-slate-500">Pulsa «Ver estado» para consultar el modelo neuronal.</p>
+          <button v-if="neuralModal.id === memoryModal.id && neuralModal.data" class="mt-3 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-500 disabled:opacity-50" :disabled="neuralModal.training" @click="trainNeural">
+            {{ neuralModal.training ? 'Entrenando…' : 'Entrenar ahora' }}
+          </button>
+        </section>
       </div>
     </div>
 
