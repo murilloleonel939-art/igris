@@ -548,19 +548,55 @@ def export_graph(db: Session, user_id: Optional[int]) -> dict:
     }
 
 
+def _import_datetime(value, field: str) -> Optional[datetime]:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError(f"{field} debe ser una fecha ISO válida")
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ValueError(f"{field} debe ser una fecha ISO válida") from exc
+
+
+def validate_graph_payload(payload: dict) -> dict:
+    """Valida estructura, estados y límites antes de escribir en la base de datos."""
+    if not isinstance(payload, dict) or payload.get("version") != 1:
+        raise ValueError("Formato de grafo no compatible")
+    nodes = payload.get("nodes", [])
+    relations = payload.get("relations", [])
+    if not isinstance(nodes, list) or not isinstance(relations, list) or len(nodes) > 1000 or len(relations) > 2000:
+        raise ValueError("El grafo excede los límites permitidos")
+    for item in nodes:
+        if not isinstance(item, dict) or not isinstance(item.get("type"), str) or not isinstance(item.get("name"), str):
+            raise ValueError("Entidad inválida en el grafo")
+        if item.get("status", "active") not in {"active", "archived"}:
+            raise ValueError("Estado de entidad inválido")
+        _import_datetime(item.get("valid_from"), "valid_from")
+        _import_datetime(item.get("valid_until"), "valid_until")
+    for item in relations:
+        if not isinstance(item, dict) or not isinstance(item.get("from"), dict) or not isinstance(item.get("to"), dict):
+            raise ValueError("Relación inválida en el grafo")
+        if item.get("status", "active") not in {"active", "archived", "superseded"}:
+            raise ValueError("Estado de relación inválido")
+        _import_datetime(item.get("valid_from"), "valid_from")
+        _import_datetime(item.get("valid_until"), "valid_until")
+        _import_datetime(item.get("last_confirmed_at"), "last_confirmed_at")
+    return payload
+
+
 def import_graph(db: Session, user_id: Optional[int], payload: dict) -> dict:
     """Importa un export validado dentro del usuario autenticado, nunca por ids externos."""
-    if not user_id or not isinstance(payload, dict) or payload.get("version") != 1:
-        raise ValueError("Formato de grafo no compatible")
+    if not user_id:
+        raise ValueError("Usuario inválido")
+    validate_graph_payload(payload)
     raw_nodes = payload.get("nodes", [])
     raw_relations = payload.get("relations", [])
-    if not isinstance(raw_nodes, list) or not isinstance(raw_relations, list) or len(raw_nodes) > 1000 or len(raw_relations) > 2000:
-        raise ValueError("El grafo excede los límites permitidos")
     node_map = {}
     for item in raw_nodes:
         if not isinstance(item, dict) or not isinstance(item.get("type"), str) or not isinstance(item.get("name"), str):
             raise ValueError("Entidad inválida en el grafo")
-        node = upsert_node(db, user_id, item["type"], item["name"], description=item.get("description"), confidence=item.get("confidence", 50), importance=item.get("importance", 1), source="import", source_ref=item.get("source_ref"))
+        node = upsert_node(db, user_id, item["type"], item["name"], description=item.get("description"), confidence=item.get("confidence", 50), importance=item.get("importance", 1), source="import", source_ref=item.get("source_ref"), status=item.get("status", "active"), valid_from=_import_datetime(item.get("valid_from"), "valid_from"), valid_until=_import_datetime(item.get("valid_until"), "valid_until"))
         node_map[(node.node_type, node.name)] = node
     imported = 0
     for item in raw_relations:
@@ -570,10 +606,11 @@ def import_graph(db: Session, user_id: Optional[int], payload: dict) -> dict:
         target = node_map.get((item["to"].get("type"), item["to"].get("name")))
         if source is None or target is None:
             raise ValueError("La relación referencia una entidad inexistente")
-        relation = upsert_relation(db, user_id, source, str(item.get("relation", "related_to")), target, confidence=item.get("confidence", 50), source="import", source_ref=item.get("source_ref"))
+        relation = upsert_relation(db, user_id, source, str(item.get("relation", "related_to")), target, confidence=item.get("confidence", 50), source="import", source_ref=item.get("source_ref"), valid_from=_import_datetime(item.get("valid_from"), "valid_from"), valid_until=_import_datetime(item.get("valid_until"), "valid_until"))
         if item.get("status") in {"archived", "superseded"}:
             relation.status = item["status"]
         relation.weight = max(1, min(100, int(item.get("weight", relation.weight))))
+        relation.last_confirmed_at = _import_datetime(item.get("last_confirmed_at"), "last_confirmed_at") or relation.last_confirmed_at
         imported += 1
     db.commit()
     return {"nodes": len(node_map), "relations": imported}
@@ -586,5 +623,5 @@ def save_graph(db: Session) -> None:
 
 __all__ = [
     "GraphFact", "extract_explicit_facts", "remember_explicit_facts",
-    "graph_context", "graph_neighbors", "search_graph_nodes", "graph_audit", "confirm_graph_relation", "set_graph_relation_status", "stale_graph_relations", "export_graph", "import_graph", "upsert_node", "upsert_relation", "save_graph",
+    "graph_context", "graph_neighbors", "search_graph_nodes", "graph_audit", "confirm_graph_relation", "set_graph_relation_status", "stale_graph_relations", "export_graph", "validate_graph_payload", "import_graph", "upsert_node", "upsert_relation", "save_graph",
 ]

@@ -53,7 +53,7 @@ from core.capabilities import (
 from core.database import GoogleAccount, KnowledgeNode, MemoryLink, Note, Profile, Reminder, SpotifyAccount, TelegramLink, User, UserMemory, get_db
 from core.settings_manager import get_settings
 from core.memory import link_memories, linked_memories_block, load_memories, remember_from_text
-from core.knowledge_graph import confirm_graph_relation, export_graph, graph_audit, graph_context, graph_neighbors, import_graph, search_graph_nodes, set_graph_relation_status, stale_graph_relations
+from core.knowledge_graph import confirm_graph_relation, export_graph, graph_audit, graph_context, graph_neighbors, import_graph, search_graph_nodes, set_graph_relation_status, stale_graph_relations, validate_graph_payload
 from core.tools import gcalendar, gmail
 from core.tools.time_tools import DEFAULT_TZ, _format
 from core import stt, voice
@@ -796,6 +796,15 @@ def user_me(user: User = Depends(require_user), db: Session = Depends(get_db)):
 @router.get("/api/user/knowledge-graph/export")
 def export_user_graph(user: User = Depends(require_user), db: Session = Depends(get_db)):
     return export_graph(db, user.id)
+
+
+@router.post("/api/user/knowledge-graph/validate")
+def validate_user_graph(body: GraphImportIn, user: User = Depends(require_user)):
+    try:
+        validate_graph_payload(body.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"ok": True, "nodes": len(body.nodes), "relations": len(body.relations)}
 
 
 @router.post("/api/user/knowledge-graph/import")
