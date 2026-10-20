@@ -5,7 +5,7 @@ progresivamente y conservar el origen, la confianza y la vigencia de cada dato.
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 import json
 import logging
 import os
@@ -433,6 +433,40 @@ def graph_neighbors(db: Session, user_id: Optional[int], node_id: int, limit: in
     return result
 
 
+def confirm_graph_relation(db: Session, user_id: Optional[int], relation_id: int) -> bool:
+    """Confirma una relación propia y refuerza su peso sin superar 100."""
+    if not user_id or not relation_id:
+        return False
+    relation = db.query(KnowledgeRelation).filter(
+        KnowledgeRelation.id == relation_id,
+        KnowledgeRelation.user_id == user_id,
+        KnowledgeRelation.status == "active",
+    ).first()
+    if relation is None:
+        return False
+    relation.last_confirmed_at = utcnow()
+    relation.updated_at = relation.last_confirmed_at
+    relation.weight = min(100, max(1, relation.weight or 1) + 1)
+    relation.confidence = min(100, max(0, relation.confidence or 0) + 1)
+    db.commit()
+    return True
+
+
+def stale_graph_relations(db: Session, user_id: Optional[int], days: int = 180, limit: int = 100) -> list[dict]:
+    """Lista relaciones activas sin confirmación reciente para revisión del usuario."""
+    if not user_id or days <= 0 or limit <= 0:
+        return []
+    cutoff = utcnow() - timedelta(days=min(days, 3650))
+    rows = db.query(KnowledgeRelation).filter(
+        KnowledgeRelation.user_id == user_id,
+        KnowledgeRelation.status == "active",
+        ((KnowledgeRelation.last_confirmed_at.is_(None) & (KnowledgeRelation.updated_at < cutoff)) |
+         ((KnowledgeRelation.last_confirmed_at.isnot(None)) & (KnowledgeRelation.last_confirmed_at < cutoff))),
+    ).order_by(KnowledgeRelation.updated_at.asc()).limit(min(limit, 200)).all()
+    stale_ids = {relation.id for relation in rows}
+    return [item for item in graph_audit(db, user_id, limit=200) if item["id"] in stale_ids][:min(limit, 200)]
+
+
 def graph_audit(db: Session, user_id: Optional[int], node_id: Optional[int] = None, limit: int = 100) -> list[dict]:
     """Devuelve trazabilidad de relaciones propias, incluidas las archivadas."""
     if not user_id or limit <= 0:
@@ -471,5 +505,5 @@ def save_graph(db: Session) -> None:
 
 __all__ = [
     "GraphFact", "extract_explicit_facts", "remember_explicit_facts",
-    "graph_context", "graph_neighbors", "search_graph_nodes", "graph_audit", "upsert_node", "upsert_relation", "save_graph",
+    "graph_context", "graph_neighbors", "search_graph_nodes", "graph_audit", "confirm_graph_relation", "stale_graph_relations", "upsert_node", "upsert_relation", "save_graph",
 ]
