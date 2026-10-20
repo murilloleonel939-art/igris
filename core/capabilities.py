@@ -245,9 +245,9 @@ def capabilities_from_user(user) -> Capabilities:
     return Capabilities(user_id=getattr(user, "id", None), features=frozenset(enabled))
 
 
-def admin_capabilities() -> Capabilities:
-    """Capacidades del panel del administrador: todas las funciones."""
-    return Capabilities(user_id=None, features=frozenset(FEATURES))
+def admin_capabilities(user_id: Optional[int] = None) -> Capabilities:
+    """Todas las funciones, conservando el usuario si el admin está autenticado."""
+    return Capabilities(user_id=user_id, features=frozenset(FEATURES))
 
 
 def tools_for(caps: Optional[Capabilities]) -> list:

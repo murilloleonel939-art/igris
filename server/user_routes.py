@@ -994,7 +994,7 @@ def _bind_identity(session, user: User, db: Session) -> None:
     """
     session.user_id = user.id
     session.capabilities = (
-        admin_capabilities() if user.is_admin else capabilities_from_user(user)
+        admin_capabilities(user.id) if user.is_admin else capabilities_from_user(user)
     )
     session.addressing_instruction = user.addressing_instruction or ""
 

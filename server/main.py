@@ -288,7 +288,7 @@ def _bind_admin_identity_from_bearer(session, authorization: Optional[str], text
         return
 
     session.user_id = user.id
-    session.capabilities = admin_capabilities()
+    session.capabilities = admin_capabilities(user.id)
     session.addressing_instruction = user.addressing_instruction or ""
     with database.SessionLocal() as db:
         account = db.query(GoogleAccount).filter(GoogleAccount.user_id == user.id).first()
@@ -973,7 +973,7 @@ async def _get_igris_reply(text: str, session_key: Optional[str] = None) -> str:
             if linked_user is not None:
                 session.user_id = linked_user.id
                 session.capabilities = (
-                    admin_capabilities()
+                    admin_capabilities(linked_user.id)
                     if linked_user.is_admin
                     else capabilities_from_user(linked_user)
                 )
