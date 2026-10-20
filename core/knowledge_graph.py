@@ -695,6 +695,66 @@ def _import_graph_atomic(db: Session, user_id: int, raw_nodes: list, raw_relatio
     return {"nodes": len(node_map), "relations": imported}
 
 
+def graph_summary(db: Session, user_id: Optional[int]) -> dict:
+    """Resume el estado del grafo propio sin exponer datos de otras cuentas."""
+    if not user_id:
+        return {
+            "nodes": {"total": 0, "active": 0, "archived": 0, "expired": 0, "by_type": {}},
+            "relations": {"total": 0, "active": 0, "archived": 0, "superseded": 0, "expired": 0, "by_type": {}},
+            "needs_attention": {"stale_relations": 0, "unconfirmed_relations": 0, "isolated_nodes": 0},
+        }
+    now = utcnow()
+    nodes = db.query(KnowledgeNode).filter(KnowledgeNode.user_id == user_id).all()
+    relations = db.query(KnowledgeRelation).filter(KnowledgeRelation.user_id == user_id).all()
+
+    nodes_by_type: dict[str, int] = {}
+    expired_nodes = 0
+    for node in nodes:
+        nodes_by_type[node.node_type] = nodes_by_type.get(node.node_type, 0) + 1
+        if node.valid_until is not None and node.valid_until < now:
+            expired_nodes += 1
+
+    relations_by_type: dict[str, int] = {}
+    expired_relations = 0
+    unconfirmed = 0
+    for relation in relations:
+        relations_by_type[relation.relation_type] = relations_by_type.get(relation.relation_type, 0) + 1
+        if relation.valid_until is not None and relation.valid_until < now:
+            expired_relations += 1
+        if relation.status == "active" and relation.last_confirmed_at is None:
+            unconfirmed += 1
+
+    linked_node_ids: set[int] = set()
+    for relation in relations:
+        if relation.status == "active":
+            linked_node_ids.add(relation.from_node_id)
+            linked_node_ids.add(relation.to_node_id)
+    isolated = sum(1 for node in nodes if node.status == "active" and node.id not in linked_node_ids)
+
+    return {
+        "nodes": {
+            "total": len(nodes),
+            "active": sum(1 for node in nodes if node.status == "active"),
+            "archived": sum(1 for node in nodes if node.status == "archived"),
+            "expired": expired_nodes,
+            "by_type": nodes_by_type,
+        },
+        "relations": {
+            "total": len(relations),
+            "active": sum(1 for relation in relations if relation.status == "active"),
+            "archived": sum(1 for relation in relations if relation.status == "archived"),
+            "superseded": sum(1 for relation in relations if relation.status == "superseded"),
+            "expired": expired_relations,
+            "by_type": relations_by_type,
+        },
+        "needs_attention": {
+            "stale_relations": len(stale_graph_relations(db, user_id)),
+            "unconfirmed_relations": unconfirmed,
+            "isolated_nodes": isolated,
+        },
+    }
+
+
 def save_graph(db: Session) -> None:
     """Confirma una operación de grafo en una sola transacción."""
     db.commit()
@@ -702,5 +762,5 @@ def save_graph(db: Session) -> None:
 
 __all__ = [
     "GraphFact", "extract_explicit_facts", "remember_explicit_facts",
-    "graph_context", "graph_neighbors", "search_graph_nodes", "graph_audit", "confirm_graph_relation", "set_graph_relation_status", "stale_graph_relations", "export_graph", "validate_graph_payload", "preview_graph_import", "import_graph", "upsert_node", "upsert_relation", "save_graph",
+    "graph_context", "graph_neighbors", "search_graph_nodes", "graph_audit", "confirm_graph_relation", "set_graph_relation_status", "stale_graph_relations", "export_graph", "validate_graph_payload", "preview_graph_import", "import_graph", "graph_summary", "upsert_node", "upsert_relation", "save_graph",
 ]

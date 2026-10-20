@@ -53,7 +53,7 @@ from core.capabilities import (
 from core.database import GoogleAccount, KnowledgeNode, MemoryLink, Note, Profile, Reminder, SpotifyAccount, TelegramLink, User, UserMemory, get_db
 from core.settings_manager import get_settings
 from core.memory import link_memories, linked_memories_block, load_memories, remember_from_text
-from core.knowledge_graph import confirm_graph_relation, export_graph, graph_audit, graph_context, graph_neighbors, import_graph, preview_graph_import, search_graph_nodes, set_graph_relation_status, stale_graph_relations, validate_graph_payload
+from core.knowledge_graph import confirm_graph_relation, export_graph, graph_audit, graph_context, graph_neighbors, graph_summary, import_graph, preview_graph_import, search_graph_nodes, set_graph_relation_status, stale_graph_relations, validate_graph_payload
 from core.tools import gcalendar, gmail
 from core.tools.time_tools import DEFAULT_TZ, _format
 from core import stt, voice
@@ -791,6 +791,11 @@ def user_me(user: User = Depends(require_user), db: Session = Depends(get_db)):
 
 
 # ============= MEMORIA DEL USUARIO =============
+
+
+@router.get("/api/user/knowledge-graph/summary")
+def summarize_user_graph(user: User = Depends(require_user), db: Session = Depends(get_db)):
+    return graph_summary(db, user.id)
 
 
 @router.get("/api/user/knowledge-graph/export")
