@@ -25,6 +25,7 @@ openai==1.35.0                   # SDK usado por todos los proveedores de IA (AP
 # --------------------------------------------------------------
 # Otros paquetes que ya tenías (se conservan tal cual)
 # --------------------------------------------------------------
+# torch se instala fijado a CPU en Dockerfile y es el motor de la red neuronal local.
 python-multipart
 anthropic
 tzdata

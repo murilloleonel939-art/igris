@@ -50,6 +50,19 @@
               </div>
             </div>
           </section>
+          <section class="memory-graph neural-panel">
+            <div class="memory-heading">
+              <h3>Red neuronal propia</h3>
+              <button class="btn ghost small" :disabled="neural.loading" @click="trainNeural">Entrenar ahora</button>
+            </div>
+            <p v-if="neural.error" class="conn-error">{{ neural.error }}</p>
+            <p v-else class="conn-note">
+              {{ neural.data?.backend || 'PyTorch MLP local' }} ·
+              {{ neural.data?.samples || 0 }} experiencias ·
+              {{ neural.data?.accuracy || 0 }}% precisión ·
+              {{ neural.data?.auto_learning ? 'autoaprendizaje activo' : 'aprendizaje pausado' }}
+            </p>
+          </section>
           <section class="memory-graph">
             <div class="memory-heading">
               <h3>Memoria relacional</h3>
@@ -833,6 +846,35 @@ function openMemories() {
   refreshGraph()
 }
 
+const neural = ref({ data: null, loading: false, error: '' })
+
+async function refreshNeural() {
+  neural.value.loading = true
+  neural.value.error = ''
+  try {
+    const response = await userApi.get('/api/user/neural-network')
+    neural.value.data = response.data
+  } catch (e) {
+    neural.value.error = errorMessage(e, 'No se pudo cargar la red neuronal')
+  } finally {
+    neural.value.loading = false
+  }
+}
+
+async function trainNeural() {
+  neural.value.loading = true
+  neural.value.error = ''
+  try {
+    const response = await userApi.post('/api/user/neural-network/train')
+    neural.value.data = response.data
+    setNotice(response.data?.trained ? 'Red neuronal reentrenada.' : 'Aún hacen falta más experiencias.', 4000)
+  } catch (e) {
+    neural.value.error = errorMessage(e, 'No se pudo entrenar la red neuronal')
+  } finally {
+    neural.value.loading = false
+  }
+}
+
 const graph = ref({
   data: null,
   relations: [],
@@ -844,6 +886,7 @@ const graph = ref({
 async function refreshGraph() {
   graph.value.error = ''
   graph.value.loading = true
+  await refreshNeural()
   try {
     const summary = await userApi.get('/api/user/knowledge-graph/summary')
     graph.value.data = summary.data

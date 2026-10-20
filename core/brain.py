@@ -328,6 +328,9 @@ def _system_message(addressing_instruction: Optional[str] = None, session=None) 
         )
     if memory:
         base = f"{base}\n\n{memory}"
+    neural = getattr(session, "neural_memory", "") if session is not None else ""
+    if neural:
+        base = f"{base}\n\n{neural}"
     return base
 
 
@@ -625,6 +628,8 @@ class BrainSession:
         self.conversation_summary: str = ""
         self.linked_memory: List[str] = []
         self.graph_memory: List[str] = []
+        # Señal de la red neuronal local, siempre subordinada a hechos y permisos.
+        self.neural_memory: str = ""
 
         # Metadatos efímeros de documentos confirmados por el agente local.
         # Nunca contiene bytes ni una copia del archivo.

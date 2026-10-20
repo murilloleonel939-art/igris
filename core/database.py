@@ -329,6 +329,37 @@ class UserMemory(Base):
     )
 
 
+class NeuralExperience(Base):
+    """Experiencia aprobada que alimenta la red neuronal local de Igris."""
+    __tablename__ = "neural_experiences"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    text = Column(Text, nullable=False)
+    label = Column(String(64), nullable=False, index=True)
+    response = Column(Text, nullable=True)
+    source = Column(String(32), nullable=False, default="chat")
+    approved = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+
+    __table_args__ = (
+        Index("ix_neural_experiences_user_label", "user_id", "label"),
+    )
+
+
+class NeuralModelState(Base):
+    """Estado serializado del modelo neuronal personalizado por usuario."""
+    __tablename__ = "neural_model_states"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    model_json = Column(Text, nullable=False)
+    trained_samples = Column(Integer, nullable=False, default=0)
+    accuracy = Column(Integer, nullable=False, default=0)
+    version = Column(Integer, nullable=False, default=1)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
+
+
 class KnowledgeNode(Base):
     """Entidad persistente del grafo de conocimiento de un usuario.
 

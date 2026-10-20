@@ -21,6 +21,8 @@
 | 🔁 Fallback automático entre proveedores de IA | Funcional |
 | 🔐 Acceso al bot restringido por ID de Telegram + secreto de webhook | Funcional |
 | 🧠 **Memoria estructurada**: estado mental con memoria conversacional, personal y operativa por usuario | Funcional |
+| 🧬 **Red neuronal propia de Igris**: MLP local por usuario, pesos persistentes y señal de intención contextual | Funcional |
+| 🔁 **Autoaprendizaje controlado**: experiencias etiquetadas desde hechos explícitos y temas de conversación, con reentrenamiento local y métricas | Funcional |
 | 🕒 Hora y fecha de Colombia | Funcional |
 | 🌦️ Clima de una ciudad | Funcional |
 | 🏠 **Dispositivos directos Smart Life/Tuya**: descubrimiento, comandos y consulta de estado | Funcional |

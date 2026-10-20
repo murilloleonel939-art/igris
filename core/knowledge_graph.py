@@ -23,6 +23,7 @@ _GRAPH_EMBEDDINGS_ENABLED = os.environ.get("IGRIS_MEMORY_EMBEDDINGS_ENABLED", "f
 from sqlalchemy.orm import Session
 
 from core.database import KnowledgeNode, KnowledgeRelation, utcnow
+from core.neural import record_experience
 
 
 def _embedding_for(text: str) -> Optional[list[float]]:
@@ -434,6 +435,9 @@ def learn_from_assistant(
             source=source, source_ref=source_ref,
             session_key=session_key, turn_role="assistant",
         )
+        labels = extract_topics(text)
+        if labels:
+            record_experience(db, user_id, text, labels, response=text, source=source)
         if linked:
             db.commit()
         return linked

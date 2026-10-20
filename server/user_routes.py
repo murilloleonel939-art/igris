@@ -52,7 +52,8 @@ from core.capabilities import (
 )
 from core.database import GoogleAccount, KnowledgeNode, MemoryLink, Note, Profile, Reminder, SpotifyAccount, TelegramLink, User, UserMemory, get_db
 from core.settings_manager import get_settings
-from core.memory import link_memories, linked_memories_block, load_memories, remember_from_text
+from core.memory import link_memories, linked_memories_block, load_memories, neural_memory_context, remember_from_text
+from core.neural import model_status, train_user_model
 from core.knowledge_graph import confirm_graph_relation, export_graph, graph_audit, graph_context, graph_neighbors, graph_summary, import_graph, learn_from_assistant, preview_graph_import, search_graph_nodes, set_graph_relation_status, stale_graph_relations, validate_graph_payload
 from core.tools import gcalendar, gmail
 from core.tools.time_tools import DEFAULT_TZ, _format
@@ -1140,6 +1141,22 @@ def _bind_identity(session, user: User, db: Session, query: str | None = None) -
     session.operational_memory = load_memories(db, user.id, "operational")
     session.linked_memory = linked_memories_block(db, user.id)
     session.graph_memory = graph_context(db, user.id, query=query)
+    session.neural_memory = neural_memory_context(db, user.id, query or "")
+
+
+@router.get("/api/user/neural-network")
+async def neural_network_status(user: User = Depends(require_user), db: Session = Depends(get_db)):
+    """Estado de la red neuronal propia y su autoaprendizaje controlado."""
+    return model_status(db, user.id)
+
+
+@router.post("/api/user/neural-network/train")
+async def neural_network_train(user: User = Depends(require_user), db: Session = Depends(get_db)):
+    """Reentrena la red local con las experiencias aprobadas del usuario."""
+    result = train_user_model(db, user.id)
+    status_data = model_status(db, user.id)
+    status_data.update(result)
+    return status_data
 
 
 @router.post("/api/user/voice-profile")
@@ -1241,9 +1258,9 @@ async def user_voice_chat(
     if _sessions is None:
         return {"status": "error", "message": "El chat no está disponible en este momento."}
     session = _sessions.get(_session_key(user.id, session_id))
-    _bind_identity(session, user, db)
-    remember_from_text(db, user.id, text, session_key=_session_key(user.id, session_id))
     _bind_identity(session, user, db, query=text)
+    remember_from_text(db, user.id, text, session_key=_session_key(user.id, session_id))
+    session.neural_memory = neural_memory_context(db, user.id, text)
     try:
         reply = await session.say(text)
         learn_from_assistant(db, user.id, reply, source="chat", session_key=_session_key(user.id, session_id))
@@ -1284,9 +1301,9 @@ async def user_chat(
     # Identidad y permisos SIEMPRE frescos, y la instrucción de trato: si el admin
     # la cambió en caliente, el próximo mensaje ya refleja el nuevo trato.
     prep_started = time.perf_counter()
-    _bind_identity(session, user, db)
-    remember_from_text(db, user.id, text, session_key=_session_key(user.id, payload.session_id))
     _bind_identity(session, user, db, query=text)
+    remember_from_text(db, user.id, text, session_key=_session_key(user.id, payload.session_id))
+    session.neural_memory = neural_memory_context(db, user.id, text)
     logger.info("CHAT_PREP_END id=%s elapsed_ms=%.1f", chat_id, (time.perf_counter() - prep_started) * 1000)
     try:
         model_started = time.perf_counter()

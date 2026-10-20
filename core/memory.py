@@ -23,7 +23,8 @@ from typing import Iterable, Optional
 from sqlalchemy.orm import Session
 
 from core.database import MemoryLink, UserMemory, utcnow
-from core.knowledge_graph import link_memory_fact, remember_explicit_facts
+from core.knowledge_graph import extract_topics, link_memory_fact, remember_explicit_facts
+from core.neural import model_status, predict_context, record_experience
 
 logger = logging.getLogger(__name__)
 
@@ -275,7 +276,15 @@ def remember_from_text(
     # sincronizados sin duplicar filas ni depender de un modelo externo.
     for candidate in extract_memory_candidates(user_text):
         link_memory_fact(db, user_id, candidate.content, kind=candidate.kind, source="memory")
+    labels = extract_topics(user_text) or [candidate.kind for candidate in extract_memory_candidates(user_text)]
+    if labels:
+        record_experience(db, user_id, user_text, labels, source="chat")
     return created
+
+
+def neural_memory_context(db: Session, user_id: Optional[int], query: str) -> str:
+    """Obtiene la pista de la red neuronal local para la sesión actual."""
+    return predict_context(db, user_id, query)
 
 
 def link_memories(db: Session, user_id: Optional[int], limit: int = 24) -> int:
