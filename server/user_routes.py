@@ -53,6 +53,7 @@ from core.capabilities import (
 from core.database import GoogleAccount, MemoryLink, Note, Profile, Reminder, SpotifyAccount, TelegramLink, User, UserMemory, get_db
 from core.settings_manager import get_settings
 from core.memory import link_memories, linked_memories_block, load_memories, remember_from_text
+from core.knowledge_graph import graph_context
 from core.tools import gcalendar, gmail
 from core.tools.time_tools import DEFAULT_TZ, _format
 from core import stt, voice
@@ -1010,6 +1011,7 @@ def _bind_identity(session, user: User, db: Session) -> None:
     session.personal_memory = load_memories(db, user.id, "personal")
     session.operational_memory = load_memories(db, user.id, "operational")
     session.linked_memory = linked_memories_block(db, user.id)
+    session.graph_memory = graph_context(db, user.id)
 
 
 @router.post("/api/user/voice-profile")

@@ -321,7 +321,10 @@ def _system_message(addressing_instruction: Optional[str] = None, session=None) 
             getattr(session, "personal_memory", []),
             getattr(session, "operational_memory", []),
             getattr(session, "conversation_summary", ""),
-            getattr(session, "linked_memory", []),
+            [
+                *getattr(session, "linked_memory", []),
+                *getattr(session, "graph_memory", []),
+            ],
         )
     if memory:
         base = f"{base}\n\n{memory}"
@@ -621,6 +624,7 @@ class BrainSession:
         self.operational_memory: List[str] = []
         self.conversation_summary: str = ""
         self.linked_memory: List[str] = []
+        self.graph_memory: List[str] = []
 
         # Metadatos efímeros de documentos confirmados por el agente local.
         # Nunca contiene bytes ni una copia del archivo.

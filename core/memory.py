@@ -23,6 +23,7 @@ from typing import Iterable, Optional
 from sqlalchemy.orm import Session
 
 from core.database import MemoryLink, UserMemory, utcnow
+from core.knowledge_graph import remember_explicit_facts
 
 logger = logging.getLogger(__name__)
 
@@ -237,6 +238,10 @@ def remember_from_text(db: Session, user_id: Optional[int], user_text: str) -> i
     """Guarda recuerdos detectados para un usuario. Devuelve cuántos creó."""
     if not user_id:
         return 0
+
+    # El grafo solo recibe afirmaciones explícitas y auditables; no se duplica
+    # automáticamente cada UserMemory ni se interpreta contenido externo.
+    remember_explicit_facts(db, user_id, user_text)
 
     created = 0
     for candidate in extract_memory_candidates(user_text):

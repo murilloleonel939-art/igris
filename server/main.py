@@ -24,6 +24,7 @@ from core.database import GoogleAccount, Profile, TelegramLink, User
 from core.auth import ALGORITHM, SECRET_KEY, hash_password
 from core.settings_manager import get_settings
 from core.memory import link_memories, linked_memories_block, load_memories, remember_from_text
+from core.knowledge_graph import graph_context
 from core import tts, voice
 from core.database import init_db, engine
 from core.session_store import SessionStore
@@ -303,6 +304,7 @@ def _bind_admin_identity_from_bearer(session, authorization: Optional[str], text
         session.personal_memory = load_memories(db, user.id, "personal")
         session.operational_memory = load_memories(db, user.id, "operational")
         session.linked_memory = linked_memories_block(db, user.id)
+        session.graph_memory = graph_context(db, user.id)
 
 # Instancia global del cerebro y almacén de sesiones (historial por conversación)
 brain = Brain()

@@ -6,7 +6,10 @@ progresivamente y conservar el origen, la confianza y la vigencia de cada dato.
 from __future__ import annotations
 
 from datetime import datetime
+import re
 from typing import Optional
+
+from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
 
@@ -114,9 +117,98 @@ def upsert_relation(
     return relation
 
 
+@dataclass(frozen=True)
+class GraphFact:
+    """Hecho explícito extraído del mensaje del propio usuario."""
+    subject_type: str
+    subject: str
+    relation: str
+    object_type: str
+    object: str
+
+
+_FACT_PATTERNS = (
+    (re.compile(r"^me llamo\s+(.+)$", re.I), "person", "name", "person", "user"),
+    (re.compile(r"^(?:prefiero|me gusta)\s+(.+)$", re.I), "person", "prefers", "preference", "user"),
+    (re.compile(r"^no me gusta\s+(.+)$", re.I), "person", "dislikes", "preference", "user"),
+    (re.compile(r"^(?:trabajo en|estoy trabajando en)\s+(.+)$", re.I), "person", "works_on", "project", "user"),
+    (re.compile(r"^(?:vivo en|soy de)\s+(.+)$", re.I), "person", "lives_in", "place", "user"),
+    (re.compile(r"^(?:mi objetivo es|mi objetivo:)\s+(.+)$", re.I), "person", "has_goal", "goal", "user"),
+    (re.compile(r"^(?:el proyecto|proyecto)\s+(.+?)\s+(?:usa|utiliza)\s+(.+)$", re.I), "project", "uses", "technology", "project"),
+)
+
+
+def extract_explicit_facts(user_text: str) -> list[GraphFact]:
+    """Extrae solo afirmaciones directas con patrones pequeños y auditables.
+
+    No interpreta textos de terceros ni inventa entidades. El usuario se representa
+    con el nodo estable ``user``; las futuras extracciones de modelo podrán ampliar
+    esta lista con una fuente y confianza distintas.
+    """
+    text = re.sub(r"\s+", " ", (user_text or "")).strip().rstrip(".!?")
+    if len(text) < 4 or text.lower().startswith(("olvida que", "borra de tu memoria")):
+        return []
+    facts: list[GraphFact] = []
+    for pattern, subject_type, relation, object_type, _ in _FACT_PATTERNS:
+        match = pattern.match(text)
+        if not match:
+            continue
+        groups = match.groups()
+        if len(groups) == 1:
+            facts.append(GraphFact(subject_type, "user", relation, object_type, groups[0].strip()))
+        else:
+            facts.append(GraphFact(subject_type, groups[0].strip(), relation, object_type, groups[1].strip()))
+        break
+    return [fact for fact in facts if 2 <= len(fact.object) <= 255]
+
+
+def remember_explicit_facts(
+    db: Session,
+    user_id: int,
+    user_text: str,
+    *,
+    source: str = "chat",
+    source_ref: Optional[str] = None,
+) -> int:
+    """Persiste hechos explícitos y sus conexiones sin tocar UserMemory."""
+    facts = extract_explicit_facts(user_text)
+    for fact in facts:
+        subject = upsert_node(db, user_id, fact.subject_type, fact.subject, confidence=95, importance=3, source=source, source_ref=source_ref)
+        target = upsert_node(db, user_id, fact.object_type, fact.object, confidence=95, importance=3, source=source, source_ref=source_ref)
+        upsert_relation(db, user_id, subject, fact.relation, target, confidence=95, source=source, source_ref=source_ref)
+    if facts:
+        db.commit()
+    return len(facts)
+
+
+def graph_context(db: Session, user_id: Optional[int], limit: int = 8) -> list[str]:
+    """Devuelve conexiones activas y confiables para el contexto del modelo."""
+    if not user_id:
+        return []
+    rows = db.query(KnowledgeRelation).filter(
+        KnowledgeRelation.user_id == user_id,
+        KnowledgeRelation.status == "active",
+    ).order_by(
+        KnowledgeRelation.confidence.desc(),
+        KnowledgeRelation.weight.desc(),
+        KnowledgeRelation.updated_at.desc(),
+    ).limit(limit).all()
+    output = []
+    for relation in rows:
+        left = relation.from_node
+        right = relation.to_node
+        if left is None or right is None or left.status != "active" or right.status != "active":
+            continue
+        output.append(f"{left.name} —{relation.relation_type}→ {right.name}")
+    return output
+
+
 def save_graph(db: Session) -> None:
     """Confirma una operación de grafo en una sola transacción."""
     db.commit()
 
 
-__all__ = ["upsert_node", "upsert_relation", "save_graph"]
+__all__ = [
+    "GraphFact", "extract_explicit_facts", "remember_explicit_facts",
+    "graph_context", "upsert_node", "upsert_relation", "save_graph",
+]
