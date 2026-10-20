@@ -304,7 +304,7 @@ def _bind_admin_identity_from_bearer(session, authorization: Optional[str], text
         session.personal_memory = load_memories(db, user.id, "personal")
         session.operational_memory = load_memories(db, user.id, "operational")
         session.linked_memory = linked_memories_block(db, user.id)
-        session.graph_memory = graph_context(db, user.id)
+        session.graph_memory = graph_context(db, user.id, query=text)
 
 # Instancia global del cerebro y almacén de sesiones (historial por conversación)
 brain = Brain()

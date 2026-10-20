@@ -162,6 +162,30 @@ def extract_explicit_facts(user_text: str) -> list[GraphFact]:
     return [fact for fact in facts if 2 <= len(fact.object) <= 255]
 
 
+def _apply_corrections(db: Session, user_id: int, user_text: str) -> bool:
+    """Archiva relaciones contradichas por una corrección explícita."""
+    text = re.sub(r"\s+", " ", (user_text or "")).strip().rstrip(".!?")
+    match = re.match(r"^(?:ya no|dejé de) (trabajar en|estar trabajando en|preferir|gustar)\s+(.+)$", text, re.I)
+    if not match:
+        return False
+    relation_type = "works_on" if "trabaj" in match.group(1).lower() else "prefers"
+    target_name = match.group(2).strip()
+    relations = db.query(KnowledgeRelation).join(
+        KnowledgeNode, KnowledgeRelation.to_node_id == KnowledgeNode.id,
+    ).filter(
+        KnowledgeRelation.user_id == user_id,
+        KnowledgeRelation.status == "active",
+        KnowledgeRelation.relation_type == relation_type,
+        KnowledgeNode.name == target_name,
+    ).all()
+    changed = False
+    for relation in relations:
+        relation.status = "superseded"
+        relation.updated_at = utcnow()
+        changed = True
+    return changed
+
+
 def remember_explicit_facts(
     db: Session,
     user_id: int,
@@ -170,19 +194,20 @@ def remember_explicit_facts(
     source: str = "chat",
     source_ref: Optional[str] = None,
 ) -> int:
-    """Persiste hechos explícitos y sus conexiones sin tocar UserMemory."""
+    """Persiste hechos explícitos y correcciones sin tocar UserMemory."""
+    corrected = _apply_corrections(db, user_id, user_text)
     facts = extract_explicit_facts(user_text)
     for fact in facts:
         subject = upsert_node(db, user_id, fact.subject_type, fact.subject, confidence=95, importance=3, source=source, source_ref=source_ref)
         target = upsert_node(db, user_id, fact.object_type, fact.object, confidence=95, importance=3, source=source, source_ref=source_ref)
         upsert_relation(db, user_id, subject, fact.relation, target, confidence=95, source=source, source_ref=source_ref)
-    if facts:
+    if facts or corrected:
         db.commit()
     return len(facts)
 
 
-def graph_context(db: Session, user_id: Optional[int], limit: int = 8) -> list[str]:
-    """Devuelve conexiones activas y confiables para el contexto del modelo."""
+def graph_context(db: Session, user_id: Optional[int], query: Optional[str] = None, limit: int = 8) -> list[str]:
+    """Devuelve conexiones activas, priorizando las relacionadas con el mensaje."""
     if not user_id:
         return []
     rows = db.query(KnowledgeRelation).filter(
@@ -192,9 +217,16 @@ def graph_context(db: Session, user_id: Optional[int], limit: int = 8) -> list[s
         KnowledgeRelation.confidence.desc(),
         KnowledgeRelation.weight.desc(),
         KnowledgeRelation.updated_at.desc(),
-    ).limit(limit).all()
+    ).all()
+    tokens = {token.lower() for token in re.findall(r"[\wáéíóúñü]{3,}", query or "")}
+    if tokens:
+        rows.sort(key=lambda relation: (
+            bool(tokens & {relation.from_node.name.lower(), relation.to_node.name.lower()}),
+            relation.confidence,
+            relation.weight,
+        ), reverse=True)
     output = []
-    for relation in rows:
+    for relation in rows[:limit]:
         left = relation.from_node
         right = relation.to_node
         if left is None or right is None or left.status != "active" or right.status != "active":

@@ -983,7 +983,7 @@ def _session_key(user_id: int, client_sub: Optional[str]) -> str:
     return f"user:{user_id}:{sub or 'default'}"
 
 
-def _bind_identity(session, user: User, db: Session) -> None:
+def _bind_identity(session, user: User, db: Session, query: str | None = None) -> None:
     """Fija en la sesión QUIÉN es el usuario y QUÉ puede hacer.
 
     Se hace en cada mensaje, no solo al crear la sesión: si el administrador
@@ -1011,7 +1011,7 @@ def _bind_identity(session, user: User, db: Session) -> None:
     session.personal_memory = load_memories(db, user.id, "personal")
     session.operational_memory = load_memories(db, user.id, "operational")
     session.linked_memory = linked_memories_block(db, user.id)
-    session.graph_memory = graph_context(db, user.id)
+    session.graph_memory = graph_context(db, user.id, query=query)
 
 
 @router.post("/api/user/voice-profile")
@@ -1115,7 +1115,7 @@ async def user_voice_chat(
     session = _sessions.get(_session_key(user.id, session_id))
     _bind_identity(session, user, db)
     remember_from_text(db, user.id, text)
-    _bind_identity(session, user, db)
+    _bind_identity(session, user, db, query=text)
     try:
         reply = await session.say(text)
         result = {"status": "ok", "text": text, "reply": reply}
@@ -1157,7 +1157,7 @@ async def user_chat(
     prep_started = time.perf_counter()
     _bind_identity(session, user, db)
     remember_from_text(db, user.id, text)
-    _bind_identity(session, user, db)
+    _bind_identity(session, user, db, query=text)
     logger.info("CHAT_PREP_END id=%s elapsed_ms=%.1f", chat_id, (time.perf_counter() - prep_started) * 1000)
     try:
         model_started = time.perf_counter()
