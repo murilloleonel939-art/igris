@@ -55,6 +55,16 @@ def _bounded(value: int, default: int = 50) -> int:
     return max(0, min(100, int(value if value is not None else default)))
 
 
+def _currently_valid(entity) -> bool:
+    """Comprueba vigencia temporal sin ocultar datos históricos archivados."""
+    now = utcnow()
+    return (
+        entity.status == "active"
+        and (entity.valid_from is None or entity.valid_from <= now)
+        and (entity.valid_until is None or entity.valid_until >= now)
+    )
+
+
 def upsert_node(
     db: Session,
     user_id: int,
@@ -328,7 +338,8 @@ def graph_context(db: Session, user_id: Optional[int], query: Optional[str] = No
     active_rows = [
         relation for relation in rows
         if relation.from_node and relation.to_node
-        and relation.from_node.status == "active" and relation.to_node.status == "active"
+        and _currently_valid(relation)
+        and _currently_valid(relation.from_node) and _currently_valid(relation.to_node)
     ]
     query_vector = _embedding_for(query.strip()) if query and query.strip() else None
     tokens = {token.lower() for token in re.findall(r"[\wáéíóúñü]{3,}", query or "")}
@@ -372,6 +383,8 @@ def search_graph_nodes(db: Session, user_id: Optional[int], query: str, limit: i
     rows = db.query(KnowledgeNode).filter(
         KnowledgeNode.user_id == user_id,
         KnowledgeNode.status == "active",
+        (KnowledgeNode.valid_from.is_(None) | (KnowledgeNode.valid_from <= utcnow())),
+        (KnowledgeNode.valid_until.is_(None) | (KnowledgeNode.valid_until >= utcnow())),
         (KnowledgeNode.name.ilike(pattern) | KnowledgeNode.description.ilike(pattern)),
     ).order_by(
         KnowledgeNode.importance.desc(),
@@ -392,6 +405,8 @@ def graph_neighbors(db: Session, user_id: Optional[int], node_id: int, limit: in
         KnowledgeNode.id == node_id,
         KnowledgeNode.user_id == user_id,
         KnowledgeNode.status == "active",
+        (KnowledgeNode.valid_from.is_(None) | (KnowledgeNode.valid_from <= utcnow())),
+        (KnowledgeNode.valid_until.is_(None) | (KnowledgeNode.valid_until >= utcnow())),
     ).first()
     if node is None:
         return []
@@ -418,6 +433,37 @@ def graph_neighbors(db: Session, user_id: Optional[int], node_id: int, limit: in
     return result
 
 
+def graph_audit(db: Session, user_id: Optional[int], node_id: Optional[int] = None, limit: int = 100) -> list[dict]:
+    """Devuelve trazabilidad de relaciones propias, incluidas las archivadas."""
+    if not user_id or limit <= 0:
+        return []
+    query = db.query(KnowledgeRelation).filter(KnowledgeRelation.user_id == user_id)
+    if node_id is not None:
+        query = query.filter(
+            (KnowledgeRelation.from_node_id == node_id) | (KnowledgeRelation.to_node_id == node_id),
+        )
+    rows = query.order_by(KnowledgeRelation.updated_at.desc(), KnowledgeRelation.id.desc()).limit(min(limit, 200)).all()
+    return [
+        {
+            "id": relation.id,
+            "from": {"id": relation.from_node.id, "type": relation.from_node.node_type, "name": relation.from_node.name},
+            "to": {"id": relation.to_node.id, "type": relation.to_node.node_type, "name": relation.to_node.name},
+            "relation": relation.relation_type,
+            "status": relation.status,
+            "confidence": relation.confidence,
+            "weight": relation.weight,
+            "source": relation.source,
+            "source_ref": relation.source_ref,
+            "valid_from": relation.valid_from.isoformat() if relation.valid_from else None,
+            "valid_until": relation.valid_until.isoformat() if relation.valid_until else None,
+            "last_confirmed_at": relation.last_confirmed_at.isoformat() if relation.last_confirmed_at else None,
+            "updated_at": relation.updated_at.isoformat() if relation.updated_at else None,
+        }
+        for relation in rows
+        if relation.from_node is not None and relation.to_node is not None
+    ]
+
+
 def save_graph(db: Session) -> None:
     """Confirma una operación de grafo en una sola transacción."""
     db.commit()
@@ -425,5 +471,5 @@ def save_graph(db: Session) -> None:
 
 __all__ = [
     "GraphFact", "extract_explicit_facts", "remember_explicit_facts",
-    "graph_context", "graph_neighbors", "search_graph_nodes", "upsert_node", "upsert_relation", "save_graph",
+    "graph_context", "graph_neighbors", "search_graph_nodes", "graph_audit", "upsert_node", "upsert_relation", "save_graph",
 ]
