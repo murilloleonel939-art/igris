@@ -217,48 +217,101 @@ class GraphFact:
 
 
 _FACT_PATTERNS = (
-    (re.compile(r"^me llamo\s+(.+)$", re.I), "person", "name", "person", "user"),
-    (re.compile(r"^(?:prefiero|me gusta)\s+(.+)$", re.I), "person", "prefers", "preference", "user"),
-    (re.compile(r"^no me gusta\s+(.+)$", re.I), "person", "dislikes", "preference", "user"),
-    (re.compile(r"^(?:trabajo en|estoy trabajando en)\s+(.+)$", re.I), "person", "works_on", "project", "user"),
-    (re.compile(r"^(?:vivo en|soy de)\s+(.+)$", re.I), "person", "lives_in", "place", "user"),
-    (re.compile(r"^(?:mi objetivo es|mi objetivo:)\s+(.+)$", re.I), "person", "has_goal", "goal", "user"),
-    (re.compile(r"^(?:el proyecto|proyecto)\s+(.+?)\s+(?:usa|utiliza)\s+(.+)$", re.I), "project", "uses", "technology", "project"),
+    (re.compile(r"\bme llamo\s+(.+?)(?:\s+y\s+(?:trabajo|vivo|prefiero|me gusta)|\s*[,;.]|$)", re.I), "person", "name", "person", "user"),
+    (re.compile(r"(?<!no )\b(?:prefiero|me gusta|me encanta)\s+(.+?)(?:\s+y\s+(?:prefiero|me gusta|trabajo|vivo)|\s*[,;.]|$)", re.I), "person", "prefers", "preference", "user"),
+    (re.compile(r"\bno me gusta\s+(.+?)(?:\s+y\s+(?:prefiero|me gusta|trabajo|vivo)|\s*[,;.]|$)", re.I), "person", "dislikes", "preference", "user"),
+    (re.compile(r"\b(?:trabajo en|estoy trabajando en)\s+(.+?)(?:\s+con\s+[A-ZÁÉÍÓÚÑ]|\s+y\s+(?:prefiero|me gusta|vivo|uso)|\s*[,;.]|\s+usando\b|$)", re.I), "person", "works_on", "project", "user"),
+    (re.compile(r"\b(?:trabajo con)\s+([A-ZÁÉÍÓÚÑ][\wáéíóúñü]{1,40})(?:\s+y\b|\s*[,;.]|$)", re.I), "person", "works_with", "person", "user"),
+    (re.compile(r"\btrabajo (?:en\s+.+?\s+)?con\s+([A-ZÁÉÍÓÚÑ][\wáéíóúñü]{1,40})", re.I), "person", "works_with", "person", "user"),
+    (re.compile(r"\b(?:vivo en|soy de|estoy en)\s+(.+?)(?:\s+y\s+(?:prefiero|me gusta|trabajo)|\s*[,;.]|$)", re.I), "person", "lives_in", "place", "user"),
+    (re.compile(r"\b(?:mi objetivo es|mi objetivo:|mi meta es)\s+(.+?)(?:\s*[,;.]|$)", re.I), "person", "has_goal", "goal", "user"),
+    (re.compile(r"\b(?:el proyecto|proyecto|la app|la aplicación)\s+(.+?)\s+(?:usa|utiliza|está hecho en|es con)\s+(.+?)(?:\s*[,;.]|$)", re.I), "project", "uses", "technology", "project"),
+    (re.compile(r"\b(?:estoy aprendiendo|quiero aprender|aprendiendo)\s+(.+?)(?:\s*[,;.]|$)", re.I), "person", "learning", "skill", "user"),
+    (re.compile(r"\b(?:uso|utilizo)\s+([A-Za-z][\w.+#-]{1,30})(?:\s+(?:para|en|como)\b|\s*[,;.]|$)", re.I), "person", "uses", "technology", "user"),
+    (re.compile(r"\b(?:mi (?:hermano|hermana|madre|padre|esposa|esposo|hijo|hija|amigo|amiga|jefe|jefa))\s+(?:se llama\s+)?([A-ZÁÉÍÓÚÑ][\wáéíóúñü]{1,40})", re.I), "person", "related_to", "person", "user"),
+    (re.compile(r"\b(?:tengo|tenemos)\s+(\d{1,3}\s+(?:años|cabezas|empleados|personas|hijos|hijas|mascotas))\b", re.I), "person", "has_count", "quantity", "user"),
+    (re.compile(r"\b(?:nací el|mi cumpleaños es|cumplo años el)\s+(.+?)(?:\s*[,;.]|$)", re.I), "person", "birthday", "date", "user"),
+    (re.compile(r"\b(?:trabajo como|soy)\s+(?:un |una |el |la )?([A-Za-zÁÉÍÓÚÑáéíóúñ]{3,40})(?:\s*[,;.]|\s+en\b|$)", re.I), "person", "has_role", "role", "user"),
 )
+
+_TOPIC_HINTS = {
+    "tecnología": ("código", "programa", "api", "python", "javascript", "base de datos", "servidor", "app", "software", "deploy"),
+    "trabajo": ("trabajo", "proyecto", "empresa", "cliente", "jefe", "reunión", "oficina", "equipo"),
+    "salud": ("salud", "médico", "ejercicio", "gimnasio", "dieta", "dormir", "enfermo"),
+    "finanzas": ("dinero", "pago", "factura", "presupuesto", "inversión", "banco", "precio", "coste"),
+    "familia": ("familia", "hijo", "hija", "mamá", "papá", "hermano", "esposa", "pareja"),
+    "estudio": ("estudio", "curso", "aprender", "universidad", "examen", "clase"),
+    "viaje": ("viaje", "vuelo", "hotel", "vacaciones", "ciudad", "país"),
+    "ocio": ("película", "música", "juego", "serie", "libro", "deporte", "fútbol"),
+}
+
+
+def _split_clauses(text: str) -> list[str]:
+    """Divide un mensaje en cláusulas independientes sin perder el orden."""
+    return [part.strip() for part in re.split(r"(?:[,;]|\s+y\s+(?=\w))", text) if part.strip()]
+
+
+def _clean_object(value: str) -> str:
+    cleaned = re.sub(r"\s+", " ", (value or "").strip(" .,;:"))
+    return cleaned[:255]
 
 
 def extract_explicit_facts(user_text: str) -> list[GraphFact]:
-    """Extrae solo afirmaciones directas con patrones pequeños y auditables.
+    """Extrae todos los hechos detectables, sin exigir que abran la frase.
 
-    No interpreta textos de terceros ni inventa entidades. El usuario se representa
-    con el nodo estable ``user``; las futuras extracciones de modelo podrán ampliar
-    esta lista con una fuente y confianza distintas.
+    Cada cláusula del mensaje se evalúa por separado, de modo que una frase con
+    varios datos produce varios hechos en lugar de quedarse con el primero.
     """
-    text = re.sub(r"\s+", " ", (user_text or "")).strip().rstrip(".!?")
-    if len(text) < 4 or text.lower().startswith(("olvida que", "borra de tu memoria")):
+    text = re.sub(r"\s+", " ", (user_text or "")).strip()
+    if len(text) < 4:
+        return []
+    low = text.lower()
+    if low.startswith(("olvida que", "borra de tu memoria", "no recuerdes")):
+        return []
+    # Una corrección ("ya no trabajo en X") no es una afirmación nueva: su
+    # trabajo es archivar la relación anterior y no debe reforzarla.
+    if re.search(r"\b(?:ya no|dejé de|deje de)\b", low):
         return []
     facts: list[GraphFact] = []
-    for pattern, subject_type, relation, object_type, _ in _FACT_PATTERNS:
-        match = pattern.match(text)
-        if not match:
-            continue
-        groups = match.groups()
-        if len(groups) == 1:
-            facts.append(GraphFact(subject_type, "user", relation, object_type, groups[0].strip()))
-        else:
-            facts.append(GraphFact(subject_type, groups[0].strip(), relation, object_type, groups[1].strip()))
-        break
-    return [fact for fact in facts if 2 <= len(fact.object) <= 255]
+    seen: set[tuple[str, str, str]] = set()
+    for clause in _split_clauses(text):
+        for pattern, subject_type, relation, object_type, _ in _FACT_PATTERNS:
+            match = pattern.search(clause)
+            if not match:
+                continue
+            groups = match.groups()
+            if len(groups) == 1:
+                subject_name, object_name = "user", _clean_object(groups[0])
+            else:
+                subject_name, object_name = _clean_object(groups[0]), _clean_object(groups[1])
+            if not (2 <= len(object_name) <= 255):
+                continue
+            key = (subject_name.lower(), relation, object_name.lower())
+            if key in seen:
+                continue
+            seen.add(key)
+            facts.append(GraphFact(subject_type, subject_name or "user", relation, object_type, object_name))
+    return facts
+
+
+def extract_topics(user_text: str, limit: int = 3) -> list[str]:
+    """Devuelve los temas reconocibles del texto, ordenados por coincidencias."""
+    low = (user_text or "").lower()
+    scored = [
+        (sum(1 for word in words if word in low), topic)
+        for topic, words in _TOPIC_HINTS.items()
+    ]
+    return [topic for score, topic in sorted(scored, reverse=True) if score > 0][:limit]
 
 
 def _apply_corrections(db: Session, user_id: int, user_text: str) -> bool:
     """Archiva relaciones contradichas por una corrección explícita."""
     text = re.sub(r"\s+", " ", (user_text or "")).strip().rstrip(".!?")
-    match = re.match(r"^(?:ya no|dejé de) (trabajar en|estar trabajando en|preferir|gustar)\s+(.+)$", text, re.I)
+    match = re.search(r"\b(?:ya no|dejé de|deje de)\s+(trabajar en|estar trabajando en|preferir|me gusta|gustar)\s+(.+?)(?:\s*[,;.]|$)", text, re.I)
     if not match:
         return False
     relation_type = "works_on" if "trabaj" in match.group(1).lower() else "prefers"
-    target_name = match.group(2).strip()
+    target_name = match.group(2).strip().strip(".,;")
     relations = db.query(KnowledgeRelation).join(
         KnowledgeNode, KnowledgeRelation.to_node_id == KnowledgeNode.id,
     ).filter(
@@ -283,7 +336,9 @@ def _supersede_conflicting_relations(
     target: KnowledgeNode,
 ) -> bool:
     """Conserva un solo valor activo para relaciones funcionalmente exclusivas."""
-    exclusive = {"works_on", "prefers", "lives_in", "has_goal", "name"}
+    # Solo las relaciones de valor único se archivan al cambiar: una persona
+    # puede preferir varias cosas o aprender varias a la vez.
+    exclusive = {"works_on", "lives_in", "has_goal", "name", "has_role", "birthday"}
     if relation_type not in exclusive or subject.id is None or target.id is None:
         return False
     rows = db.query(KnowledgeRelation).filter(
@@ -301,6 +356,140 @@ def _supersede_conflicting_relations(
     return changed
 
 
+def _link_conversation(
+    db: Session,
+    user_id: int,
+    text: str,
+    *,
+    source: str,
+    source_ref: Optional[str],
+    session_key: Optional[str],
+    turn_role: str = "user",
+) -> int:
+    """Conecta el turno con un nodo de conversación y con sus temas.
+
+    Cada conversación se identifica por ``session_key``; si no se conoce, se usa
+    un nodo diario para no perder el hilo. Los temas se enlazan con ``about``.
+    """
+    topics = extract_topics(text)
+    if not topics and not session_key:
+        return 0
+    conversation_name = (session_key or utcnow().strftime("%Y-%m-%d"))[:255]
+    conversation = upsert_node(
+        db, user_id, "conversation", conversation_name,
+        confidence=80, importance=2, source=source, source_ref=source_ref,
+    )
+    linked = 0
+    for topic in topics:
+        topic_node = upsert_node(
+            db, user_id, "topic", topic,
+            confidence=85, importance=2, source=source, source_ref=source_ref,
+        )
+        if db.query(KnowledgeRelation).filter(
+            KnowledgeRelation.user_id == user_id,
+            KnowledgeRelation.from_node_id == conversation.id,
+            KnowledgeRelation.to_node_id == topic_node.id,
+            KnowledgeRelation.relation_type == "about",
+        ).first() is None:
+            upsert_relation(db, user_id, conversation, "about", topic_node, confidence=85, source=source, source_ref=source_ref)
+            linked += 1
+    anchor_type = "assistant" if turn_role == "assistant" else "user"
+    anchor = upsert_node(
+        db, user_id, "user" if anchor_type == "user" else "assistant", anchor_type,
+        confidence=90, importance=3, source=source, source_ref=source_ref,
+    )
+    relation_type = "answered_in" if turn_role == "assistant" else "participated_in"
+    if db.query(KnowledgeRelation).filter(
+        KnowledgeRelation.user_id == user_id,
+        KnowledgeRelation.from_node_id == anchor.id,
+        KnowledgeRelation.to_node_id == conversation.id,
+        KnowledgeRelation.relation_type == relation_type,
+    ).first() is None:
+        upsert_relation(db, user_id, anchor, relation_type, conversation, confidence=85, source=source, source_ref=source_ref)
+    return linked
+
+
+def learn_from_assistant(
+    db: Session,
+    user_id: Optional[int],
+    assistant_text: str,
+    *,
+    source: str = "chat",
+    source_ref: Optional[str] = None,
+    session_key: Optional[str] = None,
+) -> int:
+    """Registra en el grafo de qué habló Igris, sin inventar datos del usuario.
+
+    Solo se extraen temas y la pertenencia a la conversación: el texto del
+    asistente nunca crea entidades personales, para no fabricar recuerdos.
+    """
+    if not user_id:
+        return 0
+    text = (assistant_text or "").strip()
+    if len(text) < 12:
+        return 0
+    try:
+        linked = _link_conversation(
+            db, user_id, text,
+            source=source, source_ref=source_ref,
+            session_key=session_key, turn_role="assistant",
+        )
+        if linked:
+            db.commit()
+        return linked
+    except Exception:
+        db.rollback()
+        return 0
+
+
+def link_memory_fact(
+    db: Session,
+    user_id: Optional[int],
+    content: str,
+    *,
+    kind: str = "personal",
+    source: str = "memory",
+    source_ref: Optional[str] = None,
+) -> int:
+    """Convierte un recuerdo textual en entidades y relaciones del grafo.
+
+    Así ``UserMemory`` deja de ser un cajón aislado: cada frase guardada aporta
+    sus hechos y sus temas a la red, sin duplicar la memoria ni descartarla.
+    """
+    if not user_id:
+        return 0
+    text = (content or "").strip()
+    if len(text) < 4:
+        return 0
+    try:
+        facts = extract_explicit_facts(text)
+        for fact in facts:
+            subject = upsert_node(db, user_id, fact.subject_type, fact.subject, confidence=85, importance=2, source=source, source_ref=source_ref)
+            target = upsert_node(db, user_id, fact.object_type, fact.object, confidence=85, importance=2, source=source, source_ref=source_ref)
+            _supersede_conflicting_relations(db, user_id, subject, fact.relation, target)
+            relation = upsert_relation(db, user_id, subject, fact.relation, target, confidence=85, source=source, source_ref=source_ref)
+            if kind == "operational":
+                relation.weight = max(1, min(100, relation.weight))
+        topics = extract_topics(text)
+        for topic in topics:
+            topic_node = upsert_node(db, user_id, "topic", topic, confidence=80, importance=2, source=source, source_ref=source_ref)
+            user_node = upsert_node(db, user_id, "user", "user", confidence=90, importance=3, source=source, source_ref=source_ref)
+            if db.query(KnowledgeRelation).filter(
+                KnowledgeRelation.user_id == user_id,
+                KnowledgeRelation.from_node_id == user_node.id,
+                KnowledgeRelation.to_node_id == topic_node.id,
+                KnowledgeRelation.relation_type == "interested_in",
+            ).first() is None:
+                upsert_relation(db, user_id, user_node, "interested_in", topic_node, confidence=80, source=source, source_ref=source_ref)
+        if facts or topics:
+            db.commit()
+            schedule_node_embedding_backfill(user_id)
+        return len(facts)
+    except Exception:
+        db.rollback()
+        return 0
+
+
 def remember_explicit_facts(
     db: Session,
     user_id: int,
@@ -308,8 +497,13 @@ def remember_explicit_facts(
     *,
     source: str = "chat",
     source_ref: Optional[str] = None,
+    session_key: Optional[str] = None,
 ) -> int:
-    """Persiste hechos explícitos y correcciones sin tocar UserMemory."""
+    """Persiste hechos explícitos y correcciones sin tocar UserMemory.
+
+    Además de los datos personales, enlaza el turno con un nodo de conversación
+    y con los temas detectados, para que el grafo también recuerde de qué se habló.
+    """
     corrected = _apply_corrections(db, user_id, user_text)
     facts = extract_explicit_facts(user_text)
     for fact in facts:
@@ -317,7 +511,10 @@ def remember_explicit_facts(
         target = upsert_node(db, user_id, fact.object_type, fact.object, confidence=95, importance=3, source=source, source_ref=source_ref)
         _supersede_conflicting_relations(db, user_id, subject, fact.relation, target)
         upsert_relation(db, user_id, subject, fact.relation, target, confidence=95, source=source, source_ref=source_ref)
-    if facts or corrected:
+    topics = 0
+    if len((user_text or "").strip()) >= 12:
+        topics = _link_conversation(db, user_id, user_text, source=source, source_ref=source_ref, session_key=session_key)
+    if facts or corrected or topics:
         db.commit()
         schedule_node_embedding_backfill(user_id)
     return len(facts)
@@ -761,6 +958,7 @@ def save_graph(db: Session) -> None:
 
 
 __all__ = [
-    "GraphFact", "extract_explicit_facts", "remember_explicit_facts",
+    "GraphFact", "extract_explicit_facts", "extract_topics", "remember_explicit_facts",
+    "learn_from_assistant", "link_memory_fact",
     "graph_context", "graph_neighbors", "search_graph_nodes", "graph_audit", "confirm_graph_relation", "set_graph_relation_status", "stale_graph_relations", "export_graph", "validate_graph_payload", "preview_graph_import", "import_graph", "graph_summary", "upsert_node", "upsert_relation", "save_graph",
 ]

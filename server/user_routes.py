@@ -53,7 +53,7 @@ from core.capabilities import (
 from core.database import GoogleAccount, KnowledgeNode, MemoryLink, Note, Profile, Reminder, SpotifyAccount, TelegramLink, User, UserMemory, get_db
 from core.settings_manager import get_settings
 from core.memory import link_memories, linked_memories_block, load_memories, remember_from_text
-from core.knowledge_graph import confirm_graph_relation, export_graph, graph_audit, graph_context, graph_neighbors, graph_summary, import_graph, preview_graph_import, search_graph_nodes, set_graph_relation_status, stale_graph_relations, validate_graph_payload
+from core.knowledge_graph import confirm_graph_relation, export_graph, graph_audit, graph_context, graph_neighbors, graph_summary, import_graph, learn_from_assistant, preview_graph_import, search_graph_nodes, set_graph_relation_status, stale_graph_relations, validate_graph_payload
 from core.tools import gcalendar, gmail
 from core.tools.time_tools import DEFAULT_TZ, _format
 from core import stt, voice
@@ -1242,10 +1242,11 @@ async def user_voice_chat(
         return {"status": "error", "message": "El chat no está disponible en este momento."}
     session = _sessions.get(_session_key(user.id, session_id))
     _bind_identity(session, user, db)
-    remember_from_text(db, user.id, text)
+    remember_from_text(db, user.id, text, session_key=_session_key(user.id, session_id))
     _bind_identity(session, user, db, query=text)
     try:
         reply = await session.say(text)
+        learn_from_assistant(db, user.id, reply, source="chat", session_key=_session_key(user.id, session_id))
         result = {"status": "ok", "text": text, "reply": reply}
         if score is not None:
             result["voice_score"] = round(score, 3)
@@ -1284,13 +1285,14 @@ async def user_chat(
     # la cambió en caliente, el próximo mensaje ya refleja el nuevo trato.
     prep_started = time.perf_counter()
     _bind_identity(session, user, db)
-    remember_from_text(db, user.id, text)
+    remember_from_text(db, user.id, text, session_key=_session_key(user.id, payload.session_id))
     _bind_identity(session, user, db, query=text)
     logger.info("CHAT_PREP_END id=%s elapsed_ms=%.1f", chat_id, (time.perf_counter() - prep_started) * 1000)
     try:
         model_started = time.perf_counter()
         reply = await session.say(text, {"image_data": payload.image_data, "image_mime": payload.image_mime})
         logger.info("CHAT_MODEL_END id=%s elapsed_ms=%.1f reply_chars=%d", chat_id, (time.perf_counter() - model_started) * 1000, len(reply or ""))
+        learn_from_assistant(db, user.id, reply, source="chat", session_key=_session_key(user.id, payload.session_id))
         # La interfaz muestra la ruta que confirmó el agente local.
         created = list(getattr(session, "documents", []) or [])
         session.documents = []

@@ -23,7 +23,7 @@ from typing import Iterable, Optional
 from sqlalchemy.orm import Session
 
 from core.database import MemoryLink, UserMemory, utcnow
-from core.knowledge_graph import remember_explicit_facts
+from core.knowledge_graph import link_memory_fact, remember_explicit_facts
 
 logger = logging.getLogger(__name__)
 
@@ -234,14 +234,20 @@ def extract_memory_candidates(user_text: str) -> list[MemoryCandidate]:
     return out
 
 
-def remember_from_text(db: Session, user_id: Optional[int], user_text: str) -> int:
+def remember_from_text(
+    db: Session,
+    user_id: Optional[int],
+    user_text: str,
+    *,
+    session_key: Optional[str] = None,
+) -> int:
     """Guarda recuerdos detectados para un usuario. Devuelve cuántos creó."""
     if not user_id:
         return 0
 
     # El grafo solo recibe afirmaciones explícitas y auditables; no se duplica
     # automáticamente cada UserMemory ni se interpreta contenido externo.
-    remember_explicit_facts(db, user_id, user_text)
+    remember_explicit_facts(db, user_id, user_text, session_key=session_key)
 
     created = 0
     for candidate in extract_memory_candidates(user_text):
@@ -265,6 +271,10 @@ def remember_from_text(db: Session, user_id: Optional[int], user_text: str) -> i
         # El vector se calcula después, fuera de la petición: guardar el recuerdo
         # nunca espera a la API de embeddings.
         schedule_embedding_backfill(user_id)
+    # El recuerdo textual también alimenta la red: los dos cajones se mantienen
+    # sincronizados sin duplicar filas ni depender de un modelo externo.
+    for candidate in extract_memory_candidates(user_text):
+        link_memory_fact(db, user_id, candidate.content, kind=candidate.kind, source="memory")
     return created
 
 

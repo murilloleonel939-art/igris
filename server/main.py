@@ -24,7 +24,7 @@ from core.database import GoogleAccount, Profile, TelegramLink, User
 from core.auth import ALGORITHM, SECRET_KEY, hash_password
 from core.settings_manager import get_settings
 from core.memory import link_memories, linked_memories_block, load_memories, remember_from_text
-from core.knowledge_graph import graph_context
+from core.knowledge_graph import graph_context, learn_from_assistant
 from core import tts, voice
 from core.database import init_db, engine
 from core.session_store import SessionStore
@@ -277,7 +277,7 @@ async def require_key(
     raise HTTPException(status_code=401, detail="Acceso de administrador inválido")
 
 
-def _bind_admin_identity_from_bearer(session, authorization: Optional[str], text: Optional[str] = None) -> None:
+def _bind_admin_identity_from_bearer(session, authorization: Optional[str], text: Optional[str] = None, session_key: Optional[str] = None) -> None:
     """Si el panel admin se abrió con usuario admin, ata la sesión a ese usuario.
 
     Mantiene la clave histórica sin usuario como antes, pero cuando existe un JWT
@@ -299,7 +299,7 @@ def _bind_admin_identity_from_bearer(session, authorization: Optional[str], text
         link = db.query(TelegramLink).filter(TelegramLink.user_id == user.id).first()
         session.telegram_linked = bool(link and link.chat_id)
         if text:
-            remember_from_text(db, user.id, text)
+            remember_from_text(db, user.id, text, session_key=session_key)
         link_memories(db, user.id)
         session.personal_memory = load_memories(db, user.id, "personal")
         session.operational_memory = load_memories(db, user.id, "operational")
@@ -451,8 +451,11 @@ async def admin_voice_chat(
         raise HTTPException(status_code=422, detail="No se entendió la orden")
     sid = "".join(c for c in (session_id or "") if c.isalnum() or c in "-_")[:64] or "default"
     session = sessions.get(f"web:{sid}")
-    _bind_admin_identity_from_bearer(session, authorization, text)
+    _bind_admin_identity_from_bearer(session, authorization, text, session_key=f"web:{sid}")
     reply = await session.say(text)
+    if session.user_id:
+        with database.SessionLocal() as db:
+            learn_from_assistant(db, session.user_id, reply, source="chat", session_key=f"web:{sid}")
     result = {"status": "ok", "text": text, "reply": reply}
     if score is not None:
         result["voice_score"] = round(score, 3)
@@ -471,10 +474,13 @@ async def http_chat(req: ChatRequest, authorization: Optional[str] = Header(defa
         sid = "".join(c for c in (req.session_id or "") if c.isalnum() or c in "-_")[:64] or "default"
         session = sessions.get(f"web:{sid}")
         session.trace_id = chat_id
-        _bind_admin_identity_from_bearer(session, authorization, req.text)
+        _bind_admin_identity_from_bearer(session, authorization, req.text, session_key=f"web:{sid}")
         model_started = time.perf_counter()
         reply = await session.say(req.text, {"image_data": req.image_data, "image_mime": req.image_mime})
         logger.info("CHAT_MODEL_END id=%s surface=admin elapsed_ms=%.1f reply_chars=%d", chat_id, (time.perf_counter() - model_started) * 1000, len(reply or ""))
+        if session.user_id:
+            with database.SessionLocal() as db:
+                learn_from_assistant(db, session.user_id, reply, source="chat", session_key=f"web:{sid}")
         logger.info("CHAT_END id=%s surface=admin total_ms=%.1f", chat_id, (time.perf_counter() - chat_started) * 1000)
         return {"status": "ok", "reply": reply}
     except Exception as e:
@@ -986,7 +992,7 @@ async def _get_igris_reply(text: str, session_key: Optional[str] = None) -> str:
                         GoogleAccount.user_id == linked_user.id
                     ).first()
                     session.google_linked = account.email if account is not None else None
-                    remember_from_text(db, linked_user.id, text)
+                    remember_from_text(db, linked_user.id, text, session_key=session_key)
                     link_memories(db, linked_user.id)
                     session.personal_memory = load_memories(db, linked_user.id, "personal")
                     session.operational_memory = load_memories(db, linked_user.id, "operational")
@@ -1000,6 +1006,9 @@ async def _get_igris_reply(text: str, session_key: Optional[str] = None) -> str:
                 session.telegram_linked = True
                 session.google_linked = None
         reply = await session.say(text)
+        if session.user_id:
+            with database.SessionLocal() as db:
+                learn_from_assistant(db, session.user_id, reply, source="telegram", session_key=session_key)
         return reply
     except Exception as e:
         return f"Lo siento, mi señor, ocurrió un error al consultar a Igris: {e}"
