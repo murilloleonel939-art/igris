@@ -518,6 +518,67 @@ def graph_audit(db: Session, user_id: Optional[int], node_id: Optional[int] = No
     ]
 
 
+def export_graph(db: Session, user_id: Optional[int]) -> dict:
+    """Exporta únicamente el grafo propio, sin ids reutilizables entre cuentas."""
+    if not user_id:
+        return {"version": 1, "nodes": [], "relations": []}
+    nodes = db.query(KnowledgeNode).filter(KnowledgeNode.user_id == user_id).order_by(KnowledgeNode.id.asc()).all()
+    node_keys = {(node.node_type, node.name): node for node in nodes}
+    relations = db.query(KnowledgeRelation).filter(KnowledgeRelation.user_id == user_id).order_by(KnowledgeRelation.id.asc()).all()
+    return {
+        "version": 1,
+        "nodes": [{
+            "type": node.node_type, "name": node.name, "description": node.description,
+            "confidence": node.confidence, "importance": node.importance, "source": node.source,
+            "source_ref": node.source_ref, "status": node.status,
+            "valid_from": node.valid_from.isoformat() if node.valid_from else None,
+            "valid_until": node.valid_until.isoformat() if node.valid_until else None,
+        } for node in nodes],
+        "relations": [{
+            "from": {"type": relation.from_node.node_type, "name": relation.from_node.name},
+            "to": {"type": relation.to_node.node_type, "name": relation.to_node.name},
+            "relation": relation.relation_type, "confidence": relation.confidence, "weight": relation.weight,
+            "source": relation.source, "source_ref": relation.source_ref, "status": relation.status,
+            "valid_from": relation.valid_from.isoformat() if relation.valid_from else None,
+            "valid_until": relation.valid_until.isoformat() if relation.valid_until else None,
+            "last_confirmed_at": relation.last_confirmed_at.isoformat() if relation.last_confirmed_at else None,
+        } for relation in relations if relation.from_node and relation.to_node and
+        (relation.from_node.node_type, relation.from_node.name) in node_keys and
+        (relation.to_node.node_type, relation.to_node.name) in node_keys],
+    }
+
+
+def import_graph(db: Session, user_id: Optional[int], payload: dict) -> dict:
+    """Importa un export validado dentro del usuario autenticado, nunca por ids externos."""
+    if not user_id or not isinstance(payload, dict) or payload.get("version") != 1:
+        raise ValueError("Formato de grafo no compatible")
+    raw_nodes = payload.get("nodes", [])
+    raw_relations = payload.get("relations", [])
+    if not isinstance(raw_nodes, list) or not isinstance(raw_relations, list) or len(raw_nodes) > 1000 or len(raw_relations) > 2000:
+        raise ValueError("El grafo excede los límites permitidos")
+    node_map = {}
+    for item in raw_nodes:
+        if not isinstance(item, dict) or not isinstance(item.get("type"), str) or not isinstance(item.get("name"), str):
+            raise ValueError("Entidad inválida en el grafo")
+        node = upsert_node(db, user_id, item["type"], item["name"], description=item.get("description"), confidence=item.get("confidence", 50), importance=item.get("importance", 1), source="import", source_ref=item.get("source_ref"))
+        node_map[(node.node_type, node.name)] = node
+    imported = 0
+    for item in raw_relations:
+        if not isinstance(item, dict) or not isinstance(item.get("from"), dict) or not isinstance(item.get("to"), dict):
+            raise ValueError("Relación inválida en el grafo")
+        source = node_map.get((item["from"].get("type"), item["from"].get("name")))
+        target = node_map.get((item["to"].get("type"), item["to"].get("name")))
+        if source is None or target is None:
+            raise ValueError("La relación referencia una entidad inexistente")
+        relation = upsert_relation(db, user_id, source, str(item.get("relation", "related_to")), target, confidence=item.get("confidence", 50), source="import", source_ref=item.get("source_ref"))
+        if item.get("status") in {"archived", "superseded"}:
+            relation.status = item["status"]
+        relation.weight = max(1, min(100, int(item.get("weight", relation.weight))))
+        imported += 1
+    db.commit()
+    return {"nodes": len(node_map), "relations": imported}
+
+
 def save_graph(db: Session) -> None:
     """Confirma una operación de grafo en una sola transacción."""
     db.commit()
@@ -525,5 +586,5 @@ def save_graph(db: Session) -> None:
 
 __all__ = [
     "GraphFact", "extract_explicit_facts", "remember_explicit_facts",
-    "graph_context", "graph_neighbors", "search_graph_nodes", "graph_audit", "confirm_graph_relation", "set_graph_relation_status", "stale_graph_relations", "upsert_node", "upsert_relation", "save_graph",
+    "graph_context", "graph_neighbors", "search_graph_nodes", "graph_audit", "confirm_graph_relation", "set_graph_relation_status", "stale_graph_relations", "export_graph", "import_graph", "upsert_node", "upsert_relation", "save_graph",
 ]

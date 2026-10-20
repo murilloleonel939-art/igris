@@ -53,7 +53,7 @@ from core.capabilities import (
 from core.database import GoogleAccount, KnowledgeNode, MemoryLink, Note, Profile, Reminder, SpotifyAccount, TelegramLink, User, UserMemory, get_db
 from core.settings_manager import get_settings
 from core.memory import link_memories, linked_memories_block, load_memories, remember_from_text
-from core.knowledge_graph import confirm_graph_relation, graph_audit, graph_context, graph_neighbors, search_graph_nodes, set_graph_relation_status, stale_graph_relations
+from core.knowledge_graph import confirm_graph_relation, export_graph, graph_audit, graph_context, graph_neighbors, import_graph, search_graph_nodes, set_graph_relation_status, stale_graph_relations
 from core.tools import gcalendar, gmail
 from core.tools.time_tools import DEFAULT_TZ, _format
 from core import stt, voice
@@ -259,6 +259,12 @@ class LoginIn(BaseModel):
 
 class GraphRelationConfirmIn(BaseModel):
     relation_id: int
+
+
+class GraphImportIn(BaseModel):
+    version: int
+    nodes: list[dict[str, Any]] = []
+    relations: list[dict[str, Any]] = []
 
 
 class GraphRelationStatusIn(BaseModel):
@@ -785,6 +791,23 @@ def user_me(user: User = Depends(require_user), db: Session = Depends(get_db)):
 
 
 # ============= MEMORIA DEL USUARIO =============
+
+
+@router.get("/api/user/knowledge-graph/export")
+def export_user_graph(user: User = Depends(require_user), db: Session = Depends(get_db)):
+    return export_graph(db, user.id)
+
+
+@router.post("/api/user/knowledge-graph/import")
+def import_user_graph(
+    body: GraphImportIn,
+    user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        return import_graph(db, user.id, body.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.post("/api/user/knowledge-graph/confirm")
