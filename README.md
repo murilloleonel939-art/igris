@@ -40,6 +40,7 @@
 | 📝 Notas: anotar, listar, buscar y borrar | Funcional |
 | 🔑 **Permisos por usuario**: el admin activa o desactiva cada función (hora, clima, correo, enviar/eliminar correos, calendario, agendar/mover/eliminar eventos, notas, recordatorios) por cuenta | Funcional |
 | 🖥️ **Agentes Windows por equipo**: tokens individuales vinculados a usuario, regeneración, revocación y eliminación | Funcional |
+| 📺 **Agente Android TV Box por usuario**: APK independiente para Android TV (10–14), emparejamiento con código temporal, token cifrado y control de aplicaciones, volumen y teclas | Funcional |
 | 🎵 **Spotify por usuario**: conexión OAuth oficial, búsqueda de canciones/artistas/álbumes, playlists y reproducción | Funcional |
 | 🔗 **Google por usuario**: cada cuenta conecta su propio Gmail/Calendar desde `/u`; al terminar, el callback del backend devuelve al usuario a la pantalla de Conexiones | Funcional |
 | 🔌 **Pantalla de Conexiones propia** (`/conexiones`): página completa con el diseño del workspace, no un cuadro emergente sobre el chat. Reúne Google, voz y Telegram en tarjetas | Funcional |
@@ -190,6 +191,9 @@ Igris incluye una red neuronal local tipo MLP por usuario, ejecutada con PyTorch
 | `DELETE` | `/api/user/spotify` | Desconecta su cuenta de Spotify |
 | `POST` | `/api/user/telegram/code` | Genera el código de vinculación de Telegram |
 | `DELETE` | `/api/user/telegram` | Desvincula su Telegram |
+| `POST` | `/api/user/tvbox/pairing-codes` | Genera un código temporal de vinculación de TV Box, ligado a la cuenta |
+| `POST` | `/api/user/tvbox/{device_id}/command` | Envía una orden a un TV Box propio que esté conectado |
+| `DELETE` | `/api/user/tvbox/{device_id}` | Desvincula un TV Box propio |
 
 ### Pantalla de Conexiones (`/conexiones`)
 
@@ -436,7 +440,16 @@ igris/
 ├── server/
 │   ├── main.py                # FastAPI: chat, configuración, TTS, acceso con clave, webhook de Telegram y planificador
 │   ├── user_routes.py         # Área de usuarios (/api/user/*) y panel de administración (/api/admin/*)
-│   └── device_routes.py       # WebSocket del agente Windows (/api/device/ws) y gestión de equipos
+│   ├── device_routes.py       # WebSocket del agente Windows (/api/device/ws) y gestión de equipos
+│   └── tvbox_routes.py        # WebSocket del agente Android TV Box (/api/tvbox/ws) y emparejamiento
+├── android_tv_agent/          # Agente Android independiente para TV Box (APK)
+│   ├── app/build.gradle.kts   # com.igris.tvagent, minSdk 29, targetSdk 35
+│   ├── app/src/main/AndroidManifest.xml  # Lanzador Leanback, servicio en primer plano y accesibilidad opcional
+│   └── app/src/main/java/com/igris/tvagent/
+│       ├── MainActivity.kt           # URL WSS y código de emparejamiento
+│       ├── TvAgentService.kt         # WebSocket, reconexión, heartbeat y ejecución de órdenes
+│       ├── SecurePrefs.kt            # Credencial cifrada con EncryptedSharedPreferences
+│       └── TvAccessibilityService.kt # BACK/HOME/RECIENTES opcional
 ├── windows_agent/             # Agente para Windows (.exe): control del PC y creación local de archivos
 │   ├── agent.py               # Conexión WebSocket, ejecutor de acciones y generación de archivos
 │   ├── build-exe.ps1          # Compila IgrisAgent.exe con PyInstaller
@@ -793,6 +806,23 @@ py windows_agent/agent.py
 ```
 
 El permiso **Control del computador local** debe habilitarse para el usuario. Para conservar los equipos y tokens después de redeploy, el backend debe usar PostgreSQL persistente mediante `DATABASE_URL`. La compilación de Windows instala las dependencias de `windows_agent/requirements.txt` y empaqueta `python-docx`, `openpyxl`, `python-pptx`, `lxml` y `XlsxWriter` dentro del ejecutable; no requiere Python en el PC del usuario.
+
+### Agente Android TV Box
+El agente de `android_tv_agent/` es un proyecto Android **independiente** del agente Windows. Controla un TV Box con Android 10–14 (API 29–35) mediante una conexión WebSocket saliente a `wss://igris.zottagroup.com/api/tvbox/ws`, igual que el agente de Windows: el equipo inicia la conexión, nunca se abre ninguna entrada hacia el televisor y no se expone ADB a internet.
+
+**Instalación:** el usuario entra en **Conexiones → Mi TV Box**, descarga `IgrisTvAgent.apk`, lo instala en el TV Box y escribe una sola vez el código temporal que muestra la pantalla junto con la URL WSS.
+
+**Cómo funciona el emparejamiento:**
+
+1. El usuario autenticado pulsa **Conectando…** en Conexiones. El backend crea un código de 8 caracteres y lo guarda asociado a **su** `user_id`; el navegador nunca elige a qué cuenta pertenece.
+2. El agente envía ese código por el WebSocket. El servidor lo valida, comprueba que no esté usado ni caducado, crea el registro del TV Box y devuelve una credencial permanente `tvbox_...`.
+3. El agente guarda la credencial cifrada con `EncryptedSharedPreferences` y la reutiliza en las reconexiones. El código corto es temporal y de un solo uso; la credencial es lo que persiste.
+
+**Órdenes admitidas:** `launch_app` (abrir una aplicación instalada por paquete), `volume` (subir, bajar, silenciar o fijar nivel), `device_info` (modelo y versión de Android) y `key` (BACK, HOME y RECIENTES, opcional).
+
+**Alcance y límites:** BACK/HOME/RECIENTES requiere que el usuario habilite `TV Agent` en Ajustes → Accesibilidad del TV Box; sin ese permiso el resto de funciones sigue operando. La disponibilidad exacta depende del firmware. Cada TV Box queda ligado a la cuenta que generó el código: las rutas `/api/user/tvbox/*` comprueban el propietario en el servidor, así que una cuenta no puede listar, controlar ni desvincular el equipo de otra. Las rutas administrativas `/api/tvbox/*` siguen existiendo aparte, con acceso a todos los equipos, para uso del administrador.
+
+**Compilación:** GitHub Actions compila el APK con JDK 17, Android SDK API 35 y Gradle 8.9 mediante `.github/workflows/build-tv-agent.yml`. El workflow se dispara al cambiar `android_tv_agent/**`, publica el artefacto `IgrisTvAgent` y copia el APK en `web/public/downloads/IgrisTvAgent.apk` para que quede disponible en la descarga del panel. Para probarlo en local hace falta abrir la carpeta en Android Studio y ejecutar `assembleDebug`, ya que el proyecto no incluye el wrapper de Gradle.
 
 ### Crear archivos en el PC (`create_document`)
 
