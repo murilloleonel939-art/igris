@@ -6,7 +6,7 @@
 
     <application
         android:theme="@style/Theme.TvAgent"
-        android:label="TV Agent"
+        android:label="@string/app_name"
         android:allowBackup="false"
         android:supportsRtl="true">
         <activity

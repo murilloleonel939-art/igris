@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">TV Agent</string>
+    <string name="accessibility_service_description">Permite a Igris ejecutar navegación básica en el TV Box.</string>
+</resources>
