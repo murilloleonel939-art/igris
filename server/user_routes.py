@@ -53,7 +53,7 @@ from core.capabilities import (
 from core.database import GoogleAccount, KnowledgeNode, MemoryLink, Note, Profile, Reminder, SpotifyAccount, TelegramLink, User, UserMemory, get_db
 from core.settings_manager import get_settings
 from core.memory import link_memories, linked_memories_block, load_memories, remember_from_text
-from core.knowledge_graph import confirm_graph_relation, graph_audit, graph_context, graph_neighbors, search_graph_nodes, stale_graph_relations
+from core.knowledge_graph import confirm_graph_relation, graph_audit, graph_context, graph_neighbors, search_graph_nodes, set_graph_relation_status, stale_graph_relations
 from core.tools import gcalendar, gmail
 from core.tools.time_tools import DEFAULT_TZ, _format
 from core import stt, voice
@@ -259,6 +259,19 @@ class LoginIn(BaseModel):
 
 class GraphRelationConfirmIn(BaseModel):
     relation_id: int
+
+
+class GraphRelationStatusIn(BaseModel):
+    relation_id: int
+    status: str
+
+    @field_validator("status")
+    @classmethod
+    def _v_status(cls, value: str) -> str:
+        value = (value or "").strip().lower()
+        if value not in {"active", "archived"}:
+            raise ValueError("El estado debe ser active o archived")
+        return value
 
 
 class MemoryCreateIn(BaseModel):
@@ -783,6 +796,17 @@ def confirm_user_graph_relation(
     if not confirm_graph_relation(db, user.id, body.relation_id):
         raise HTTPException(status_code=404, detail="No se encontró esa relación activa")
     return {"ok": True, "relation_id": body.relation_id}
+
+
+@router.post("/api/user/knowledge-graph/status")
+def update_user_graph_relation_status(
+    body: GraphRelationStatusIn,
+    user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+):
+    if not set_graph_relation_status(db, user.id, body.relation_id, body.status):
+        raise HTTPException(status_code=404, detail="No se encontró una relación gestionable")
+    return {"ok": True, "relation_id": body.relation_id, "status": body.status}
 
 
 @router.get("/api/user/knowledge-graph")

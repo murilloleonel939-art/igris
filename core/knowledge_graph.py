@@ -433,6 +433,26 @@ def graph_neighbors(db: Session, user_id: Optional[int], node_id: int, limit: in
     return result
 
 
+def set_graph_relation_status(db: Session, user_id: Optional[int], relation_id: int, status: str) -> bool:
+    """Archiva o restaura una relación propia sin eliminar su historial."""
+    if not user_id or not relation_id or status not in {"active", "archived"}:
+        return False
+    relation = db.query(KnowledgeRelation).filter(
+        KnowledgeRelation.id == relation_id,
+        KnowledgeRelation.user_id == user_id,
+    ).first()
+    if relation is None or relation.status == "superseded":
+        return False
+    if relation.status == status:
+        return True
+    relation.status = status
+    relation.updated_at = utcnow()
+    if status == "active":
+        relation.last_confirmed_at = relation.last_confirmed_at or relation.updated_at
+    db.commit()
+    return True
+
+
 def confirm_graph_relation(db: Session, user_id: Optional[int], relation_id: int) -> bool:
     """Confirma una relación propia y refuerza su peso sin superar 100."""
     if not user_id or not relation_id:
@@ -505,5 +525,5 @@ def save_graph(db: Session) -> None:
 
 __all__ = [
     "GraphFact", "extract_explicit_facts", "remember_explicit_facts",
-    "graph_context", "graph_neighbors", "search_graph_nodes", "graph_audit", "confirm_graph_relation", "stale_graph_relations", "upsert_node", "upsert_relation", "save_graph",
+    "graph_context", "graph_neighbors", "search_graph_nodes", "graph_audit", "confirm_graph_relation", "set_graph_relation_status", "stale_graph_relations", "upsert_node", "upsert_relation", "save_graph",
 ]
