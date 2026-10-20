@@ -603,6 +603,40 @@ def validate_graph_payload(payload: dict) -> dict:
     return payload
 
 
+def preview_graph_import(db: Session, user_id: Optional[int], payload: dict) -> dict:
+    """Resume cambios potenciales sin modificar la base de datos."""
+    if not user_id:
+        raise ValueError("Usuario inválido")
+    validate_graph_payload(payload)
+    raw_nodes = payload.get("nodes", [])
+    raw_relations = payload.get("relations", [])
+    node_keys = {(item["type"].strip().lower()[:32], item["name"].strip()[:255]) for item in raw_nodes}
+    existing_nodes = {
+        (node.node_type, node.name)
+        for node in db.query(KnowledgeNode).filter(KnowledgeNode.user_id == user_id).all()
+    }
+    existing_relations = {
+        (relation.from_node.node_type, relation.from_node.name,
+         relation.to_node.node_type, relation.to_node.name, relation.relation_type)
+        for relation in db.query(KnowledgeRelation).filter(KnowledgeRelation.user_id == user_id).all()
+        if relation.from_node is not None and relation.to_node is not None
+    }
+    relation_keys = [
+        (item["from"]["type"].strip().lower()[:32], item["from"]["name"].strip()[:255],
+         item["to"]["type"].strip().lower()[:32], item["to"]["name"].strip()[:255],
+         str(item.get("relation", "related_to")).strip().lower()[:64])
+        for item in raw_relations
+    ]
+    return {
+        "nodes": {"total": len(raw_nodes), "new": len(node_keys - existing_nodes), "existing": len(node_keys & existing_nodes)},
+        "relations": {
+            "total": len(raw_relations),
+            "new": sum(key not in existing_relations for key in relation_keys),
+            "existing": sum(key in existing_relations for key in relation_keys),
+        },
+    }
+
+
 def import_graph(db: Session, user_id: Optional[int], payload: dict) -> dict:
     """Importa un export validado dentro del usuario autenticado, nunca por ids externos."""
     if not user_id:
@@ -632,11 +666,30 @@ def _import_graph_atomic(db: Session, user_id: int, raw_nodes: list, raw_relatio
         target = node_map.get((item["to"].get("type"), item["to"].get("name")))
         if source is None or target is None:
             raise ValueError("La relación referencia una entidad inexistente")
-        relation = upsert_relation(db, user_id, source, str(item.get("relation", "related_to")), target, confidence=item.get("confidence", 50), source="import", source_ref=item.get("source_ref"), valid_from=_import_datetime(item.get("valid_from"), "valid_from"), valid_until=_import_datetime(item.get("valid_until"), "valid_until"))
+        relation_type = str(item.get("relation", "related_to")).strip().lower()[:64]
+        relation = db.query(KnowledgeRelation).filter(
+            KnowledgeRelation.user_id == user_id,
+            KnowledgeRelation.from_node_id == source.id,
+            KnowledgeRelation.to_node_id == target.id,
+            KnowledgeRelation.relation_type == relation_type,
+        ).first()
+        existed = relation is not None
+        if relation is None:
+            relation = upsert_relation(db, user_id, source, relation_type, target, confidence=item.get("confidence", 50), source="import", source_ref=item.get("source_ref"), valid_from=_import_datetime(item.get("valid_from"), "valid_from"), valid_until=_import_datetime(item.get("valid_until"), "valid_until"))
+        else:
+            relation.confidence = _bounded(item.get("confidence", relation.confidence), relation.confidence or 50)
+            relation.source = "import"
+            relation.source_ref = item.get("source_ref") or relation.source_ref
+            relation.valid_from = _import_datetime(item.get("valid_from"), "valid_from") or relation.valid_from
+            relation.valid_until = _import_datetime(item.get("valid_until"), "valid_until") or relation.valid_until
         if item.get("status") in {"archived", "superseded"}:
             relation.status = item["status"]
+        else:
+            relation.status = "active"
         relation.weight = max(1, min(100, int(item.get("weight", relation.weight))))
         relation.last_confirmed_at = _import_datetime(item.get("last_confirmed_at"), "last_confirmed_at") or relation.last_confirmed_at
+        if existed:
+            relation.updated_at = utcnow()
         imported += 1
     db.commit()
     return {"nodes": len(node_map), "relations": imported}
@@ -649,5 +702,5 @@ def save_graph(db: Session) -> None:
 
 __all__ = [
     "GraphFact", "extract_explicit_facts", "remember_explicit_facts",
-    "graph_context", "graph_neighbors", "search_graph_nodes", "graph_audit", "confirm_graph_relation", "set_graph_relation_status", "stale_graph_relations", "export_graph", "validate_graph_payload", "import_graph", "upsert_node", "upsert_relation", "save_graph",
+    "graph_context", "graph_neighbors", "search_graph_nodes", "graph_audit", "confirm_graph_relation", "set_graph_relation_status", "stale_graph_relations", "export_graph", "validate_graph_payload", "preview_graph_import", "import_graph", "upsert_node", "upsert_relation", "save_graph",
 ]
