@@ -523,6 +523,10 @@ def admin_list_user_memories(
     return {
         "personal": [_memory_json(row) for row in rows if row.kind == "personal"],
         "operational": [_memory_json(row) for row in rows if row.kind == "operational"],
+        "graph": {
+            "summary": graph_summary(db, user_id),
+            "relations": graph_audit(db, user_id, limit=50),
+        },
     }
 
 

@@ -165,6 +165,20 @@
             </div>
           </section>
         </div>
+        <section v-if="memoryModal.graph" class="mt-4 rounded-lg border border-slate-700 bg-slate-800/40 p-4">
+          <div class="mb-3 flex items-center justify-between gap-2">
+            <h4 class="text-sm font-semibold text-white">Memoria relacional</h4>
+            <span class="text-xs text-slate-500">
+              {{ memoryModal.graph.summary.nodes.active }} entidades ·
+              {{ memoryModal.graph.summary.relations.active }} relaciones activas
+            </span>
+          </div>
+          <div v-if="!memoryModal.graph.relations.length" class="text-xs text-slate-500">Sin conexiones entre entidades.</div>
+          <div v-for="rel in memoryModal.graph.relations" :key="rel.id" class="mb-2 rounded border border-slate-700 px-3 py-2 text-sm text-slate-300">
+            <span>{{ rel.from.name }} · <em class="text-slate-500">{{ rel.relation }}</em> · {{ rel.to.name }}</span>
+            <span class="ml-2 rounded px-2 py-0.5 text-xs" :class="rel.status === 'active' ? 'text-emerald-300' : 'text-slate-500'">{{ rel.status }}</span>
+          </div>
+        </section>
       </div>
     </div>
 
@@ -395,10 +409,11 @@ async function removeUser(u) {
 }
 
 async function openMemory(u) {
-  memoryModal.value = { open: true, loading: true, saving: false, error: '', id: u.id, username: u.username, items: { personal: [], operational: [] }, editing: null, draft: '', creating: false, newKind: 'personal', newContent: '' }
+  memoryModal.value = { open: true, loading: true, saving: false, error: '', id: u.id, username: u.username, items: { personal: [], operational: [] }, graph: null, editing: null, draft: '', creating: false, newKind: 'personal', newContent: '' }
   try {
     const res = await api.get(`/api/admin/users/${u.id}/memories`)
     memoryModal.value.items = { personal: res.data?.personal || [], operational: res.data?.operational || [] }
+    memoryModal.value.graph = res.data?.graph || null
   } catch (e) {
     memoryModal.value.error = errorMessage(e, 'No se pudo cargar la memoria')
   } finally {
