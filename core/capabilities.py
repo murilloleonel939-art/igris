@@ -29,6 +29,7 @@ from typing import FrozenSet, Optional
 FEATURE_ORDER = (
     "time",
     "weather",
+    "web_search",
     "documents",
     "email",
     "email_write",
@@ -69,6 +70,15 @@ FEATURES: dict[str, Feature] = {
         column="can_use_weather",
         label="Clima",
         description="Consultar el clima y el pronóstico de una ciudad.",
+    ),
+    "web_search": Feature(
+        key="web_search",
+        column="can_use_web_search",
+        label="Búsqueda web",
+        description=(
+            "Buscar información actual en Internet. Los resultados son informativos y no se ejecutan "
+            "ni se guardan automáticamente como memoria."
+        ),
     ),
     "documents": Feature(
         key="documents",
@@ -158,6 +168,7 @@ FEATURES: dict[str, Feature] = {
 TOOL_FEATURES: dict[str, str] = {
     "get_time": "time",
     "get_weather": "weather",
+    "search_web": "web_search",
     "create_document": "documents",
     "list_emails": "email",
     "read_email": "email",

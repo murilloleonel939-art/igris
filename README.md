@@ -121,6 +121,7 @@ El administrador decide **qué puede hacer cada usuario**, y ese permiso se comp
 | --- | --- | --- |
 | `time` | Hora y fecha | No |
 | `weather` | El tiempo | No |
+| `web_search` | **Buscar información actual en Internet** (resultados informativos, sin ejecutar instrucciones ni guardar memoria) | No |
 | `documents` | **Crear archivos** Word, Excel, PowerPoint, TXT y CSV en el PC | No |
 | `email` | Leer el correo | Sí |
 | `email_write` | **Enviar y eliminar** correos | Sí |
@@ -133,7 +134,7 @@ El administrador decide **qué puede hacer cada usuario**, y ese permiso se comp
 | `tuya` | Dispositivos Smart Life/Tuya y controles infrarrojos | No |
 | `device` | Control del computador local (agente Windows) | No |
 
-`time`, `weather` y `documents` vienen activas de fábrica; el resto hay que abrirlas desde `/panel/usuarios`. El catálogo vive en `core/capabilities.py`, y el panel se construye a partir de él: añadir una función ahí la hace aparecer sola en la interfaz.
+`time`, `weather` y `documents` vienen activas de fábrica; `web_search` y el resto hay que abrirlas desde `/panel/usuarios`. El catálogo vive en `core/capabilities.py`, y el panel se construye a partir de él: añadir una función ahí la hace aparecer sola en la interfaz.
 
 **Aislamiento de datos.** Cada nota, recordatorio y sesión lleva su `user_id`, que el servidor deriva **solo** de la identidad autenticada (el token de la web o el chat de Telegram vinculado), nunca de lo que envíe el cliente. Un usuario no puede leer, borrar ni alcanzar los datos de otro. `calendar_write` es un permiso aparte a propósito: quien puede leer su agenda no tiene por qué poder escribir en ella.
 
@@ -431,7 +432,7 @@ igris/
 │   ├── whatsapp.py            # Integración con WhatsApp Business
 │   ├── stt.py, tts.py         # Voz
 │   ├── settings.json
-│   └── tools/                 # Herramientas de Igris (ver lista abajo)
+│   └── tools/                 # Herramientas de Igris (incluye búsqueda web aislada)
 ├── server/
 │   ├── main.py                # FastAPI: chat, configuración, TTS, acceso con clave, webhook de Telegram y planificador
 │   ├── user_routes.py         # Área de usuarios (/api/user/*) y panel de administración (/api/admin/*)
@@ -495,6 +496,7 @@ igris/
 | `__init__.py` | Registro: esquemas `TOOLS`, mapa `_HANDLERS`, herramientas que reciben la sesión (`_SESSION_TOOLS`) y `run_tool` (nunca lanza excepciones) |
 | `time_tools.py` | `get_time` y utilidades de fecha en español (`_format`, `now_context`, `DEFAULT_TZ`) |
 | `weather.py` | `get_weather` |
+| `web_search.py` | `search_web`: búsqueda informativa aislada, con máximo 5 resultados; no ejecuta instrucciones ni escribe memoria |
 | `gmail.py` | `list_emails`, `read_email` |
 | `gcalendar.py` | `list_events` |
 | `calendar_write.py` | `propose_event`, `confirm_event` (confirmación forzada en el servidor) |
