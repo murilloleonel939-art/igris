@@ -50,30 +50,34 @@
               </div>
             </div>
           </section>
-          <section v-if="graph.data" class="memory-graph">
+          <section class="memory-graph">
             <div class="memory-heading">
               <h3>Memoria relacional</h3>
               <button class="btn ghost small" @click="refreshGraph">Actualizar</button>
             </div>
-            <p class="conn-note">
-              {{ graph.data.nodes.active }} entidades activas ·
-              {{ graph.data.relations.active }} relaciones activas
-              <template v-if="graph.data.needs_attention.stale_relations">
-                · {{ graph.data.needs_attention.stale_relations }} por revisar
-              </template>
-            </p>
-            <div v-if="!graph.relations.length" class="conn-note">Todavía no hay conexiones entre entidades.</div>
-            <div v-for="item in graph.relations" :key="item.id" class="memory-item">
-              <span>
-                {{ item.from.name }} <em>· {{ item.relation }} ·</em> {{ item.to.name }}
-                <small class="memory-tag" :class="'tag-' + item.status">{{ item.status }}</small>
-              </span>
-              <div class="memory-actions">
-                <button v-if="item.status === 'active'" class="btn ghost small" :disabled="graph.busy === item.id" @click="confirmRelation(item)">Confirmar</button>
-                <button v-if="item.status === 'active'" class="btn ghost small" :disabled="graph.busy === item.id" @click="setRelationStatus(item, 'archived')">Archivar</button>
-                <button v-else-if="item.status === 'archived'" class="btn ghost small" :disabled="graph.busy === item.id" @click="setRelationStatus(item, 'active')">Restaurar</button>
+            <p v-if="graph.loading" class="conn-note">Cargando…</p>
+            <p v-else-if="!graph.data" class="conn-note">No se pudo consultar la memoria relacional.</p>
+            <template v-else>
+              <p class="conn-note">
+                {{ graph.data.nodes.active }} entidades activas ·
+                {{ graph.data.relations.active }} relaciones activas
+                <template v-if="graph.data.needs_attention.stale_relations">
+                  · {{ graph.data.needs_attention.stale_relations }} por revisar
+                </template>
+              </p>
+              <div v-if="!graph.relations.length" class="conn-note">Todavía no hay conexiones entre entidades.</div>
+              <div v-for="item in graph.relations" :key="item.id" class="memory-item">
+                <span>
+                  {{ item.from.name }} <em>· {{ item.relation }} ·</em> {{ item.to.name }}
+                  <small class="memory-tag" :class="'tag-' + item.status">{{ item.status }}</small>
+                </span>
+                <div class="memory-actions">
+                  <button v-if="item.status === 'active'" class="btn ghost small" :disabled="graph.busy === item.id" @click="confirmRelation(item)">Confirmar</button>
+                  <button v-if="item.status === 'active'" class="btn ghost small" :disabled="graph.busy === item.id" @click="setRelationStatus(item, 'archived')">Archivar</button>
+                  <button v-else-if="item.status === 'archived'" class="btn ghost small" :disabled="graph.busy === item.id" @click="setRelationStatus(item, 'active')">Restaurar</button>
+                </div>
               </div>
-            </div>
+            </template>
           </section>
           <section v-if="memories.creating" class="memory-new">
             <h3>Nuevo recuerdo</h3>
@@ -832,21 +836,28 @@ function openMemories() {
 const graph = ref({
   data: null,
   relations: [],
+  loading: false,
   busy: null,
   error: '',
 })
 
 async function refreshGraph() {
   graph.value.error = ''
+  graph.value.loading = true
   try {
-    const [summary, audit] = await Promise.all([
-      userApi.get('/api/user/knowledge-graph/summary'),
-      userApi.get('/api/user/knowledge-graph?audit=true'),
-    ])
+    const summary = await userApi.get('/api/user/knowledge-graph/summary')
     graph.value.data = summary.data
+  } catch (e) {
+    graph.value.data = null
+    graph.value.error = errorMessage(e, 'No se pudo cargar tu memoria relacional')
+  }
+  try {
+    const audit = await userApi.get('/api/user/knowledge-graph?audit=true')
     graph.value.relations = (audit.data?.relations || []).slice(0, 50)
   } catch (e) {
-    graph.value.error = errorMessage(e, 'No se pudo cargar tu memoria relacional')
+    graph.value.relations = []
+  } finally {
+    graph.value.loading = false
   }
 }
 
