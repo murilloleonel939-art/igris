@@ -7,7 +7,7 @@ on:
     paths:
       - 'android_tv_agent/**'
       - '.github/workflows/build-tv-agent.yml'
-  tags: ['tv-agent-v*']
+    tags: ['tv-agent-v*']
 
 permissions:
   contents: write
