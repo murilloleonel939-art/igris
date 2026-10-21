@@ -555,7 +555,7 @@ Los **usuarios** no usan esta variable: tienen su propia cuenta (usuario y contr
 | `IGRIS_HISTORY_TURNS` | Turnos de conversación que Igris recuerda | `6` |
 | `NEMOTRON_API_KEY` | Clave de NVIDIA NIM | `nvapi-...` |
 | `NEMOTRON_API_BASE` | URL base de NVIDIA NIM (opcional) | `https://integrate.api.nvidia.com/v1` |
-| `IGRIS_NEMOTRON_MODEL` | Modelo de Nemotron (opcional) | `nvidia/nemotron-3-super-120b-a12b` |
+| `IGRIS_NEMOTRON_MODEL` | Modelo de Nemotron (opcional) | `nvidia/nemotron-3-ultra-550b-a55b:free` |
 | `OPENAI_API_KEY` | Clave de OpenAI (con pateway, la que emite pateway) | `sk-...` |
 | `OPENAI_API_BASE` | URL base del proveedor `openai` (opcional) | `https://api.pateway.ai/v1` |
 | `IGRIS_OPENAI_MODEL` | Modelo del proveedor `openai` (opcional) | `gpt-6-luna` |
