@@ -1320,11 +1320,54 @@ async def user_voice_ws(websocket: WebSocket) -> None:
         audio_parts: list[bytes] = []
         audio_size = 0
         max_audio_bytes = 12 * 1024 * 1024
-        # Sin Deepgram Live: la conexión de streaming cerraba con NET-0001 en
-        # cuanto el navegador tardaba en mandar el primer fragmento, y el error
-        # dejaba el canal de voz inservible. El audio se acumula y se transcribe
-        # al final con transcribe_user_audio (Deepgram por lotes y Whisper de
-        # respaldo), que no depende de tiempos de streaming.
+        deepgram_socket = None
+        deepgram_reader = None
+        deepgram_transcripts: list[str] = []
+        # Deepgram Live cierra la conexión si no recibe audio en ~10 s. El hello y
+        # la comprobación del token pueden tardar, y el usuario aún no ha hablado,
+        # así que la conexión se abre con el PRIMER fragmento, no al aceptar.
+        live_params = None
+        configured_stt = get_settings().get_stt_config()
+        deepgram_key = os.getenv("DEEPGRAM_API_KEY", "").strip()
+        if configured_stt.get("provider") == "deepgram" and deepgram_key:
+            live_params = {
+                "model": configured_stt.get("cloud_model") or os.getenv("DEEPGRAM_MODEL", "nova-3"),
+                "language": configured_stt.get("language") or os.getenv("DEEPGRAM_LANGUAGE", "es"),
+                "smart_format": "true", "punctuate": "true", "interim_results": "false",
+                "container": "webm" if "webm" in mime_type.lower() else "ogg",
+            }
+
+        async def open_deepgram() -> None:
+            nonlocal deepgram_socket, deepgram_reader
+            import websockets
+            live_url = f"{DEEPGRAM_LIVE_URL}?{httpx.QueryParams(live_params)}"
+            try:
+                deepgram_socket = await websockets.connect(
+                    live_url,
+                    extra_headers={"Authorization": f"Token {deepgram_key}"},
+                    open_timeout=10,
+                    close_timeout=5,
+                )
+            except Exception:
+                logger.exception("No se pudo abrir Deepgram Live; se usará STT por lotes")
+                deepgram_socket = None
+                return
+
+            async def read_deepgram():
+                try:
+                    async for raw_result in deepgram_socket:
+                        result = json.loads(raw_result)
+                        if result.get("is_final"):
+                            alternatives = result.get("channel", {}).get("alternatives", [])
+                            phrase = (alternatives[0].get("transcript") or "").strip() if alternatives else ""
+                            if phrase:
+                                deepgram_transcripts.append(phrase)
+                except Exception:
+                    # Un cierre de Deepgram no debe propagarse como tarea huérfana:
+                    # la transcripción por lotes sigue disponible al final.
+                    logger.warning("Deepgram Live se cerró antes de terminar el audio")
+
+            deepgram_reader = asyncio.create_task(read_deepgram())
 
         while True:
             message = await websocket.receive()
@@ -1336,6 +1379,16 @@ async def user_voice_ws(websocket: WebSocket) -> None:
                     await websocket.close(code=1009)
                     return
                 audio_parts.append(chunk)
+                # La conexión con Deepgram se abre aquí, con audio real en cola.
+                if live_params is not None and deepgram_socket is None and deepgram_reader is None:
+                    await open_deepgram()
+                if deepgram_socket is not None:
+                    try:
+                        await deepgram_socket.send(chunk)
+                    except Exception:
+                        logger.exception("Falló el envío de audio a Deepgram Live")
+                        await deepgram_socket.close()
+                        deepgram_socket = None
                 continue
 
             raw = message.get("text")
@@ -1349,6 +1402,21 @@ async def user_voice_ws(websocket: WebSocket) -> None:
                 continue
             break
 
+        if deepgram_socket is not None:
+            try:
+                await deepgram_socket.send(json.dumps({"type": "CloseStream"}))
+            except Exception:
+                logger.exception("Falló el cierre de Deepgram Live")
+        if deepgram_reader is not None:
+            try:
+                await asyncio.wait_for(deepgram_reader, timeout=3)
+            except Exception:
+                deepgram_reader.cancel()
+        if deepgram_socket is not None:
+            try:
+                await deepgram_socket.close()
+            except Exception:
+                pass
         audio = b"".join(audio_parts)
         if len(audio) < 1_000:
             await websocket.send_json({"type": "error", "message": "El audio está vacío o es demasiado corto."})
@@ -1379,7 +1447,9 @@ async def user_voice_ws(websocket: WebSocket) -> None:
             return
 
         try:
-            text = await transcribe_user_audio(audio, mime_type)
+            text = " ".join(deepgram_transcripts).strip()
+            if not text:
+                text = await transcribe_user_audio(audio, mime_type)
         except Exception:
             logger.exception("Falló la transcripción de voz por WebSocket")
             await websocket.send_json({"type": "error", "message": "No se pudo transcribir el audio."})
