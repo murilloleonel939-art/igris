@@ -155,6 +155,30 @@ app.add_middleware(
     allow_headers=["Content-Type", "X-Igris-Key", "Authorization"],
 )
 
+# CSP middleware: permite WebSocket para voz
+@app.middleware("http")
+async def add_csp_header(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; "
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
+        "style-src 'self' 'unsafe-inline'; "
+        "connect-src 'self' https://igris.zottagroup.com http://localhost:8000 http://127.0.0.1:8000 "
+        "wss://igris.zottagroup.com ws://igris.zottagroup.com "
+        "wss://localhost:8000 ws://localhost:8000 "
+        "wss://127.0.0.1:8000 ws://127.0.0.1:8000 "
+        "https://api.deepgram.com wss://api.deepgram.com "
+        "https://api.openai.com "
+        "https://api.anthropic.com "
+        "https://api.telegram.org; "
+        "img-src 'self' data: https:; "
+        "font-src 'self'; "
+        "media-src 'self' blob:; "
+        "object-src 'none'; "
+        "frame-ancestors 'none';"
+    )
+    return response
+
 # ============= ACCESO CON CLAVE ÚNICA =============
 # La clave vive solo en la variable de entorno IGRIS_ACCESS_KEY (Coolify).
 # Falla cerrado: si la variable no existe o está vacía, TODAS las rutas
