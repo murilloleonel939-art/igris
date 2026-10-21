@@ -158,7 +158,7 @@ PROVIDERS = {
         "base_env": "NEMOTRON_API_BASE",
         "base_default": "https://integrate.api.nvidia.com/v1",
         "model_env": "IGRIS_NEMOTRON_MODEL",
-        "model_default": "nvidia/nemotron-3-super-120b-a12b",
+        "model_default": "nvidia/nemotron-3-ultra-550b-a55b:free",
         "timeout": 60,
     },
     "openai": {

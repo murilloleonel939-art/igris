@@ -47,7 +47,7 @@ def get_default_config():
             os.getenv("IGRIS_FALLBACK_CHAIN", ",".join(DEFAULT_CHAIN))
         ) or list(DEFAULT_CHAIN),
         "models": {
-            "nemotron": os.getenv("IGRIS_NEMOTRON_MODEL", "nvidia/nemotron-3-super-120b-a12b"),
+            "nemotron": os.getenv("IGRIS_NEMOTRON_MODEL", "nvidia/nemotron-3-ultra-550b-a55b:free"),
             "openai": os.getenv("IGRIS_OPENAI_MODEL", "gpt-4o-mini"),
             "anthropic": os.getenv("IGRIS_ANTHROPIC_MODEL", "claude-sonnet-5-5"),
             "local": os.getenv("IGRIS_LOCAL_MODEL", "llama3.1"),

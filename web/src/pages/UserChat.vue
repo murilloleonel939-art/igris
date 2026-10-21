@@ -984,7 +984,28 @@ const runHandsFree = async () => {
             else if (!alreadyShown) await playIrisResponse(result.reply, messageIndex)
           }
         } catch (err) {
-          setNotice(err.response?.data?.detail || err.message || 'Voz no reconocida. Orden rechazada.')
+          const detail = err.response?.data?.detail || err.message || ''
+          setNotice(detail || 'Voz no reconocida. Orden rechazada.')
+          // Si el rechazo es por voz no reconocida, IGRIS lo dice hablando y queda
+          // en el historial. En manos libres el usuario no está mirando la pantalla,
+          // así que un aviso silencioso equivale a que no pasa nada.
+          if (/voz no reconocida/i.test(detail) || /no se detectó voz/i.test(detail) || /no se entendió/i.test(detail)) {
+            // Distintos motivos, distinto mensaje: no es lo mismo una voz ajena que
+            // una toma en la que no se llegó a oír nada.
+            const aviso = /voz no reconocida/i.test(detail)
+              ? 'No reconozco esa voz, mi señor. No puedo atender órdenes de quien no identifico.'
+              : 'No te he oído bien, mi señor. ¿Puedes repetirlo?'
+            chatMessages.value.push({ from: 'igris', text: aviso })
+            scrollToBottom()
+            try {
+              await playIrisResponse(aviso, chatMessages.value.length - 1)
+            } catch (ttsErr) {
+              // Si la síntesis falla, el texto ya quedó visible.
+            }
+          }
+          // Pausa antes de reintentar: sin ella el bucle reabre el micro de
+          // inmediato y encadena rechazos sobre el mismo audio.
+          await sleep(2000)
         }
       } else if (error && error !== 'no-speech' && error !== 'aborted') {
         await sleep(5000)

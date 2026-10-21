@@ -286,7 +286,7 @@ class SettingsManager:
                 "primary_provider": primary,
                 "fallback_chain": chain,
                 "models": {
-                    "nemotron": os.getenv("IGRIS_NEMOTRON_MODEL", "nvidia/nemotron-3-super-120b-a12b"),
+                    "nemotron": os.getenv("IGRIS_NEMOTRON_MODEL", "nvidia/nemotron-3-ultra-550b-a55b:free"),
                     "openai": "gpt-4o-mini",
                     "anthropic": "claude-sonnet-5-5",
                     "local": "llama3.1"
