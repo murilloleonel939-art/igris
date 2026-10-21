@@ -785,6 +785,12 @@ function listenOnce() {
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
       })
       meterContext = new (window.AudioContext || window.webkitAudioContext)()
+      // Sin reanudar el contexto el analizador devuelve silencio constante: el VAD
+      // nunca ve voz, aunque MediaRecorder sí esté capturando. Chrome lo deja
+      // "suspended" porque el gesto del usuario ya se consumió al pedir el micrófono.
+      if (meterContext.state === 'suspended') {
+        try { await meterContext.resume() } catch (err) {}
+      }
       meterSource = meterContext.createMediaStreamSource(stream)
       meterAnalyser = meterContext.createAnalyser()
       meterAnalyser.fftSize = 512

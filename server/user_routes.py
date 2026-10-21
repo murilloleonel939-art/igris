@@ -1323,26 +1323,38 @@ async def user_voice_ws(websocket: WebSocket) -> None:
         deepgram_socket = None
         deepgram_reader = None
         deepgram_transcripts: list[str] = []
-        try:
-            configured_stt = get_settings().get_stt_config()
-            deepgram_key = os.getenv("DEEPGRAM_API_KEY", "").strip()
-            if configured_stt.get("provider") == "deepgram" and deepgram_key:
-                import websockets
-                params = {
-                    "model": configured_stt.get("cloud_model") or os.getenv("DEEPGRAM_MODEL", "nova-3"),
-                    "language": configured_stt.get("language") or os.getenv("DEEPGRAM_LANGUAGE", "es"),
-                    "smart_format": "true", "punctuate": "true", "interim_results": "false",
-                    "container": "webm" if "webm" in mime_type.lower() else "ogg",
-                }
-                live_url = f"{DEEPGRAM_LIVE_URL}?{httpx.QueryParams(params)}"
+        # Deepgram Live cierra la conexión si no recibe audio en ~10 s. El hello y
+        # la comprobación del token pueden tardar, y el usuario aún no ha hablado,
+        # así que la conexión se abre con el PRIMER fragmento, no al aceptar.
+        live_params = None
+        configured_stt = get_settings().get_stt_config()
+        deepgram_key = os.getenv("DEEPGRAM_API_KEY", "").strip()
+        if configured_stt.get("provider") == "deepgram" and deepgram_key:
+            live_params = {
+                "model": configured_stt.get("cloud_model") or os.getenv("DEEPGRAM_MODEL", "nova-3"),
+                "language": configured_stt.get("language") or os.getenv("DEEPGRAM_LANGUAGE", "es"),
+                "smart_format": "true", "punctuate": "true", "interim_results": "false",
+                "container": "webm" if "webm" in mime_type.lower() else "ogg",
+            }
+
+        async def open_deepgram() -> None:
+            nonlocal deepgram_socket, deepgram_reader
+            import websockets
+            live_url = f"{DEEPGRAM_LIVE_URL}?{httpx.QueryParams(live_params)}"
+            try:
                 deepgram_socket = await websockets.connect(
                     live_url,
                     extra_headers={"Authorization": f"Token {deepgram_key}"},
                     open_timeout=10,
                     close_timeout=5,
                 )
+            except Exception:
+                logger.exception("No se pudo abrir Deepgram Live; se usará STT por lotes")
+                deepgram_socket = None
+                return
 
-                async def read_deepgram():
+            async def read_deepgram():
+                try:
                     async for raw_result in deepgram_socket:
                         result = json.loads(raw_result)
                         if result.get("is_final"):
@@ -1350,11 +1362,12 @@ async def user_voice_ws(websocket: WebSocket) -> None:
                             phrase = (alternatives[0].get("transcript") or "").strip() if alternatives else ""
                             if phrase:
                                 deepgram_transcripts.append(phrase)
+                except Exception:
+                    # Un cierre de Deepgram no debe propagarse como tarea huérfana:
+                    # la transcripción por lotes sigue disponible al final.
+                    logger.warning("Deepgram Live se cerró antes de terminar el audio")
 
-                deepgram_reader = asyncio.create_task(read_deepgram())
-        except Exception:
-            logger.exception("No se pudo abrir Deepgram Live; se usará STT por lotes")
-            deepgram_socket = None
+            deepgram_reader = asyncio.create_task(read_deepgram())
 
         while True:
             message = await websocket.receive()
@@ -1366,6 +1379,9 @@ async def user_voice_ws(websocket: WebSocket) -> None:
                     await websocket.close(code=1009)
                     return
                 audio_parts.append(chunk)
+                # La conexión con Deepgram se abre aquí, con audio real en cola.
+                if live_params is not None and deepgram_socket is None and deepgram_reader is None:
+                    await open_deepgram()
                 if deepgram_socket is not None:
                     try:
                         await deepgram_socket.send(chunk)
