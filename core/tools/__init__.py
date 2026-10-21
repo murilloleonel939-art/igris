@@ -13,7 +13,7 @@ import logging
 
 from core.capabilities import denial_message
 from core.local_agent import reset_agent_user, set_agent_user
-from core.tools import calendar_write, device, documents_tool, gcalendar, gmail, notes, reminders, spotify, time_tools, tuya, weather, web_search, youtube
+from core.tools import calendar_write, device, documents_tool, gcalendar, gmail, notes, reminders, spotify, time_tools, tuya, weather, web_search, whatsapp_tool, youtube
 
 logger = logging.getLogger(__name__)
 
@@ -734,6 +734,35 @@ TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "send_whatsapp_message",
+            "description": (
+                "Envía un mensaje de texto por WhatsApp. Úsala cuando el usuario pida enviar un mensaje "
+                "por WhatsApp a un contacto. El destinatario debe ser un número de teléfono válido."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "phone_number": {
+                        "type": "string",
+                        "description": (
+                            "Número de teléfono del destinatario en formato E.164 sin '+'. "
+                            "Ejemplo: 573504807732 para Colombia"
+                        ),
+                    },
+                    "message": {
+                        "type": "string",
+                        "description": (
+                            "Contenido del mensaje. Máximo 4096 caracteres."
+                        ),
+                    },
+                },
+                "required": ["phone_number", "message"],
+            },
+        },
+    },
 ]
 
 _HANDLERS = {
@@ -790,6 +819,7 @@ _HANDLERS = {
     "list_tuya_devices": tuya.list_tuya_devices_for_session,
     "get_tuya_device_status": tuya.list_tuya_device_status,
     "control_tuya_device": tuya.control_tuya_device,
+    "send_whatsapp_message": whatsapp_tool.send_whatsapp_message,
 }
 
 # Herramientas que necesitan la sesión de conversación: para el estado de la charla
