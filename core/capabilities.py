@@ -41,6 +41,7 @@ FEATURE_ORDER = (
     "reminders",
     "tuya",
     "device",
+    "whatsapp",
 )
 
 # Funciones que están activas de fábrica. Son inofensivas: no tocan datos de
@@ -161,6 +162,12 @@ FEATURES: dict[str, Feature] = {
         label="Casa inteligente (Smart Life)",
         description="Consultar y controlar los dispositivos vinculados a Tuya Cloud.",
     ),
+    "whatsapp": Feature(
+        key="whatsapp",
+        column="can_use_whatsapp",
+        label="WhatsApp",
+        description="Enviar mensajes de texto por WhatsApp.",
+    ),
 }
 
 # ============= HERRAMIENTA -> FUNCIÓN =============
@@ -201,6 +208,7 @@ TOOL_FEATURES: dict[str, str] = {
     "list_tuya_devices": "tuya",
     "get_tuya_device_status": "tuya",
     "control_tuya_device": "tuya",
+    "send_whatsapp_message": "whatsapp",
     "open_chrome": "device",
     "search_youtube": "device",
     "capture_screen": "device",
