@@ -708,7 +708,18 @@ function openVoiceSocket(mimeType, onAudioChunk = null, onReply = null, onSenten
         window.clearTimeout(timeout)
         rejectResult(failure)
       } else sendEnd()
-      return result
+      // Timeout de seguridad: si la respuesta no llega en 15s, rechaza.
+      // Esto evita que el frontend espere indefinidamente si el backend cierra la conexión.
+      const safetyTimeout = window.setTimeout(() => {
+        if (!settled) {
+          settled = true
+          rejectResult(new Error('Timeout esperando respuesta del servidor.'))
+        }
+      }, 15000)
+      return result.then(
+        (val) => { window.clearTimeout(safetyTimeout); return val },
+        (err) => { window.clearTimeout(safetyTimeout); throw err }
+      )
     },
     cancel() {
       if (settled) return
