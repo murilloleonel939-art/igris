@@ -60,6 +60,10 @@ def embedding(audio: bytes, suffix: str = ".ogg") -> np.ndarray:
     wav = _wav_bytes(audio, suffix)
     signal, sample_rate = torchaudio.load(io.BytesIO(wav))
     signal = signal.mean(dim=0, keepdim=True)
+    # El recorte de silencios puede dejar la señal vacía (micro mudo o toma sin
+    # voz). Sin esta comprobación NeMo falla con un IndexError poco claro.
+    if signal.shape[1] == 0:
+        raise ValueError("El audio no contiene voz reconocible")
     signal_length = torch.tensor([signal.shape[1]], dtype=torch.long)
     with torch.no_grad():
         _logits, vector = _get_encoder().forward(

@@ -51,7 +51,7 @@ from core.capabilities import (
     admin_capabilities,
     capabilities_from_user,
 )
-from core.database import GoogleAccount, KnowledgeNode, MemoryLink, Note, Profile, Reminder, SpotifyAccount, TelegramLink, TvBoxPairingCode, TvBoxToken, User, UserMemory, get_db
+from core.database import GoogleAccount, KnowledgeNode, MemoryLink, Note, Profile, Reminder, SessionLocal, SpotifyAccount, TelegramLink, TvBoxPairingCode, TvBoxToken, User, UserMemory, get_db
 from server.tvbox_routes import _connections, _digest
 from core.settings_manager import get_settings
 from core.memory import link_memories, linked_memories_block, load_memories, neural_memory_context, remember_from_text
@@ -1254,6 +1254,10 @@ async def user_voice_chat(
         raise HTTPException(status_code=403, detail="Registra tu perfil de voz antes de usar comandos por voz")
     try:
         verified, score = await asyncio.to_thread(voice.verify, data, profile.voice_print, ".webm")
+    except ValueError as exc:
+        # Audio silencioso o sin voz: no es un fallo del servidor.
+        logger.warning("Audio sin voz para usuario %s: %s", user.id, exc)
+        raise HTTPException(status_code=422, detail="No se detectó voz en la grabación")
     except Exception as exc:
         logger.exception("Falló la verificación de voz")
         raise HTTPException(status_code=500, detail=f"No se pudo verificar la voz: {exc}")
@@ -1414,6 +1418,10 @@ async def user_voice_ws(websocket: WebSocket) -> None:
         await websocket.send_json({"type": "state", "state": "processing"})
         try:
             verified, score = await asyncio.to_thread(voice.verify, audio, profile.voice_print, ".webm")
+        except ValueError:
+            logger.warning("Audio sin voz en WebSocket para usuario %s", user.id)
+            await websocket.send_json({"type": "error", "message": "No se detectó voz en la grabación."})
+            return
         except Exception:
             logger.exception("Falló la verificación de voz por WebSocket")
             await websocket.send_json({"type": "error", "message": "No se pudo verificar la voz."})
