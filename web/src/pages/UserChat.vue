@@ -931,8 +931,9 @@ const runHandsFree = async () => {
             result = voiceResult ? await voiceResult : null
             if (!result) throw new Error('El canal de voz no devolvió respuesta.')
           } catch (socketError) {
-            if (socketError.voiceSocketHandled) throw socketError
             // Compatibilidad con navegadores, proxies o despliegues aún sin WS.
+            // Un bloqueo de CSP también debe terminar aquí, no abortar la orden.
+            console.warn('WebSocket de voz no disponible; usando HTTP:', socketError.message)
             const form = new FormData()
             form.append('audio', audio, 'voice.webm')
             form.append('session_id', sessionId)
