@@ -940,6 +940,8 @@ const runHandsFree = async () => {
             // Compatibilidad con navegadores, proxies o despliegues aún sin WS.
             // Un bloqueo de CSP también debe terminar aquí, no abortar la orden.
             console.warn('WebSocket de voz no disponible; usando HTTP:', socketError.message)
+             // Cancela explícitamente el WebSocket para evitar respuestas duplicadas si se recupera después.
+             voiceSocket?.cancel()
             const form = new FormData()
             form.append('audio', audio, 'voice.webm')
             form.append('session_id', sessionId)
