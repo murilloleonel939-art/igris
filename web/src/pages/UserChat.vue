@@ -948,11 +948,18 @@ const runHandsFree = async () => {
             result = voiceResult ? await voiceResult : null
             if (!result) throw new Error('El canal de voz no devolvió respuesta.')
           } catch (socketError) {
-            // WebSocket falló: cancela explícitamente para evitar respuestas duplicadas.
-            console.warn('WebSocket de voz falló:', socketError.message)
-            voiceSocket?.cancel()
-            // Lanza el error para que se maneje en el catch exterior.
-            throw socketError
+            // Compatibilidad con navegadores, proxies o despliegues aún sin WS.
+            // Un bloqueo de CSP también debe terminar aquí, no abortar la orden.
+            console.warn('WebSocket de voz no disponible; usando HTTP:', socketError.message)
+             // Cancela explícitamente el WebSocket para evitar respuestas duplicadas si se recupera después.
+             voiceSocket?.cancel()
+            const form = new FormData()
+            form.append('audio', audio, 'voice.webm')
+            form.append('session_id', sessionId)
+            const response = await userApi.post('/api/user/voice-chat', form, {
+              headers: { 'Content-Type': 'multipart/form-data' },
+            })
+            result = { text: response.data.text, reply: response.data.reply, audio: null }
           }
           if (result?.reply) {
             setNotice('')
@@ -967,11 +974,9 @@ const runHandsFree = async () => {
             if (result.audio?.length) await playSocketAudio(result.audio, messageIndex)
             else if (!replyShown) await playIrisResponse(result.reply, messageIndex)
           }
-         } catch (err) {
-           setNotice(err.response?.data?.detail || err.message || 'Voz no reconocida. Orden rechazada.')
-           // Pausa antes de reintentar para evitar spam de órdenes fallidas.
-           await sleep(2000)
-         }
+        } catch (err) {
+          setNotice(err.response?.data?.detail || err.message || 'Voz no reconocida. Orden rechazada.')
+        }
       } else if (error && error !== 'no-speech' && error !== 'aborted') {
         await sleep(5000)
       } else {
