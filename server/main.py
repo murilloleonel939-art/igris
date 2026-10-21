@@ -1159,7 +1159,14 @@ async def _send_telegram(chat_id: int, text: str) -> None:
 
 @app.on_event("startup")
 async def on_startup():
-    """Inicia el planificador de recordatorios y configura el webhook de Telegram."""
+    """Inicia el planificador de recordatorios, ejecuta migraciones y configura el webhook de Telegram."""
+    # Ejecutar migraciones automáticas
+    try:
+        from migrations.add_whatsapp_column import run_migration
+        run_migration()
+    except Exception as e:
+        logger.warning(f"Error en migración de WhatsApp: {e}")
+    
     # El planificador arranca siempre, aunque no haya webhook configurado
     if telegram_bot is not None:
         app.state.reminder_task = asyncio.create_task(
