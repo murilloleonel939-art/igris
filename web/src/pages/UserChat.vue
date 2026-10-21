@@ -993,7 +993,7 @@ const runHandsFree = async () => {
             // Distintos motivos, distinto mensaje: no es lo mismo una voz ajena que
             // una toma en la que no se llegó a oír nada.
             const aviso = /voz no reconocida/i.test(detail)
-              ? 'No reconozco esa voz, mi señor. No puedo atender órdenes de quien no identifico.'
+              ? 'No reconozco esa voz, lo siento, solo obedezco a mi señor.'
               : 'No te he oído bien, mi señor. ¿Puedes repetirlo?'
             chatMessages.value.push({ from: 'igris', text: aviso })
             scrollToBottom()
