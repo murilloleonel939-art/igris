@@ -676,12 +676,23 @@ function openVoiceSocket(mimeType, onAudioChunk = null, onReply = null, onSenten
         fail(event.message || 'No se pudo procesar la voz.', true)
       }
     }
-    socket.onerror = () => fail('No se pudo abrir el canal de voz.')
+    socket.onerror = (event) => {
+      // Detecta bloqueo CSP (error evento vacío en algunos navegadores)
+      // Intenta fallback HTTP automáticamente
+      if (!failure) {
+        failure = new Error('CSP o error de conexión WebSocket; intentando HTTP...')
+        failure.voiceSocketHandled = true
+        console.warn('WebSocket bloqueado por CSP, cambiando a HTTP')
+        if (socket) socket.close()
+      }
+    }
     socket.onclose = () => {
       if (ended && !settled && !failure) fail('El canal de voz se cerró inesperadamente.')
     }
   } catch {
-    fail('Tu navegador no soporta el canal de voz.')
+    // Fallback también si WebSocket no está disponible
+    failure = new Error('WebSocket no disponible; usando HTTP')
+    failure.voiceSocketHandled = true
   }
 
   return {
