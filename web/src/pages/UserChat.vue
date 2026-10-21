@@ -708,7 +708,18 @@ function openVoiceSocket(mimeType, onAudioChunk = null, onReply = null, onSenten
         window.clearTimeout(timeout)
         rejectResult(failure)
       } else sendEnd()
-      return result
+      // Timeout de seguridad: si la respuesta no llega en 15s, rechaza.
+      // Esto evita que el frontend espere indefinidamente si el backend cierra la conexión.
+      const safetyTimeout = window.setTimeout(() => {
+        if (!settled) {
+          settled = true
+          rejectResult(new Error('Timeout esperando respuesta del servidor.'))
+        }
+      }, 15000)
+      return result.then(
+        (val) => { window.clearTimeout(safetyTimeout); return val },
+        (err) => { window.clearTimeout(safetyTimeout); throw err }
+      )
     },
     cancel() {
       if (settled) return
@@ -871,7 +882,11 @@ function listenOnce() {
       const audio = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' })
       const voiceResult = heardSpeech && voiceSocket ? voiceSocket.finish() : null
       if (!heardSpeech) voiceSocket?.cancel()
-      resolve({ text, audio: heardSpeech ? audio : null, voiceResult, error, replyShown })
+      // replied es una función, no el valor: el WebSocket responde DESPUÉS de este
+      // resolve y cambia replyShown dentro del closure. Si se pasara el booleano,
+      // runHandsFree leería una foto vieja (false) y volvería a pintar el mismo
+      // par usuario/IGRIS, que es la duplicación que se veía en pantalla.
+      resolve({ text, audio: heardSpeech ? audio : null, voiceResult, error, replied: () => replyShown })
     }
 
     // Whisper del backend es la única fuente de transcripción. Chrome no
@@ -921,7 +936,7 @@ const runHandsFree = async () => {
         await sleep(200)
         continue
       }
-      const { text, audio, voiceResult, error, replyShown } = await listenOnce()
+      const { text, audio, voiceResult, error, replied } = await listenOnce()
       if (!handsFree.value) break
       if (reportVoiceError(error)) {
         handsFree.value = false
@@ -954,14 +969,17 @@ const runHandsFree = async () => {
             setNotice('')
             // Con WebSocket el mensaje ya se mostró al recibir la respuesta y el
             // audio se reprodujo por fragmentos; aquí solo queda el respaldo HTTP.
-            if (!replyShown) {
+            // replied() se consulta aquí, después de await voiceResult: el WebSocket
+            // ya pudo haber pintado el par usuario/IGRIS. Si es así no se repite.
+            const alreadyShown = replied()
+            if (!alreadyShown) {
               chatMessages.value.push({ from: 'user', text: result.text })
               chatMessages.value.push({ from: 'igris', text: result.reply })
               scrollToBottom()
             }
             const messageIndex = chatMessages.value.length - 1
             if (result.audio?.length) await playSocketAudio(result.audio, messageIndex)
-            else if (!replyShown) await playIrisResponse(result.reply, messageIndex)
+            else if (!alreadyShown) await playIrisResponse(result.reply, messageIndex)
           }
         } catch (err) {
           setNotice(err.response?.data?.detail || err.message || 'Voz no reconocida. Orden rechazada.')
