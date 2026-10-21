@@ -1162,8 +1162,25 @@ async def on_startup():
     """Inicia el planificador de recordatorios, ejecuta migraciones y configura el webhook de Telegram."""
     # Ejecutar migraciones automáticas
     try:
-        from migrations.add_whatsapp_column import run_migration
-        run_migration()
+        from sqlalchemy import inspect, text
+        inspector = inspect(engine)
+        columns = [c['name'] for c in inspector.get_columns('users')]
+        
+        if 'can_use_whatsapp' not in columns:
+            with engine.connect() as conn:
+                from core.database import IS_POSTGRES
+                if IS_POSTGRES:
+                    conn.execute(text("""
+                        ALTER TABLE users 
+                        ADD COLUMN can_use_whatsapp BOOLEAN DEFAULT FALSE NOT NULL;
+                    """))
+                else:
+                    conn.execute(text("""
+                        ALTER TABLE users 
+                        ADD COLUMN can_use_whatsapp BOOLEAN DEFAULT 0 NOT NULL;
+                    """))
+                conn.commit()
+            logger.info("✓ Columna 'can_use_whatsapp' agregada exitosamente")
     except Exception as e:
         logger.warning(f"Error en migración de WhatsApp: {e}")
     
