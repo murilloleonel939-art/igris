@@ -1,5 +1,6 @@
 """Texto a voz (TTS) libre/local. Usa Piper (local, gratis) o edge-tts/API gratuita como respaldo."""
 import os
+import threading
 from core.settings_manager import get_settings
 
 def _get_tts_config():
@@ -33,6 +34,9 @@ def reload_config() -> None:
 PIPER_VOICE = _TTS_CFG.get("voice") or os.environ.get("IGRIS_PIPER_VOICE", "es_ES-carlos-medium")
 
 _client_local = None
+# La voz de Piper se carga una vez. Sin lock, dos frases simultáneas —el buzón
+# de voz habla mientras el modelo sigue generando— podían cargarla dos veces.
+_piper_lock = threading.Lock()
 
 # Intento de carga local
 try:
@@ -63,7 +67,9 @@ async def synthesize(text: str) -> bytes:
         global _client_local
         try:
             if _client_local is None:
-                _client_local = _load_piper()
+                with _piper_lock:
+                    if _client_local is None:
+                        _client_local = _load_piper()
             voice = _client_local
             # Piper usa síntesis bloqueante; envolviendo en executor para async
             import asyncio, tempfile, wave

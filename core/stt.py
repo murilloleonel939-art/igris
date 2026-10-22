@@ -3,6 +3,7 @@ import io
 import os
 import subprocess
 import tempfile
+import threading
 from typing import Union
 
 # ---- OPTIONAL: openai (for the cloud API) ----
@@ -29,6 +30,10 @@ _whisper_model_name = None
 _faster_whisper_model = None
 _faster_whisper_model_name = None
 _faster_whisper_compute_type = None
+# Cargar Whisper tarda segundos y ocupa cientos de MB. Sin lock, dos órdenes de
+# voz simultáneas veían el modelo vacío y lo cargaban dos veces, con el mismo
+# pico de memoria que tumbaba el contenedor con TitaNet.
+_stt_lock = threading.Lock()
 
 
 def _settings() -> dict:
@@ -113,23 +118,34 @@ def _transcribe_whisper_cpp(tmp_path: str, settings: dict, language: str) -> str
 def _load_whisper_model(model_name: str):
     """Carga y cachea el modelo openai-whisper seleccionado."""
     global _whisper_model, _whisper_model_name
-    if _whisper_model is None or _whisper_model_name != model_name:
-        if whisper is None:
-            raise RuntimeError("El paquete 'openai-whisper' no está instalado.")
-        _whisper_model = whisper.load_model(model_name)
-        _whisper_model_name = model_name
+    if _whisper_model is not None and _whisper_model_name == model_name:
+        return _whisper_model
+    with _stt_lock:
+        # Doble comprobación: el primer hilo carga y el resto reutiliza.
+        if _whisper_model is None or _whisper_model_name != model_name:
+            if whisper is None:
+                raise RuntimeError("El paquete 'openai-whisper' no está instalado.")
+            _whisper_model = whisper.load_model(model_name)
+            _whisper_model_name = model_name
     return _whisper_model
 
 
 def _load_faster_whisper_model(model_name: str, compute_type: str):
     """Carga y cachea faster-whisper con el tipo de cómputo elegido."""
     global _faster_whisper_model, _faster_whisper_model_name, _faster_whisper_compute_type
-    if _faster_whisper_model is None or _faster_whisper_model_name != model_name or _faster_whisper_compute_type != compute_type:
-        if WhisperModel is None:
-            raise RuntimeError("El paquete 'faster-whisper' no está instalado.")
-        _faster_whisper_model = WhisperModel(model_name, device="cpu", compute_type=compute_type)
-        _faster_whisper_model_name = model_name
-        _faster_whisper_compute_type = compute_type
+    if (
+        _faster_whisper_model is not None
+        and _faster_whisper_model_name == model_name
+        and _faster_whisper_compute_type == compute_type
+    ):
+        return _faster_whisper_model
+    with _stt_lock:
+        if _faster_whisper_model is None or _faster_whisper_model_name != model_name or _faster_whisper_compute_type != compute_type:
+            if WhisperModel is None:
+                raise RuntimeError("El paquete 'faster-whisper' no está instalado.")
+            _faster_whisper_model = WhisperModel(model_name, device="cpu", compute_type=compute_type)
+            _faster_whisper_model_name = model_name
+            _faster_whisper_compute_type = compute_type
     return _faster_whisper_model
 
 
