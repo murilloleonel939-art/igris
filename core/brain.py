@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import os
+import threading
 import time
 from types import SimpleNamespace
 from typing import List, Optional, Tuple
@@ -58,6 +59,23 @@ PROVIDER_TIMEOUT = float(os.environ.get("IGRIS_PROVIDER_TIMEOUT", "45"))
 # presupuesto se deja de intentar y se responde con error, que es lo que el
 # frontend ya sabe mostrar.
 TURN_TIMEOUT = float(os.environ.get("IGRIS_TURN_TIMEOUT", "60"))
+
+# Enfriamiento por proveedor caído. Sin esto, cada turno vuelve a pagar el fallo
+# del mismo proveedor antes de llegar a uno sano: con un 429 eso son segundos
+# perdidos en cada mensaje. El proveedor se aparta un rato y se reintenta solo; el
+# plazo crece con cada fallo consecutivo y vuelve a cero en cuanto responde.
+PROVIDER_COOLDOWN = float(os.environ.get("IGRIS_PROVIDER_COOLDOWN", "60"))
+PROVIDER_COOLDOWN_MAX = float(os.environ.get("IGRIS_PROVIDER_COOLDOWN_MAX", "600"))
+# Un proveedor que responde 401/403/404 no se arregla solo: se aparta mucho más.
+PROVIDER_DEAD_COOLDOWN = float(os.environ.get("IGRIS_PROVIDER_DEAD_COOLDOWN", "1800"))
+
+# Estado en memoria: {proveedor: (instante_hasta, fallos_consecutivos)}
+_provider_health: dict = {}
+_health_lock = threading.Lock()
+
+# Errores que indican un problema del proveedor, no del turno. El resto (timeout,
+# error del modelo, herramienta) no debe apartar al proveedor.
+_PERMANENT_STATUS = {401, 403, 404}
 
 # Pateway admite controlar el razonamiento de GPT-6 Luna. "none" prioriza latencia.
 REASONING_EFFORT = os.environ.get("IGRIS_REASONING_EFFORT", "none").strip().lower()
@@ -230,6 +248,50 @@ PROVIDERS = {
         "timeout": 60,
     },
 }
+
+
+def _provider_available(name: str) -> bool:
+    """True si el proveedor no está en enfriamiento."""
+    now = time.monotonic()
+    with _health_lock:
+        until, _ = _provider_health.get(name, (0.0, 0))
+    return now >= until
+
+
+def _provider_seconds_left(name: str) -> float:
+    now = time.monotonic()
+    with _health_lock:
+        until, _ = _provider_health.get(name, (0.0, 0))
+    return max(0.0, until - now)
+
+
+def _mark_provider_ok(name: str) -> None:
+    """Borra el enfriamiento: el proveedor volvió a responder."""
+    with _health_lock:
+        if _provider_health.pop(name, None) is not None:
+            logger.info("Proveedor '%s' recuperado; vuelve a la cadena", name)
+
+
+def _mark_provider_failed(name: str, exc: BaseException) -> None:
+    """Aparta al proveedor un tiempo que crece con cada fallo consecutivo.
+
+    Es lo que hace que el sistema se recupere solo: el que falla deja de costar
+    segundos en cada turno, y vuelve a la cadena por su cuenta al cumplirse el
+    plazo, sin reiniciar ni cambiar configuración.
+    """
+    status = getattr(exc, "status_code", None)
+    with _health_lock:
+        _, fallos = _provider_health.get(name, (0.0, 0))
+        fallos += 1
+        if status in _PERMANENT_STATUS:
+            cooldown = PROVIDER_DEAD_COOLDOWN
+        else:
+            cooldown = min(PROVIDER_COOLDOWN * (2 ** (fallos - 1)), PROVIDER_COOLDOWN_MAX)
+        _provider_health[name] = (time.monotonic() + cooldown, fallos)
+    logger.warning(
+        "Proveedor '%s' apartado %.0f s (fallo %d%s)",
+        name, cooldown, fallos, f", status {status}" if status else "",
+    )
 
 
 def _build_client(name: str):
@@ -915,12 +977,20 @@ class BrainSession:
 
         errors = []
         turn_deadline = time.monotonic() + TURN_TIMEOUT
-        for name in self.brain.fallback_chain:
+        attempt = self._attempt_chain()
+        # Si el enfriamiento vació la cadena, se reintenta igualmente: es preferible
+        # tardar o fallar a dejar al usuario sin respuesta.
+        forced = not any(_provider_available(n) for n in self.brain.fallback_chain)
+        for name in attempt:
             remaining = turn_deadline - time.monotonic()
             if remaining <= 0:
                 errors.append(f"{name}: sin margen (turno agotado)")
                 logger.error("Turno agotado tras %ss; no se intenta %s", TURN_TIMEOUT, name)
                 break
+            if not _provider_available(name) and not forced:
+                errors.append(f"{name}: en enfriamiento ({_provider_seconds_left(name):.0f} s)")
+                logger.info("Proveedor '%s' omitido: en enfriamiento", name)
+                continue
             budget = min(PROVIDER_TIMEOUT, remaining)
             built = _build_client(name)
             if not built:
@@ -946,6 +1016,7 @@ class BrainSession:
                 self.turns = self.turns[-MAX_HISTORY_TURNS:]
                 self.conversation_summary = update_conversation_summary(self.conversation_summary, self.turns)
                 logger.info("PROVIDER_END id=%s provider=%s elapsed_ms=%.1f status=ok", _trace_id(self), name, (time.perf_counter() - provider_started) * 1000)
+                _mark_provider_ok(name)
                 return reply
             except Exception as e:
                 if isinstance(e, (asyncio.TimeoutError, TimeoutError)):
@@ -953,6 +1024,7 @@ class BrainSession:
                 logger.error(f"Proveedor '{name}' falló: {e}")
                 logger.info("PROVIDER_END id=%s provider=%s elapsed_ms=%.1f status=error", _trace_id(self), name, (time.perf_counter() - provider_started) * 1000)
                 errors.append(f"{name}: {e}")
+                _mark_provider_failed(name, e)
             finally:
                 await _close_client(client)
 
@@ -960,6 +1032,20 @@ class BrainSession:
         self.turn_no, self.last_user_text = prev_turn_no, prev_user_text
         raise RuntimeError("Todos los proveedores fallaron -> " + " | ".join(errors))
 
+
+    def _attempt_chain(self) -> List[str]:
+        """Cadena sin los proveedores en enfriamiento.
+
+        Si el enfriamiento deja la cadena vacía se devuelve la cadena completa:
+        más vale intentarlo con uno que acaba de fallar que no responder nunca.
+        """
+        chain = self.brain.fallback_chain
+        vivos = [n for n in chain if _provider_available(n)]
+        if vivos:
+            return vivos
+        if chain:
+            logger.warning("Todos los proveedores en enfriamiento; se reintenta la cadena completa")
+        return list(chain)
 
     async def say_stream(self, text: str, on_delta, context: Optional[dict] = None) -> str:
         """Igual que ``say`` pero entrega el texto por fragmentos a ``on_delta``.
@@ -1003,7 +1089,11 @@ class BrainSession:
             await on_delta(texto)
 
         turn_deadline = time.monotonic() + TURN_TIMEOUT
-        for name in self.brain.fallback_chain:
+        attempt = self._attempt_chain()
+        # Si el enfriamiento vació la cadena, se reintenta igualmente: es preferible
+        # tardar o fallar a dejar al usuario sin respuesta.
+        forced = not any(_provider_available(n) for n in self.brain.fallback_chain)
+        for name in attempt:
             # Presupuesto global: cada proveedor respeta su tope, pero la suma de
             # toda la cadena no debe superar el turno. Si ya no queda margen, se
             # corta aquí en vez de encadenar esperas que el usuario vive como cuelgue.
@@ -1012,6 +1102,10 @@ class BrainSession:
                 errors.append(f"{name}: sin margen (turno agotado)")
                 logger.error("Turno agotado tras %ss; no se intenta %s", TURN_TIMEOUT, name)
                 break
+            if not _provider_available(name) and not forced:
+                errors.append(f"{name}: en enfriamiento ({_provider_seconds_left(name):.0f} s)")
+                logger.info("Proveedor '%s' omitido: en enfriamiento", name)
+                continue
             budget = min(PROVIDER_TIMEOUT, remaining)
             built = _build_client(name)
             if not built:
@@ -1039,6 +1133,7 @@ class BrainSession:
                 self.turns = self.turns[-MAX_HISTORY_TURNS:]
                 self.conversation_summary = update_conversation_summary(self.conversation_summary, self.turns)
                 logger.info("PROVIDER_END id=%s provider=%s elapsed_ms=%.1f status=ok stream=true", _trace_id(self), name, (time.perf_counter() - provider_started) * 1000)
+                _mark_provider_ok(name)
                 return reply
             except Exception as e:
                 if isinstance(e, (asyncio.TimeoutError, TimeoutError)):
@@ -1046,6 +1141,7 @@ class BrainSession:
                 logger.error(f"Proveedor '{name}' falló (stream): {e}")
                 logger.info("PROVIDER_END id=%s provider=%s elapsed_ms=%.1f status=error", _trace_id(self), name, (time.perf_counter() - provider_started) * 1000)
                 errors.append(f"{name}: {e}")
+                _mark_provider_failed(name, e)
                 if spoken_parts:
                     # Ya se oyó parte de la respuesta: probar otro proveedor la
                     # repetiría. Se cierra el turno con lo emitido.
@@ -1064,6 +1160,7 @@ class BrainSession:
 
 class Brain:
     """Orquesta los proveedores de IA según la configuración activa."""
+
 
     def __init__(self):
         self.provider = "nemotron"
