@@ -53,10 +53,18 @@ async def send_whatsapp_message(
         client = WhatsAppClient()
         result = await client.send_text(destination, message)
         sent = (result.get("messages") or [{}])[0] if isinstance(result, dict) else {}
+        wamid = sent.get("id")
+        logger.info(
+            "WhatsApp enviado a +%s wamid=%s message_status=%s contacts=%s",
+            destination,
+            wamid,
+            sent.get("message_status"),
+            result.get("contacts") if isinstance(result, dict) else None,
+        )
         return {
             "status": "success",
             "to": destination,
-            "message_id": sent.get("id"),
+            "message_id": wamid,
             "message": f"Mensaje enviado por WhatsApp a +{destination}.",
         }
     except WhatsAppConfigurationError as e:
