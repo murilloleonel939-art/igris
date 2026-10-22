@@ -46,6 +46,12 @@ MAX_TOOL_ROUNDS = 4
 STREAM_FIRST_CHUNK_TIMEOUT = float(os.environ.get("IGRIS_STREAM_FIRST_CHUNK_TIMEOUT", "15"))
 STREAM_TOTAL_TIMEOUT = float(os.environ.get("IGRIS_STREAM_TOTAL_TIMEOUT", "120"))
 
+# Presupuesto máximo por proveedor. Aunque el stream ya tiene su propio reloj, un
+# proveedor puede quedarse colgado fuera de él (cierre de conexión, reintentos del
+# SDK, herramientas lentas). Este tope garantiza que la cadena siempre avanza: si
+# se agota, el turno pasa al siguiente proveedor en vez de quedarse esperando.
+PROVIDER_TIMEOUT = float(os.environ.get("IGRIS_PROVIDER_TIMEOUT", "45"))
+
 # Pateway admite controlar el razonamiento de GPT-6 Luna. "none" prioriza latencia.
 REASONING_EFFORT = os.environ.get("IGRIS_REASONING_EFFORT", "none").strip().lower()
 
@@ -409,6 +415,18 @@ class _StreamToolCall:
         self.id = call_id
         self.type = "function"
         self.function = _StreamFunction(name, arguments)
+
+
+async def _close_client(client) -> None:
+    """Cierra el cliente con tope de tiempo y sin propagar errores.
+
+    Se llama desde el ``finally`` del bucle de proveedores: si el cierre se colgara
+    o lanzara, se saltaría el resto de la cadena y el turno quedaría sin respuesta.
+    """
+    try:
+        await asyncio.wait_for(asyncio.shield(client.close()), timeout=5)
+    except Exception:
+        logger.debug("No se pudo cerrar el cliente del proveedor", exc_info=True)
 
 
 async def _close_stream(stream) -> None:
@@ -882,22 +900,31 @@ class BrainSession:
             logger.info(f"Intentando proveedor: {name} ({model})")
             provider_started = time.perf_counter()
             try:
+                # Mismo tope que en say_stream: la cadena debe avanzar siempre.
                 # Claude habla el protocolo nativo de Anthropic; el resto, el de OpenAI.
                 if name == "anthropic":
-                    reply, new_msgs = await _complete_with_anthropic(client, model, messages, self)
+                    reply, new_msgs = await asyncio.wait_for(
+                        _complete_with_anthropic(client, model, messages, self),
+                        timeout=PROVIDER_TIMEOUT,
+                    )
                 else:
-                    reply, new_msgs = await _complete_with_tools(client, model, messages, self, provider=name)
+                    reply, new_msgs = await asyncio.wait_for(
+                        _complete_with_tools(client, model, messages, self, provider=name),
+                        timeout=PROVIDER_TIMEOUT,
+                    )
                 self.turns.append([user_msg] + new_msgs)
                 self.turns = self.turns[-MAX_HISTORY_TURNS:]
                 self.conversation_summary = update_conversation_summary(self.conversation_summary, self.turns)
                 logger.info("PROVIDER_END id=%s provider=%s elapsed_ms=%.1f status=ok", _trace_id(self), name, (time.perf_counter() - provider_started) * 1000)
                 return reply
             except Exception as e:
+                if isinstance(e, (asyncio.TimeoutError, TimeoutError)):
+                    e = RuntimeError(f"proveedor sin respuesta en {PROVIDER_TIMEOUT:.0f} s")
                 logger.error(f"Proveedor '{name}' falló: {e}")
                 logger.info("PROVIDER_END id=%s provider=%s elapsed_ms=%.1f status=error", _trace_id(self), name, (time.perf_counter() - provider_started) * 1000)
                 errors.append(f"{name}: {e}")
             finally:
-                await client.close()
+                await _close_client(client)
 
         # El turno no ocurrió: no consumirlo, para no invalidar una propuesta pendiente
         self.turn_no, self.last_user_text = prev_turn_no, prev_user_text
@@ -936,6 +963,15 @@ class BrainSession:
         messages.append(user_msg)
 
         errors = []
+        # Si un proveedor ya entregó texto al usuario no se prueba el siguiente:
+        # repetiría en voz lo que ya se dijo. Lo emitido se guarda para poder
+        # devolverlo como respuesta si el proveedor se corta a mitad.
+        spoken_parts: List[str] = []
+
+        async def _delta(texto: str) -> None:
+            spoken_parts.append(texto)
+            await on_delta(texto)
+
         for name in self.brain.fallback_chain:
             built = _build_client(name)
             if not built:
@@ -945,22 +981,42 @@ class BrainSession:
             logger.info(f"Intentando proveedor (stream): {name} ({model})")
             provider_started = time.perf_counter()
             try:
+                # Tope por proveedor: la cadena debe avanzar siempre. Sin esto, un
+                # proveedor colgado fuera del stream (reintentos del SDK, cierre de
+                # conexión) detenía la cadena igual que el problema original.
                 if name == "anthropic":
-                    reply, new_msgs = await _complete_with_anthropic(client, model, messages, self)
-                    await on_delta(reply)
+                    reply, new_msgs = await asyncio.wait_for(
+                        _complete_with_anthropic(client, model, messages, self),
+                        timeout=PROVIDER_TIMEOUT,
+                    )
+                    await asyncio.wait_for(_delta(reply), timeout=PROVIDER_TIMEOUT)
                 else:
-                    reply, new_msgs = await _complete_with_tools(client, model, messages, self, on_delta=on_delta, provider=name)
+                    reply, new_msgs = await asyncio.wait_for(
+                        _complete_with_tools(client, model, messages, self, on_delta=_delta, provider=name),
+                        timeout=PROVIDER_TIMEOUT,
+                    )
                 self.turns.append([user_msg] + new_msgs)
                 self.turns = self.turns[-MAX_HISTORY_TURNS:]
                 self.conversation_summary = update_conversation_summary(self.conversation_summary, self.turns)
                 logger.info("PROVIDER_END id=%s provider=%s elapsed_ms=%.1f status=ok stream=true", _trace_id(self), name, (time.perf_counter() - provider_started) * 1000)
                 return reply
             except Exception as e:
+                if isinstance(e, (asyncio.TimeoutError, TimeoutError)):
+                    e = RuntimeError(f"proveedor sin respuesta en {PROVIDER_TIMEOUT:.0f} s")
                 logger.error(f"Proveedor '{name}' falló (stream): {e}")
                 logger.info("PROVIDER_END id=%s provider=%s elapsed_ms=%.1f status=error", _trace_id(self), name, (time.perf_counter() - provider_started) * 1000)
                 errors.append(f"{name}: {e}")
+                if spoken_parts:
+                    # Ya se oyó parte de la respuesta: probar otro proveedor la
+                    # repetiría. Se cierra el turno con lo emitido.
+                    partial = "".join(spoken_parts).strip()
+                    logger.warning("Se devuelve respuesta parcial (%d caracteres) tras fallar %s", len(partial), name)
+                    self.turns.append([user_msg, {"role": "assistant", "content": partial}])
+                    self.turns = self.turns[-MAX_HISTORY_TURNS:]
+                    self.conversation_summary = update_conversation_summary(self.conversation_summary, self.turns)
+                    return partial
             finally:
-                await client.close()
+                await _close_client(client)
 
         self.turn_no, self.last_user_text = prev_turn_no, prev_user_text
         raise RuntimeError("Todos los proveedores fallaron -> " + " | ".join(errors))
