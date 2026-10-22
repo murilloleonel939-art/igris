@@ -15,9 +15,9 @@ logger = logging.getLogger(__name__)
 SETTINGS_FILE = Path(__file__).parent / "settings.json"
 
 # Proveedores válidos (deben coincidir con PROVIDERS de core/brain.py)
-AVAILABLE_PROVIDERS = ["nemotron", "openai", "anthropic", "local"]
+AVAILABLE_PROVIDERS = ["nemotron", "openrouter", "openai", "anthropic", "local"]
 
-DEFAULT_CHAIN = ["nemotron", "openai", "anthropic", "local"]
+DEFAULT_CHAIN = ["nemotron", "openrouter", "openai", "anthropic", "local"]
 
 
 def _split_chain(value) -> list:
@@ -48,6 +48,7 @@ def get_default_config():
         ) or list(DEFAULT_CHAIN),
         "models": {
             "nemotron": os.getenv("IGRIS_NEMOTRON_MODEL", "nvidia/nemotron-3-ultra-550b-a55b:free"),
+            "openrouter": os.getenv("IGRIS_OPENROUTER_MODEL", "openrouter/free"),
             "openai": os.getenv("IGRIS_OPENAI_MODEL", "gpt-4o-mini"),
             "anthropic": os.getenv("IGRIS_ANTHROPIC_MODEL", "claude-sonnet-5-5"),
             "local": os.getenv("IGRIS_LOCAL_MODEL", "llama3.1"),
@@ -155,7 +156,8 @@ def update_fallback_chain(providers: list):
 def get_api_key(provider: str) -> str:
     """Get API key for a provider from environment variables"""
     env_var_map = {
-        "nemotron": "NEMOTRON_API_KEY",
+        "nemotron": "OPENROUTER_API_KEY",
+        "openrouter": "OPENROUTER_API_KEY",
         "openai": "OPENAI_API_KEY",
         "anthropic": "ANTHROPIC_API_KEY",
         "local": "IGRIS_LOCAL_URL",
@@ -171,13 +173,15 @@ def get_api_base(provider: str) -> str:
     """Get API base URL for a provider"""
     env_var_map = {
         "nemotron": "NEMOTRON_API_BASE",
+        "openrouter": "OPENROUTER_API_BASE",
         "openai": "OPENAI_API_BASE",
         "anthropic": "ANTHROPIC_API_BASE",
         "local": "IGRIS_LOCAL_URL",
     }
 
     default_bases = {
-        "nemotron": "https://integrate.api.nvidia.com/v1",
+        "nemotron": "https://openrouter.ai/api/v1",
+        "openrouter": "https://openrouter.ai/api/v1",
         "openai": "https://api.pateway.ai/v1",
         "anthropic": "https://api.anthropic.com/v1",
         "local": "http://localhost:11434",

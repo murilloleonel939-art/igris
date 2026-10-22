@@ -153,13 +153,36 @@ TOOLS_PROMPT = (
 
 # Todos los proveedores se consumen con el SDK de OpenAI (APIs compatibles).
 PROVIDERS = {
+    # Nemotron se sirve por OpenRouter, no por la API de NVIDIA: el endpoint
+    # integrate.api.nvidia.com devolvía 404 y el turno caía siempre al respaldo.
     "nemotron": {
-        "key_env": "NEMOTRON_API_KEY",
+        "key_env": "OPENROUTER_API_KEY",
         "base_env": "NEMOTRON_API_BASE",
-        "base_default": "https://integrate.api.nvidia.com/v1",
+        "base_default": "https://openrouter.ai/api/v1",
         "model_env": "IGRIS_NEMOTRON_MODEL",
         "model_default": "nvidia/nemotron-3-ultra-550b-a55b:free",
+        "model_vision": False,
+        # Nemotron razona: por debajo de ~4000 tokens gasta el presupuesto
+        # pensando y devuelve content vacío.
+        "max_tokens": 8192,
         "timeout": 60,
+    },
+    "openrouter": {
+        "key_env": "OPENROUTER_API_KEY",
+        "base_env": "OPENROUTER_API_BASE",
+        "base_default": "https://openrouter.ai/api/v1",
+        "model_env": "IGRIS_OPENROUTER_MODEL",
+        # "openrouter/free" deja que OpenRouter elija el modelo gratuito
+        # disponible; el log registra cuál respondió realmente.
+        "model_default": "openrouter/free",
+        "model_vision": True,
+        "max_tokens": 8192,
+        "timeout": 60,
+        "headers": {
+            # OpenRouter usa estas cabeceras para atribuir el tráfico.
+            "HTTP-Referer": "https://igris.zottagroup.com",
+            "X-Title": "IGRIS",
+        },
     },
     "openai": {
         "key_env": "OPENAI_API_KEY",
@@ -210,6 +233,9 @@ def _build_client(name: str):
 
     base = os.environ.get(spec.get("base_env", ""), "") or spec["base_default"]
 
+    # Cabeceras extra para OpenRouter. Si están vacías, el SDK no las envía.
+    extra_headers = spec.get("headers") or {}
+
     # Claude solo se sirve por el protocolo nativo de Anthropic (/v1/messages):
     # enviarlo por /v1/chat/completions devuelve 'protocol_mismatch'.
     if name == "anthropic":
@@ -222,7 +248,28 @@ def _build_client(name: str):
             base = base[: -len("/v1")]
         return AsyncAnthropic(api_key=api_key, base_url=base, timeout=spec["timeout"]), model
 
-    return AsyncOpenAI(api_key=api_key, base_url=base, timeout=spec["timeout"]), model
+    return AsyncOpenAI(
+        api_key=api_key,
+        base_url=base,
+        timeout=spec["timeout"],
+        default_headers=extra_headers or None,
+    ), model
+
+
+def max_tokens_for(provider: str) -> int:
+    """Tokens máximos de respuesta del proveedor activo.
+
+    Nemotron razona: con el límite global (2048) gastaba todo el presupuesto
+    pensando y devolvía content vacío. Cada proveedor declara su propio cupo.
+    """
+    spec = PROVIDERS.get(provider) or {}
+    return int(spec.get("max_tokens") or MAX_TOKENS)
+
+
+def supports_vision(provider: str) -> bool:
+    """Si el proveedor acepta bloques image_url en el mensaje."""
+    spec = PROVIDERS.get(provider) or {}
+    return bool(spec.get("model_vision", False))
 
 
 def _capabilities_of(session):
@@ -415,7 +462,7 @@ async def _stream_chat(client, kwargs: dict, on_delta) -> Tuple[str, list, Optio
 
 
 async def _complete_with_tools(
-    client, model: str, messages: List[dict], session=None, on_delta=None
+    client, model: str, messages: List[dict], session=None, on_delta=None, provider: str = ""
 ) -> Tuple[str, List[dict]]:
     """Llama al modelo y resuelve las llamadas a herramientas hasta obtener texto final.
 
@@ -437,7 +484,7 @@ async def _complete_with_tools(
             model=model,
             messages=work,
             temperature=0.7,
-            max_tokens=MAX_TOKENS,
+            max_tokens=max_tokens_for(provider),
         )
         if model == "gpt-6-luna" and REASONING_EFFORT in {"none", "low", "medium", "high", "xhigh", "max"}:
             # El SDK instalado no expone reasoning_effort como argumento formal;
@@ -797,7 +844,7 @@ class BrainSession:
                 if name == "anthropic":
                     reply, new_msgs = await _complete_with_anthropic(client, model, messages, self)
                 else:
-                    reply, new_msgs = await _complete_with_tools(client, model, messages, self)
+                    reply, new_msgs = await _complete_with_tools(client, model, messages, self, provider=name)
                 self.turns.append([user_msg] + new_msgs)
                 self.turns = self.turns[-MAX_HISTORY_TURNS:]
                 self.conversation_summary = update_conversation_summary(self.conversation_summary, self.turns)
@@ -860,7 +907,7 @@ class BrainSession:
                     reply, new_msgs = await _complete_with_anthropic(client, model, messages, self)
                     await on_delta(reply)
                 else:
-                    reply, new_msgs = await _complete_with_tools(client, model, messages, self, on_delta=on_delta)
+                    reply, new_msgs = await _complete_with_tools(client, model, messages, self, on_delta=on_delta, provider=name)
                 self.turns.append([user_msg] + new_msgs)
                 self.turns = self.turns[-MAX_HISTORY_TURNS:]
                 self.conversation_summary = update_conversation_summary(self.conversation_summary, self.turns)

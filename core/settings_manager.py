@@ -9,7 +9,7 @@ from core.database import GlobalSetting, SessionLocal
 SETTINGS_FILE = Path(__file__).parent / "settings.json"
 
 # Proveedores válidos (deben coincidir con core/config.py y PROVIDERS de core/brain.py)
-VALID_PROVIDERS = ("nemotron", "openai", "anthropic", "local")
+VALID_PROVIDERS = ("nemotron", "openrouter", "openai", "anthropic", "local")
 
 
 def _sanitize_ai(ai: dict) -> dict:
@@ -287,6 +287,7 @@ class SettingsManager:
                 "fallback_chain": chain,
                 "models": {
                     "nemotron": os.getenv("IGRIS_NEMOTRON_MODEL", "nvidia/nemotron-3-ultra-550b-a55b:free"),
+                    "openrouter": os.getenv("IGRIS_OPENROUTER_MODEL", "openrouter/free"),
                     "openai": "gpt-4o-mini",
                     "anthropic": "claude-sonnet-5-5",
                     "local": "llama3.1"

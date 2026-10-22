@@ -4,13 +4,14 @@
     "primary_provider": "nemotron",
     "fallback_chain": [
       "nemotron",
+      "openrouter",
       "openai",
       "anthropic",
       "local"
     ],
     "models": {
       "nemotron": "nvidia/nemotron-3-ultra-550b-a55b:free",
-      "groq": "llama-3.1-70b-versatile",
+      "openrouter": "openrouter/free",
       "openai": "gpt-4o-mini",
       "anthropic": "claude-sonnet-3-5",
       "local": "ollama"
