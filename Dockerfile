@@ -54,6 +54,18 @@ RUN pip install --no-cache-dir -r requirements.txt \
 RUN pip install --no-cache-dir "bcrypt==4.0.1"
 
 # --------------------------------------------------------------
+# Hornear modelo NeMo TitaNet en la imagen para evitar descarga en runtime
+# (~102 MB, 25 segundos de espera eliminados en el primer voice-chat)
+# --------------------------------------------------------------
+ENV HF_HOME=/app/.cache/huggingface
+RUN mkdir -p /app/.cache/huggingface && \
+    python -c "from huggingface_hub import snapshot_download; \
+    snapshot_download('nvidia/speakerverification_en_titanet_large', cache_dir='/app/.cache/huggingface')" && \
+    python -c "from nemo.collections.asr.models import EncDecSpeakerLabelModel; \
+    model = EncDecSpeakerLabelModel.from_pretrained('nvidia/speakerverification_en_titanet_large'); \
+    print(f'Modelo TitaNet precargado: {model.__class__.__name__}')"
+
+# --------------------------------------------------------------
 # Copiar el resto del código (respeta .dockerignore)
 # --------------------------------------------------------------
 COPY core ./core
@@ -68,6 +80,7 @@ EXPOSE 8000
 # Variables de entorno de tiempo de ejecución
 # --------------------------------------------------------------
 ENV PYTHONUNBUFFERED=1 \
+    HF_HOME=/app/.cache/huggingface \
     IGRIS_WHISPER_CPP_BINARY=/opt/whisper.cpp/build/bin/whisper-cli \
     IGRIS_WHISPER_CPP_MODEL=/app/models/ggml-medium-q5_0.bin
 
