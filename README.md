@@ -656,6 +656,30 @@ La verificación de voz funciona localmente con el modelo indicado en `IGRIS_VOI
 | `IGRIS_TTS_INSTRUCTIONS` | Instrucciones de estilo para la voz (en proveedores que lo soporten) | texto libre |
 | `IGRIS_PIPER_VOICE` | Voz del modelo Piper (cuando se usa Piper) | según modelo instalado |
 > Los valores aceptados por las variables `IGRIS_TTS_*` y `IGRIS_PIPER_VOICE` los define `core/tts.py`; revísalo antes de cambiarlos.
+
+#### Estabilidad de voz y fallback entre proveedores
+
+El backend no se cuelga ni rechaza una orden cuando un proveedor de IA falla. Estas protecciones están activas por defecto:
+
+- **TitaNet se carga una sola vez por proceso.** Un lock evita que dos turnos de voz simultáneos carguen el modelo dos veces, que era la causa de los picos de memoria y de los reinicios del contenedor.
+- **El modelo viene horneado en la imagen.** Se descarga durante el build y queda en `/app/.cache/huggingface`, de modo que el primer uso en producción ya no espera una descarga de HuggingFace.
+- **Cada intento tiene techo de tiempo.** Hay límite para abrir el stream, para recibir el primer fragmento, para un proveedor y para el turno completo. Ningún proveedor puede quedarse esperando indefinidamente.
+- **Los reintentos del SDK están desactivados.** Cuando un proveedor falla, IGRIS pasa al siguiente de la cadena en vez de esperar los reintentos internos de la librería.
+- **Los proveedores caídos entran en enfriamiento.** Un proveedor que falla se salta temporalmente y se reintenta solo al expirar el plazo. Cuando vuelve a responder recupera su lugar sin intervención.
+- **El usuario no ve el error mientras se busca proveedor.** El reintento es silencioso; solo se avisa cuando se agota la cadena entera o cuando el rechazo es realmente biométrico.
+
+Variables opcionales para ajustar esos límites:
+
+| Variable | Descripción | Por defecto |
+| --- | --- | --- |
+| `IGRIS_STREAM_FIRST_CHUNK_TIMEOUT` | Tiempo máximo para abrir el stream y recibir el primer fragmento | `15` segundos |
+| `IGRIS_STREAM_TOTAL_TIMEOUT` | Tiempo máximo de un stream completo | `120` segundos |
+| `IGRIS_PROVIDER_TIMEOUT` | Tiempo máximo por proveedor | `45` segundos |
+| `IGRIS_TURN_TIMEOUT` | Presupuesto total de un turno y su cadena de fallback | `60` segundos |
+| `IGRIS_PROVIDER_COOLDOWN` | Enfriamiento inicial tras un fallo | `60` segundos |
+| `IGRIS_PROVIDER_COOLDOWN_MAX` | Enfriamiento máximo para fallos repetidos | `600` segundos |
+| `IGRIS_PROVIDER_DEAD_COOLDOWN` | Enfriamiento para errores 401, 403 o 404 | `1800` segundos |
+
 ### WhatsApp Cloud API de Meta
 
 La integración usa la API oficial de Meta directamente para enviar mensajes de texto. Configura estas variables en el servicio backend de Coolify y reinicia o redepliega después de cambiarlas:
