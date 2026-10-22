@@ -1157,6 +1157,17 @@ async def _send_telegram(chat_id: int, text: str) -> None:
     await telegram_bot.send_message(chat_id=chat_id, text=text)
 
 
+async def _send_whatsapp_reminder(text: str) -> None:
+    """Envía un aviso de recordatorio por WhatsApp al número de Conexiones."""
+    from core.settings_manager import get_settings
+    from core.whatsapp import WhatsAppClient
+
+    phone = (get_settings().get_whatsapp_config().get("phone_number") or "").strip()
+    if not phone:
+        raise RuntimeError("No hay número de WhatsApp configurado en Conexiones")
+    await WhatsAppClient().send_text(phone, text)
+
+
 @app.on_event("startup")
 async def on_startup():
     """Inicia el planificador de recordatorios, ejecuta migraciones y configura el webhook de Telegram."""
@@ -1184,13 +1195,24 @@ async def on_startup():
     except Exception as e:
         logger.warning(f"Error en migración de WhatsApp: {e}")
     
-    # El planificador arranca siempre, aunque no haya webhook configurado
+    # El planificador arranca siempre: los recordatorios de WhatsApp no dependen de
+    # Telegram, y los de Telegram se quedarán esperando si no hay bot.
     if telegram_bot is not None:
         app.state.reminder_task = asyncio.create_task(
-            run_reminder_loop(_send_telegram, ALLOWED_TELEGRAM_IDS)
+            run_reminder_loop(
+                _send_telegram, ALLOWED_TELEGRAM_IDS, send_whatsapp=_send_whatsapp_reminder
+            )
         )
     else:
-        logger.warning("TELEGRAM_TOKEN no definido: los recordatorios NO se enviarán")
+        logger.warning(
+            "TELEGRAM_TOKEN no definido: los recordatorios de Telegram no se enviarán; "
+            "los de WhatsApp sí."
+        )
+        app.state.reminder_task = asyncio.create_task(
+            run_reminder_loop(
+                _send_telegram, ALLOWED_TELEGRAM_IDS, send_whatsapp=_send_whatsapp_reminder
+            )
+        )
 
     if not TELEGRAM_TOKEN or not TELEGRAM_WEBHOOK_URL:
         # No hacemos nada más si faltan datos; el usuario puede configurar el webhook manualmente.

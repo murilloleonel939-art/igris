@@ -25,7 +25,7 @@ from sqlalchemy import update
 from core import database
 from core.database import Reminder, TelegramLink, utcnow
 from core.tools._common import format_local
-from core.tools.reminders import REPEATS
+from core.tools.reminders import MONTHLY, REPEATS
 
 logger = logging.getLogger(__name__)
 
@@ -36,8 +36,28 @@ LATE_NOTICE = timedelta(minutes=10)  # a partir de aquí el aviso menciona el re
 
 
 # ----------------------------- lógica pura -----------------------------
+def _add_months(dt: datetime, months: int) -> datetime:
+    """Suma meses a una fecha; si el día no existe en el mes destino, usa el último."""
+    total = dt.month - 1 + months
+    year = dt.year + total // 12
+    month = total % 12 + 1
+    # datetime no acepta día 31 en un mes de 30: se recorta al último válido.
+    day = dt.day
+    while day > 28:
+        try:
+            return dt.replace(year=year, month=month, day=day)
+        except ValueError:
+            day -= 1
+    return dt.replace(year=year, month=month, day=day)
+
+
 def next_due(old_due: datetime, repeat: str, now: datetime) -> datetime:
     """Siguiente ocurrencia estrictamente posterior a 'now' (salta las perdidas)."""
+    if repeat == MONTHLY:
+        candidate = _add_months(old_due, 1)
+        while candidate <= now:
+            candidate = _add_months(candidate, 1)
+        return candidate
     step = REPEATS[repeat]
     n = (now - old_due) // step + 1
     return old_due + step * max(n, 1)
@@ -69,7 +89,13 @@ def _claim_due(now: datetime) -> list:
         #   - su usuario tiene un chat vinculado, o
         #   - no tiene usuario (fila antigua, de antes de los permisos): entonces
         #     se avisa a los chats autorizados de la instalación, como siempre.
-        entregable = Reminder.chat_id.isnot(None) | Reminder.user_id.is_(None)
+        # Los de WhatsApp no dependen de Telegram: el número sale de Conexiones,
+        # así que son entregables aunque el usuario no haya vinculado nada.
+        entregable = (
+            Reminder.chat_id.isnot(None)
+            | Reminder.user_id.is_(None)
+            | (Reminder.channel == "whatsapp")
+        )
         if linked_ids:
             entregable = entregable | Reminder.user_id.in_(linked_ids)
 
@@ -82,7 +108,7 @@ def _claim_due(now: datetime) -> list:
         )
         for r in rows:
             old_due, repeat = r.due_at, r.repeat
-            if repeat in REPEATS:
+            if repeat in REPEATS or repeat == MONTHLY:
                 new_due = next_due(old_due, repeat, now)
                 values = {"due_at": new_due}
             else:
@@ -97,7 +123,7 @@ def _claim_due(now: datetime) -> list:
             if res.rowcount == 1:  # solo si ganamos la reclamación
                 claims.append({
                     "id": r.id, "text": r.text, "chat_id": r.chat_id,
-                    "user_id": r.user_id,
+                    "user_id": r.user_id, "channel": r.channel or "telegram",
                     "old_due": old_due, "new_due": new_due, "attempts": r.attempts or 0,
                 })
     return claims
@@ -143,6 +169,22 @@ def _release(claim: dict) -> None:
 
 # ----------------------------- envío y ciclo -----------------------------
 SendFn = Callable[[int, str], Awaitable[None]]
+WhatsAppFn = Callable[[str], Awaitable[None]]
+
+
+async def _configured_whatsapp_destination() -> str:
+    """Número de WhatsApp guardado en Conexiones (sin '+'), o '' si no hay."""
+    from core.settings_manager import get_settings
+
+    def _read() -> str:
+        phone = (get_settings().get_whatsapp_config().get("phone_number") or "").strip()
+        return phone.lstrip("+").strip()
+
+    try:
+        return await asyncio.to_thread(_read)
+    except Exception as e:
+        logger.warning("No se pudo leer el número de WhatsApp configurado: %s", e)
+        return ""
 
 
 async def _deliver(send: SendFn, claim: dict, targets: list, message: str) -> bool:
@@ -159,13 +201,48 @@ async def _deliver(send: SendFn, claim: dict, targets: list, message: str) -> bo
     return delivered > 0
 
 
-async def process_due(send: SendFn, default_chat_ids: Iterable[int], now: Optional[datetime] = None) -> int:
+async def process_due(
+    send: SendFn,
+    default_chat_ids: Iterable[int],
+    now: Optional[datetime] = None,
+    send_whatsapp: Optional[WhatsAppFn] = None,
+) -> int:
     """Un ciclo: reclama lo vencido y lo envía. Devuelve cuántos avisos se enviaron."""
     now = now or utcnow()
     claims = await asyncio.to_thread(_claim_due, now)
     linked = await asyncio.to_thread(_linked_chats) if claims else {}
+    whatsapp_to = ""
+    if claims and any(c.get("channel") == "whatsapp" for c in claims):
+        whatsapp_to = await _configured_whatsapp_destination()
     sent = 0
     for claim in claims:
+        message = build_message(claim["text"], claim["old_due"], now)
+
+        if claim.get("channel") == "whatsapp":
+            if send_whatsapp is None or not whatsapp_to:
+                # Sin canal de WhatsApp disponible (o sin número en Conexiones) el
+                # aviso se queda pendiente y se reintenta: no se pierde.
+                if claim["attempts"] % 20 == 0:
+                    logger.info(
+                        f"Recordatorio {claim['id']} espera: WhatsApp sin número configurado"
+                    )
+                await asyncio.to_thread(_release, claim)
+                continue
+            try:
+                await asyncio.wait_for(send_whatsapp(message), timeout=SEND_TIMEOUT)
+                await asyncio.to_thread(_confirm, claim)
+                sent += 1
+                logger.info(f"Recordatorio {claim['id']} enviado por WhatsApp")
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                await asyncio.to_thread(_release, claim)
+                logger.warning(
+                    f"Recordatorio {claim['id']} no salió por WhatsApp ({type(e).__name__}); "
+                    "se reintentará"
+                )
+            continue
+
         targets = _targets_for(claim, default_chat_ids, linked)
         if not targets:
             # Recordatorio de un usuario que aún no ha vinculado su Telegram. NO se
@@ -178,7 +255,6 @@ async def process_due(send: SendFn, default_chat_ids: Iterable[int], now: Option
             await asyncio.to_thread(_release, claim)
             continue
 
-        message = build_message(claim["text"], claim["old_due"], now)
         if await _deliver(send, claim, targets, message):
             await asyncio.to_thread(_confirm, claim)
             sent += 1
@@ -205,12 +281,17 @@ def _targets_for(claim: dict, default_chat_ids: Iterable[int], linked: dict) -> 
     return sorted(default_chat_ids)
 
 
-async def run_reminder_loop(send: SendFn, default_chat_ids: Iterable[int], poll: float = POLL_SECONDS) -> None:
+async def run_reminder_loop(
+    send: SendFn,
+    default_chat_ids: Iterable[int],
+    poll: float = POLL_SECONDS,
+    send_whatsapp: Optional[WhatsAppFn] = None,
+) -> None:
     """Bucle infinito del planificador (se lanza con asyncio.create_task en el startup)."""
     logger.info(f"Planificador de recordatorios iniciado (cada {poll:g} s)")
     while True:
         try:
-            await process_due(send, default_chat_ids)
+            await process_due(send, default_chat_ids, send_whatsapp=send_whatsapp)
         except asyncio.CancelledError:
             logger.info("Planificador de recordatorios detenido")
             raise

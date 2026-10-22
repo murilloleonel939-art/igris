@@ -310,7 +310,7 @@ Igris usa *tool calling*: el modelo decide cuándo llamar a una herramienta. Las
 | `list_emails`, `read_email` | Lee la bandeja de Gmail | "¿Tengo correos nuevos?" |
 | `list_events` | Consulta el calendario | "¿Qué tengo mañana?" |
 | `propose_event`, `confirm_event` | Crea eventos con confirmación (ver abajo) | "Agéndame una reunión con Ana mañana a las 3" |
-| `create_reminder` | Crea un recordatorio con aviso por Telegram | "Recuérdame mañana a las 8 llamar al banco" |
+| `create_reminder` | Crea un recordatorio con aviso por Telegram o WhatsApp | "Recuérdame mañana a las 8 llamar al banco" |
 | `list_reminders` | Lista los recordatorios pendientes | "¿Qué recordatorios tengo?" |
 | `delete_reminder` | Cancela UN recordatorio por id | "Borra el recordatorio del banco" |
 | `add_note` | Guarda una nota | "Anota que la clave del wifi de la oficina es X" |
@@ -342,7 +342,9 @@ La confirmación se hace cumplir **en el servidor**, no solo con el prompt:
   - Si lo creaste desde la **web**, llega a todos los IDs de `ALLOWED_TELEGRAM_IDS`.
   - No hay duplicados: cada recordatorio se reclama con una actualización atómica antes de enviarse. Si el envío falla, vuelve a pendiente y se reintenta.
   - Si el servidor estuvo caído, los vencidos se envían al arrancar con la nota "con retraso" (si pasaron más de 10 minutos).
-  - Requiere `TELEGRAM_TOKEN`; sin él los recordatorios se guardan pero **no se envían** (se avisa en el log al arrancar).
+  - Los avisos salen por el canal con el que se creó el recordatorio: **Telegram** (al chat vinculado) o **WhatsApp** (al número configurado en Conexiones). Los de WhatsApp no dependen de Telegram: funcionan aunque `TELEGRAM_TOKEN` no esté definido.
+  - Repetición: `diaria`, `semanal` o `mensual`. La mensual salta de mes en mes conservando el día (si el día no existe en el mes destino, usa el último: 31 de enero → 28 de febrero).
+  - Si el canal de WhatsApp no tiene número configurado en Conexiones, el aviso se queda pendiente y se reintenta; no se pierde.
 - **Notas.** Texto libre (hasta 1000 caracteres). La búsqueda ignora mayúsculas y tildes y ordena por coincidencias.
 - **Seguridad del borrado.** No existe el borrado masivo: se borra un solo elemento por id. El servidor exige que tu último mensaje real pida borrar ("borra…", "elimina…", "quita…") o sea un "sí" claro, y permite un borrado por mensaje. Los recordatorios cancelados quedan en la tabla con estado `cancelado`; las **notas se borran de verdad** y no se pueden recuperar.
 - **Contenido de terceros.** Lo guardado en notas y recordatorios, y el contenido de correos y eventos, se trata como información, nunca como instrucciones.

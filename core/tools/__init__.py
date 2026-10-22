@@ -344,9 +344,11 @@ TOOLS = [
         "function": {
             "name": "create_reminder",
             "description": (
-                "Crea un recordatorio que Igris enviará como aviso por Telegram a la hora indicada. "
-                "Úsala cuando el usuario pida que le recuerdes algo (por ejemplo 'recuérdame mañana "
-                "a las 8 llamar al banco'). Calcula la fecha con la fecha y hora actuales de Colombia. "
+                "Crea un recordatorio que Igris enviará como aviso a la hora indicada, por Telegram "
+                "o por WhatsApp. Úsala cuando el usuario pida que le recuerdes algo (por ejemplo "
+                "'recuérdame mañana a las 8 llamar al banco'). Si pide el aviso por WhatsApp, usa "
+                "channel='whatsapp': llega al número configurado en Conexiones y no hace falta "
+                "vincular Telegram. Calcula la fecha con la fecha y hora actuales de Colombia. "
                 "Si falta la hora, pregúntala. No es para eventos del calendario (eso es propose_event)."
             ),
             "parameters": {
@@ -362,8 +364,19 @@ TOOLS = [
                     },
                     "repeat": {
                         "type": "string",
-                        "enum": ["ninguna", "diaria", "semanal"],
-                        "description": "Repetición opcional. Por defecto 'ninguna' (una sola vez).",
+                        "enum": ["ninguna", "diaria", "semanal", "mensual"],
+                        "description": (
+                            "Repetición opcional. Por defecto 'ninguna' (una sola vez). 'mensual' "
+                            "repite el mismo día de cada mes."
+                        ),
+                    },
+                    "channel": {
+                        "type": "string",
+                        "enum": ["telegram", "whatsapp"],
+                        "description": (
+                            "Canal del aviso. Por defecto 'telegram'. Usa 'whatsapp' si el usuario "
+                            "lo pide por ahí o no tiene Telegram vinculado."
+                        ),
                     },
                 },
                 "required": ["text", "when"],

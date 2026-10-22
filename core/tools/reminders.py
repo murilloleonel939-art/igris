@@ -3,8 +3,9 @@
 Cada recordatorio pertenece a UN usuario (reminders.user_id) y todas las consultas
 filtran por él: nadie ve ni cancela los recordatorios de otro.
 
-Los avisos los envía el planificador (core/scheduler.py) por Telegram, al chat que
-el usuario tenga enlazado.
+Los avisos los envía el planificador (core/scheduler.py) por el canal elegido:
+Telegram (al chat enlazado del usuario) o WhatsApp (al número configurado en
+Conexiones).
 Fechas: el usuario habla en hora de Colombia; en la base de datos se guarda UTC.
 """
 
@@ -25,6 +26,10 @@ logger = logging.getLogger(__name__)
 MAX_PENDING = 100   # tope de recordatorios pendientes
 MAX_LISTED = 10     # cuántos se listan (para decirlos en voz alta)
 REPEATS = {"diaria": timedelta(days=1), "semanal": timedelta(days=7)}
+# "mensual" no es un timedelta fijo (los meses tienen distinta duración): el
+# planificador lo resuelve aparte, saltando de mes en mes.
+MONTHLY = "mensual"
+CHANNELS = ("telegram", "whatsapp")
 _NO_REPEAT = {"", "ninguna", "ninguno", "no", "una vez", "none", "null"}
 _TIME_FORMATS = ("%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M", "%Y-%m-%dT%H:%M:%S")
 
@@ -39,17 +44,37 @@ def _parse_when(when) -> Optional[datetime]:
 
 
 def _normalize_repeat(repeat) -> tuple:
-    """(valor, error). valor es None, 'diaria' o 'semanal'."""
+    """(valor, error). valor es None, 'diaria', 'semanal' o 'mensual'."""
     r = (str(repeat).strip().lower() if repeat is not None else "")
     if r in _NO_REPEAT:
         return None, None
-    if r in REPEATS:
+    if r in REPEATS or r == MONTHLY:
         return r, None
-    return None, "La repetición solo puede ser 'diaria' o 'semanal'"
+    return None, "La repetición solo puede ser 'diaria', 'semanal' o 'mensual'"
 
 
-async def create_reminder(text: str, when: str, repeat: Optional[str] = None, _session=None) -> dict:
-    """Crea un recordatorio. 'when' en hora de Colombia, formato AAAA-MM-DDTHH:MM."""
+def _normalize_channel(channel) -> tuple:
+    """(valor, error). valor es 'telegram' o 'whatsapp'."""
+    c = (str(channel).strip().lower() if channel is not None else "") or "telegram"
+    aliases = {"tg": "telegram", "wa": "whatsapp", "wsp": "whatsapp", "whats": "whatsapp"}
+    c = aliases.get(c, c)
+    if c not in CHANNELS:
+        return None, "El canal solo puede ser 'telegram' o 'whatsapp'"
+    return c, None
+
+
+async def create_reminder(
+    text: str,
+    when: str,
+    repeat: Optional[str] = None,
+    channel: Optional[str] = None,
+    _session=None,
+) -> dict:
+    """Crea un recordatorio. 'when' en hora de Colombia, formato AAAA-MM-DDTHH:MM.
+
+    channel: 'telegram' (por defecto) o 'whatsapp'. Con 'whatsapp' el aviso sale
+    al número configurado en Conexiones, sin necesidad de vincular Telegram.
+    """
     blocked = require_user(_session)
     if blocked:
         return blocked
@@ -69,18 +94,23 @@ async def create_reminder(text: str, when: str, repeat: Optional[str] = None, _s
     if err:
         return {"error": err}
 
+    canal, err = _normalize_channel(channel)
+    if err:
+        return {"error": err}
+
     due_utc = local_to_utc(local)
 
-    # Destino del aviso:
+    # Destino del aviso (solo Telegram lo necesita):
     #   - Si la orden llega desde Telegram, a ese mismo chat.
     #   - Si llega desde la web, al chat que el usuario tenga enlazado.
     #   - Si no tiene ninguno, chat_id queda NULL y el planificador avisa a los
     #     chats autorizados de la instalación (comportamiento anterior).
-    chat_id = getattr(_session, "telegram_id", None)
+    # WhatsApp no usa chat_id: el planificador resuelve el número desde Conexiones.
+    chat_id = getattr(_session, "telegram_id", None) if canal == "telegram" else None
 
     def _save():
         with database.SessionLocal() as db:
-            if chat_id is None:
+            if canal == "telegram" and chat_id is None:
                 link = db.query(TelegramLink).filter(TelegramLink.user_id == uid).first()
                 if link and link.chat_id:
                     return None, link.chat_id
@@ -94,7 +124,7 @@ async def create_reminder(text: str, when: str, repeat: Optional[str] = None, _s
                 return "lleno", chat_id
 
             r = Reminder(text=text, due_at=due_utc, status="pendiente",
-                         channel="telegram", chat_id=chat_id, repeat=rep, user_id=uid)
+                         channel=canal, chat_id=chat_id, repeat=rep, user_id=uid)
             db.add(r)
             db.commit()
             return r.id, chat_id
@@ -103,18 +133,24 @@ async def create_reminder(text: str, when: str, repeat: Optional[str] = None, _s
     if new_id == "lleno":
         return {"error": f"Ya hay {MAX_PENDING} recordatorios pendientes; hay que cancelar alguno"}
 
-    logger.info(f"Recordatorio {new_id} creado (usuario {uid}, repite={rep}, aviso={'propio' if chat_id else 'global'})")
+    logger.info(
+        f"Recordatorio {new_id} creado (usuario {uid}, canal={canal}, repite={rep}, "
+        f"aviso={'propio' if chat_id else 'global' if canal == 'telegram' else 'conexiones'})"
+    )
+    if canal == "whatsapp":
+        destino = "por WhatsApp al número configurado en Conexiones."
+    elif chat_id:
+        destino = "por Telegram."
+    else:
+        destino = "por Telegram, pero el usuario todavía no ha vinculado su Telegram."
     return {
         "estado": "creado",
         "id": new_id,
         "texto": text,
         "aviso_el": format_local(due_utc),
         "repite": rep,
-        "canal": (
-            "El aviso llegará por Telegram."
-            if chat_id
-            else "El aviso llegará por Telegram, pero el usuario todavía no ha vinculado su Telegram."
-        ),
+        "canal": canal,
+        "detalle_canal": f"El aviso llegará {destino}",
     }
 
 
