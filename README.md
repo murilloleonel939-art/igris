@@ -312,6 +312,7 @@ Igris usa *tool calling*: el modelo decide cuándo llamar a una herramienta. Las
 | `propose_event`, `confirm_event` | Crea eventos con confirmación (ver abajo) | "Agéndame una reunión con Ana mañana a las 3" |
 | `create_reminder` | Crea un recordatorio con aviso por Telegram o WhatsApp | "Recuérdame mañana a las 8 llamar al banco" |
 | `list_reminders` | Lista los recordatorios pendientes | "¿Qué recordatorios tengo?" |
+| `update_reminder` | Cambia texto, fecha, repetición o canal de un recordatorio | "Pásame el del banco a WhatsApp" |
 | `delete_reminder` | Cancela UN recordatorio por id | "Borra el recordatorio del banco" |
 | `add_note` | Guarda una nota | "Anota que la clave del wifi de la oficina es X" |
 | `list_notes`, `search_notes` | Lista o busca notas (sin importar tildes) | "¿Qué anoté sobre el wifi?" |

@@ -203,6 +203,7 @@ TOOL_FEATURES: dict[str, str] = {
     "search_notes": "notes",
     "delete_note": "notes",
     "create_reminder": "reminders",
+    "update_reminder": "reminders",
     "list_reminders": "reminders",
     "delete_reminder": "reminders",
     "list_tuya_devices": "tuya",

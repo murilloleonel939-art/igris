@@ -168,7 +168,7 @@ async def list_reminders(_session=None) -> dict:
             )
             total = q.count()
             rows = q.order_by(Reminder.due_at).limit(MAX_LISTED).all()
-            return total, [(r.id, r.text, r.due_at, r.repeat) for r in rows]
+            return total, [(r.id, r.text, r.due_at, r.repeat, r.channel) for r in rows]
 
     total, rows = await asyncio.to_thread(_load)
     if not total:
@@ -177,10 +177,118 @@ async def list_reminders(_session=None) -> dict:
         "total": total,
         "mostrados": len(rows),
         "recordatorios": [
-            {"id": rid, "texto": text, "cuando": format_local(due), "repite": rep}
-            for rid, text, due, rep in rows
+            {
+                "id": rid, "texto": text, "cuando": format_local(due),
+                "repite": rep, "canal": canal or "telegram",
+            }
+            for rid, text, due, rep, canal in rows
         ],
         "aviso": THIRD_PARTY_NOTICE,
+    }
+
+
+async def update_reminder(
+    id: int,
+    text: Optional[str] = None,
+    when: Optional[str] = None,
+    repeat: Optional[str] = None,
+    channel: Optional[str] = None,
+    _session=None,
+) -> dict:
+    """Cambia texto, fecha, repetición o canal de UN recordatorio pendiente.
+
+    Solo se modifican los campos que llegan; los demás se conservan. Cambia el
+    canal a 'whatsapp' para que un recordatorio creado para Telegram salga por
+    WhatsApp sin tener que borrarlo y volver a crearlo.
+    """
+    blocked = require_user(_session)
+    if blocked:
+        return blocked
+    uid = session_user_id(_session)
+    try:
+        rid = int(id)
+    except (TypeError, ValueError):
+        return {"error": "El id del recordatorio debe ser un número"}
+
+    changes: dict = {}
+
+    if text is not None:
+        new_text = (text or "").strip()[:200]
+        if not new_text:
+            return {"error": "El texto del recordatorio no puede quedar vacío"}
+        changes["text"] = new_text
+
+    due_utc = None
+    if when is not None:
+        local = _parse_when(when)
+        if local is None:
+            return {"error": "Fecha u hora inválida. Formato esperado: AAAA-MM-DDTHH:MM (hora de Colombia)"}
+        if local < datetime.now(TZ) - timedelta(minutes=1):
+            return {"error": "Esa fecha y hora ya pasaron"}
+        due_utc = local_to_utc(local)
+        changes["due_at"] = due_utc
+
+    if repeat is not None:
+        rep, err = _normalize_repeat(repeat)
+        if err:
+            return {"error": err}
+        changes["repeat"] = rep
+
+    canal = None
+    if channel is not None:
+        canal, err = _normalize_channel(channel)
+        if err:
+            return {"error": err}
+        changes["channel"] = canal
+
+    if not changes:
+        return {"error": "No indicaste qué cambiar: texto, fecha, repetición o canal"}
+
+    # Al pasar a Telegram hay que resolver el chat del usuario, igual que al crear.
+    resolve_chat = canal == "telegram"
+
+    def _apply():
+        with database.SessionLocal() as db:
+            # El filtro por user_id impide tocar el recordatorio de otro.
+            r = (
+                db.query(Reminder)
+                .filter(Reminder.id == rid, Reminder.user_id == uid, Reminder.status == "pendiente")
+                .first()
+            )
+            if r is None:
+                return None
+            for key, value in changes.items():
+                setattr(r, key, value)
+            if canal == "whatsapp":
+                # El número sale de Conexiones; un chat_id de Telegram sobra.
+                r.chat_id = None
+            elif resolve_chat and not r.chat_id:
+                link = db.query(TelegramLink).filter(TelegramLink.user_id == uid).first()
+                if link and link.chat_id:
+                    r.chat_id = link.chat_id
+            # Cambiar la fecha invalida los intentos fallidos anteriores.
+            if due_utc is not None:
+                r.attempts = 0
+                r.sent_at = None
+            db.commit()
+            return r.text, r.due_at, r.repeat, r.channel
+
+    res = await asyncio.to_thread(_apply)
+    if res is None:
+        return {"error": "No hay un recordatorio pendiente con ese número. Revisa la lista con list_reminders"}
+
+    text_, due_, rep_, canal_ = res
+    logger.info(
+        f"Recordatorio {rid} actualizado (usuario {uid}, campos={sorted(changes)})"
+    )
+    return {
+        "estado": "actualizado",
+        "id": rid,
+        "texto": text_,
+        "aviso_el": format_local(due_),
+        "repite": rep_,
+        "canal": canal_ or "telegram",
+        "campos_cambiados": sorted(changes),
     }
 
 

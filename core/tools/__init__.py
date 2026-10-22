@@ -386,6 +386,51 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "update_reminder",
+            "description": (
+                "Cambia el texto, la fecha, la repetición o el canal de un recordatorio que ya "
+                "existe, sin borrarlo. Úsala cuando el usuario quiera mover un recordatorio de "
+                "hora, cambiar lo que dice, o recibirlo por WhatsApp en lugar de Telegram."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "description": "Id del recordatorio, tal como lo devuelve list_reminders.",
+                    },
+                    "text": {
+                        "type": "string",
+                        "description": "Nuevo texto del recordatorio. Omitir para no cambiarlo.",
+                    },
+                    "when": {
+                        "type": "string",
+                        "description": (
+                            "Nueva fecha y hora de aviso, en hora de Colombia, formato "
+                            "AAAA-MM-DDTHH:MM. Omitir para no cambiarla."
+                        ),
+                    },
+                    "repeat": {
+                        "type": "string",
+                        "enum": ["ninguna", "diaria", "semanal", "mensual"],
+                        "description": "Nueva repetición. Omitir para no cambiarla.",
+                    },
+                    "channel": {
+                        "type": "string",
+                        "enum": ["telegram", "whatsapp"],
+                        "description": (
+                            "Nuevo canal del aviso. Usa 'whatsapp' para que llegue al número "
+                            "configurado en Conexiones. Omitir para no cambiarlo."
+                        ),
+                    },
+                },
+                "required": ["id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "list_reminders",
             "description": (
                 "Lista los recordatorios pendientes con su id y cuándo avisarán. Úsala cuando "
@@ -788,6 +833,7 @@ _HANDLERS = {
     "propose_reschedule": calendar_write.propose_reschedule,
     "confirm_reschedule": calendar_write.confirm_reschedule,
     "create_reminder": reminders.create_reminder,
+    "update_reminder": reminders.update_reminder,
     "list_reminders": reminders.list_reminders,
     "delete_reminder": reminders.delete_reminder,
     "add_note": notes.add_note,
@@ -837,7 +883,7 @@ _SESSION_TOOLS = {
     "propose_event", "confirm_event", "delete_event",
     "propose_reschedule", "confirm_reschedule",
     "propose_email", "confirm_email", "delete_email",
-    "create_reminder", "list_reminders", "delete_reminder",
+    "create_reminder", "update_reminder", "list_reminders", "delete_reminder",
     "add_note", "list_notes", "search_notes", "delete_note",
     "list_emails", "read_email", "list_events",
     "list_youtube_playlists", "create_youtube_playlist", "add_video_to_youtube_playlist", "remove_video_from_youtube_playlist",
