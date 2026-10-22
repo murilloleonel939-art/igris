@@ -739,19 +739,13 @@ TOOLS = [
         "function": {
             "name": "send_whatsapp_message",
             "description": (
-                "Envía un mensaje de texto por WhatsApp. Úsala cuando el usuario pida enviar un mensaje "
-                "por WhatsApp a un contacto. El destinatario debe ser un número de teléfono válido."
+                "Envía un mensaje de texto por WhatsApp al número ya configurado en Conexiones. "
+                "Úsala cuando el usuario pida enviar un mensaje por WhatsApp. No pidas el número: "
+                "el destinatario lo resuelve el servidor."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "phone_number": {
-                        "type": "string",
-                        "description": (
-                            "Número de teléfono del destinatario en formato E.164 sin '+'. "
-                            "Ejemplo: 573504807732 para Colombia"
-                        ),
-                    },
                     "message": {
                         "type": "string",
                         "description": (
@@ -759,7 +753,7 @@ TOOLS = [
                         ),
                     },
                 },
-                "required": ["phone_number", "message"],
+                "required": ["message"],
             },
         },
     },
@@ -837,6 +831,7 @@ _SESSION_TOOLS = {
     "search_spotify_api", "list_spotify_playlists", "create_spotify_playlist", "add_tracks_to_spotify_playlist", "remove_tracks_from_spotify_playlist", "start_spotify_playback",
     "list_tuya_devices", "get_tuya_device_status", "control_tuya_device",
     "create_document",
+    "send_whatsapp_message",
 }
 
 
