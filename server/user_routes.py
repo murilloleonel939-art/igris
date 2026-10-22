@@ -133,6 +133,25 @@ USER_TOKEN_MINUTES = 12 * 60
 # Tope de texto para la voz (evita peticiones enormes al sintetizador)
 TTS_MAX_CHARS = 2000
 
+# TitaNet corre en CPU y ocupa el intérprete entero: Python no suelta el GIL
+# durante la inferencia. Sin tope, ocho personas hablando a la vez lanzan ocho
+# inferencias en paralelo, el bucle de eventos se queda sin turno y hasta
+# /health deja de responder dentro de su timeout de 5 s — con lo que Coolify
+# marca el contenedor como Unhealthy aunque esté trabajando.
+# Cada inferencia tarda ~0.2 s, así que con 2 en paralelo una cola de ocho
+# espera menos de un segundo.
+VOICE_CONCURRENCY = max(1, int(os.getenv("IGRIS_VOICE_CONCURRENCY", "2")))
+_voice_slots: asyncio.Semaphore | None = None
+
+
+def _voice_semaphore() -> asyncio.Semaphore:
+    """Crea el semáforo dentro del bucle de eventos que lo va a usar."""
+    global _voice_slots
+    if _voice_slots is None:
+        _voice_slots = asyncio.Semaphore(VOICE_CONCURRENCY)
+    return _voice_slots
+
+
 # Almacén de sesiones compartido con el resto del servidor. Se enlaza desde
 # main.py con bind_sessions(): así el chat de los usuarios usa exactamente el
 # mismo Brain y el mismo historial que el chat del administrador.
@@ -1184,7 +1203,8 @@ async def register_voice_profile(
     if len(samples) < 6:
         raise HTTPException(status_code=422, detail="Necesitas 6 muestras de voz válidas")
     try:
-        vector = await asyncio.to_thread(voice.average_embedding, samples, ".webm")
+        async with _voice_semaphore():
+            vector = await asyncio.to_thread(voice.average_embedding, samples, ".webm")
         encoded = voice.serialize(vector)
     except Exception as exc:
         logger.exception("No se pudo registrar la voz")
@@ -1253,7 +1273,8 @@ async def user_voice_chat(
     if profile is None or not profile.voice_print or not profile.is_authorized:
         raise HTTPException(status_code=403, detail="Registra tu perfil de voz antes de usar comandos por voz")
     try:
-        verified, score = await asyncio.to_thread(voice.verify, data, profile.voice_print, ".webm")
+        async with _voice_semaphore():
+            verified, score = await asyncio.to_thread(voice.verify, data, profile.voice_print, ".webm")
     except ValueError as exc:
         # Audio silencioso o sin voz: no es un fallo del servidor.
         logger.warning("Audio sin voz para usuario %s: %s", user.id, exc)
@@ -1441,7 +1462,8 @@ async def user_voice_ws(websocket: WebSocket) -> None:
 
         await websocket.send_json({"type": "state", "state": "processing"})
         try:
-            verified, score = await asyncio.to_thread(voice.verify, audio, voice_print, ".webm")
+            async with _voice_semaphore():
+                verified, score = await asyncio.to_thread(voice.verify, audio, voice_print, ".webm")
         except ValueError:
             logger.warning("Audio sin voz en WebSocket para usuario %s", user.id)
             await websocket.send_json({"type": "error", "reason": "no_audio", "message": "No se detectó voz en la grabación."})
