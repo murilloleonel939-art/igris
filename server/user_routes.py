@@ -1436,14 +1436,14 @@ async def user_voice_ws(websocket: WebSocket) -> None:
             verified, score = await asyncio.to_thread(voice.verify, audio, profile.voice_print, ".webm")
         except ValueError:
             logger.warning("Audio sin voz en WebSocket para usuario %s", user.id)
-            await websocket.send_json({"type": "error", "message": "No se detectó voz en la grabación."})
+            await websocket.send_json({"type": "error", "reason": "no_audio", "message": "No se detectó voz en la grabación."})
             return
         except Exception:
             logger.exception("Falló la verificación de voz por WebSocket")
             await websocket.send_json({"type": "error", "message": "No se pudo verificar la voz."})
             return
         if not verified:
-            await websocket.send_json({"type": "error", "message": f"Voz no reconocida (similitud {score:.2f})."})
+            await websocket.send_json({"type": "error", "reason": "voice", "message": f"Voz no reconocida (similitud {score:.2f})."})
             return
 
         try:
@@ -1534,11 +1534,17 @@ async def user_voice_ws(websocket: WebSocket) -> None:
         await websocket.send_json({"type": "tts_start", "mime_type": tts_mime})
         try:
             reply = await session.say_stream(text, on_delta)
-        except Exception:
+        except Exception as exc:
             logger.exception("Falló el chat de voz por WebSocket (stream)")
             queue.put_nowait(None)
             await speaker
-            await websocket.send_json({"type": "error", "message": "No se pudo procesar la orden."})
+            # El mensaje distingue la causa: antes todo acababa como "no se pudo
+            # procesar", y el frontend lo confundía con un fallo de voz.
+            await websocket.send_json({
+                "type": "error",
+                "reason": "model",
+                "message": f"Los proveedores de IA no respondieron: {exc}",
+            })
             return
 
         # Resto sin puntuación final.

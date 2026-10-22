@@ -952,6 +952,12 @@ const runHandsFree = async () => {
             result = voiceResult ? await voiceResult : null
             if (!result) throw new Error('El canal de voz no devolvió respuesta.')
           } catch (socketError) {
+            // Solo se cae al respaldo HTTP si el problema es del canal (WS no
+            // disponible, CSP, socket cerrado). Si el servidor ya respondió con un
+            // error de negocio —voz no reconocida, modelo caído—, reenviar el audio
+            // repite el trabajo y acaba mostrando el motivo del SEGUNDO intento:
+            // un fallo de la IA aparecía como "voz no reconocida".
+            if (socketError?.voiceSocketHandled) throw socketError
             // Compatibilidad con navegadores, proxies o despliegues aún sin WS.
             // Un bloqueo de CSP también debe terminar aquí, no abortar la orden.
             console.warn('WebSocket de voz no disponible; usando HTTP:', socketError.message)
