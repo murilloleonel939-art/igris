@@ -46,7 +46,7 @@
 | 🔗 **Google por usuario**: cada cuenta conecta su propio Gmail/Calendar desde `/u`; al terminar, el callback del backend devuelve al usuario a la pantalla de Conexiones | Funcional |
 | 🔌 **Pantalla de Conexiones propia** (`/conexiones`): página completa con el diseño del workspace, no un cuadro emergente sobre el chat. Reúne Google, voz y Telegram en tarjetas | Funcional |
 | 📲 **Telegram por usuario**: cada cuenta vincula su propio chat con un código de 6 dígitos | Funcional |
-| 🟢 **WhatsApp Cloud API de Meta**: envío directo mediante el canal configurado por el administrador | Funcional |
+| 🟢 **WhatsApp Cloud API de Meta**: envío de mensajes y de recordatorios directamente al número configurado en Conexiones | Funcional |
 | 🛡️ **Admin puede desvincular Telegram de cualquier usuario** desde el panel | Funcional |
 | 🧬 **Perfil de voz por usuario**: registro guiado con varias muestras, validación antes de transcribir y opción de borrar grabaciones | Funcional |
 | 🧪 Suite de pruebas end-to-end (226 comprobaciones, reejecutable) | Funcional |
@@ -337,15 +337,17 @@ La confirmación se hace cumplir **en el servidor**, no solo con el prompt:
 3. No se invita a nadie: no se envían correos a terceros.
 4. Requiere el permiso OAuth `https://www.googleapis.com/auth/calendar.events`.
 ### Recordatorios y notas
-- **Recordatorios.** Se guardan en PostgreSQL con la fecha en UTC y se muestran en hora de Colombia (`America/Bogota`). Se rechazan fechas pasadas. Opcionalmente se repiten cada día o cada semana. Máximo 100 pendientes.
-- **Aviso.** Una tarea en segundo plano (`core/scheduler.py`) revisa cada 30 segundos los vencidos y envía el aviso por Telegram: *"Mi señor, le recuerdo: llamar al banco."*
-  - Si lo creaste desde **Telegram**, el aviso llega a ese chat.
-  - Si lo creaste desde la **web**, llega a todos los IDs de `ALLOWED_TELEGRAM_IDS`.
+- **Recordatorios.** Se guardan en PostgreSQL con la fecha en UTC y se muestran en hora de Colombia (`America/Bogota`). Se rechazan fechas pasadas. Máximo 100 pendientes.
+- **Canal del aviso.** Cada recordatorio guarda su canal en `reminders.channel`:
+  - `telegram` (por defecto): llega al chat del usuario si lo creó desde Telegram o si tiene Telegram vinculado; si no, a todos los IDs de `ALLOWED_TELEGRAM_IDS`.
+  - `whatsapp`: llega al número configurado en **Conexiones → WhatsApp**. No depende de Telegram, así que funciona aunque `TELEGRAM_TOKEN` no esté definido.
+  - Un recordatorio puede pasar de un canal a otro con `update_reminder` (por ejemplo, «pásame el del banco a WhatsApp»), sin borrarlo y volver a crearlo.
+- **Repetición.** `ninguna` (por defecto), `diaria`, `semanal` o `mensual`. La mensual salta de mes en mes conservando el día; si el día no existe en el mes destino usa el último (31 de enero → 28 de febrero, 31 de marzo → 30 de abril). Si el servidor estuvo caído, se saltan las ocurrencias perdidas y se calcula la siguiente posterior a ahora.
+- **Aviso.** Una tarea en segundo plano (`core/scheduler.py`) revisa cada 30 segundos los vencidos y envía: *"Mi señor, le recuerdo: llamar al banco."*
   - No hay duplicados: cada recordatorio se reclama con una actualización atómica antes de enviarse. Si el envío falla, vuelve a pendiente y se reintenta.
   - Si el servidor estuvo caído, los vencidos se envían al arrancar con la nota "con retraso" (si pasaron más de 10 minutos).
-  - Los avisos salen por el canal con el que se creó el recordatorio: **Telegram** (al chat vinculado) o **WhatsApp** (al número configurado en Conexiones). Los de WhatsApp no dependen de Telegram: funcionan aunque `TELEGRAM_TOKEN` no esté definido.
-  - Repetición: `diaria`, `semanal` o `mensual`. La mensual salta de mes en mes conservando el día (si el día no existe en el mes destino, usa el último: 31 de enero → 28 de febrero).
-  - Si el canal de WhatsApp no tiene número configurado en Conexiones, el aviso se queda pendiente y se reintenta; no se pierde.
+  - Un aviso de WhatsApp sin número configurado en Conexiones se queda pendiente y se reintenta en cada ciclo; no se pierde ni se descarta.
+  - Los recordatorios de un usuario sin Telegram vinculado **no** se envían a los chats por defecto de la instalación: su texto es privado y esperan a que vincule su cuenta.
 - **Notas.** Texto libre (hasta 1000 caracteres). La búsqueda ignora mayúsculas y tildes y ordena por coincidencias.
 - **Seguridad del borrado.** No existe el borrado masivo: se borra un solo elemento por id. El servidor exige que tu último mensaje real pida borrar ("borra…", "elimina…", "quita…") o sea un "sí" claro, y permite un borrado por mensaje. Los recordatorios cancelados quedan en la tabla con estado `cancelado`; las **notas se borran de verdad** y no se pueden recuperar.
 - **Contenido de terceros.** Lo guardado en notas y recordatorios, y el contenido de correos y eventos, se trata como información, nunca como instrucciones.
@@ -382,7 +384,7 @@ La pantalla del chat del administrador funciona como un asistente de voz:
 - Acepta texto, notas de voz y archivos de audio. El audio se transcribe a texto y se trata como una orden normal.
 - Solo responde a los IDs de Telegram autorizados (`ALLOWED_TELEGRAM_IDS`); al resto les indica que no están autorizados.
 - Valida el secreto del webhook (`TELEGRAM_WEBHOOK_SECRET`) y responde 200 de inmediato, procesando el update en segundo plano para evitar reintentos duplicados de Telegram.
-- Cada ID de Telegram tiene su propia conversación con memoria (`tg:<id>`), y es el destino de los avisos de los recordatorios que creó.
+- Cada ID de Telegram tiene su propia conversación con memoria (`tg:<id>`), y es el destino de los recordatorios de Telegram que creó. Los recordatorios marcados con canal `whatsapp` salen al número de Conexiones, no a Telegram.
 **Comandos:**
 | Comando | Qué hace |
 | --- | --- |
@@ -699,7 +701,7 @@ La herramienta `send_whatsapp_message` **no pide el número al usuario**: lo res
 | Variable | Descripción |
 | --- | --- |
 | `TELEGRAM_TOKEN` | Token del bot (de @BotFather). También lo usa el planificador para enviar los avisos de recordatorios |
-| `ALLOWED_TELEGRAM_IDS` | IDs de Telegram autorizados, separados por comas. Reciben los avisos de los recordatorios creados desde la web |
+| `ALLOWED_TELEGRAM_IDS` | IDs de Telegram autorizados, separados por comas. Reciben los recordatorios de canal `telegram` creados desde la web |
 | `TELEGRAM_WEBHOOK_URL` | URL pública del webhook, p. ej. `https://igris.zottagroup.com/telegram/webhook` |
 | `TELEGRAM_WEBHOOK_SECRET` | Secreto para validar que las peticiones vienen de Telegram. **Obligatorio en producción:** si está vacío, el webhook no valida el origen |
 
