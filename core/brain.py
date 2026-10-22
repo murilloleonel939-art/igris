@@ -52,6 +52,13 @@ STREAM_TOTAL_TIMEOUT = float(os.environ.get("IGRIS_STREAM_TOTAL_TIMEOUT", "120")
 # se agota, el turno pasa al siguiente proveedor en vez de quedarse esperando.
 PROVIDER_TIMEOUT = float(os.environ.get("IGRIS_PROVIDER_TIMEOUT", "45"))
 
+# Presupuesto total del turno. Sin esto, el peor caso es PROVIDER_TIMEOUT por cada
+# proveedor de la cadena (45 s x 5 = 225 s): cada uno respeta su tope, pero el
+# usuario sigue esperando minutos y lo percibe como un cuelgue. Al agotarse este
+# presupuesto se deja de intentar y se responde con error, que es lo que el
+# frontend ya sabe mostrar.
+TURN_TIMEOUT = float(os.environ.get("IGRIS_TURN_TIMEOUT", "60"))
+
 # Pateway admite controlar el razonamiento de GPT-6 Luna. "none" prioriza latencia.
 REASONING_EFFORT = os.environ.get("IGRIS_REASONING_EFFORT", "none").strip().lower()
 
@@ -907,13 +914,20 @@ class BrainSession:
         messages.append(user_msg)
 
         errors = []
+        turn_deadline = time.monotonic() + TURN_TIMEOUT
         for name in self.brain.fallback_chain:
+            remaining = turn_deadline - time.monotonic()
+            if remaining <= 0:
+                errors.append(f"{name}: sin margen (turno agotado)")
+                logger.error("Turno agotado tras %ss; no se intenta %s", TURN_TIMEOUT, name)
+                break
+            budget = min(PROVIDER_TIMEOUT, remaining)
             built = _build_client(name)
             if not built:
                 errors.append(f"{name}: no configurado")
                 continue
             client, model = built
-            logger.info(f"Intentando proveedor: {name} ({model})")
+            logger.info(f"Intentando proveedor: {name} ({model}) presupuesto={budget:.0f}s")
             provider_started = time.perf_counter()
             try:
                 # Mismo tope que en say_stream: la cadena debe avanzar siempre.
@@ -921,12 +935,12 @@ class BrainSession:
                 if name == "anthropic":
                     reply, new_msgs = await asyncio.wait_for(
                         _complete_with_anthropic(client, model, messages, self),
-                        timeout=PROVIDER_TIMEOUT,
+                        timeout=budget,
                     )
                 else:
                     reply, new_msgs = await asyncio.wait_for(
                         _complete_with_tools(client, model, messages, self, provider=name),
-                        timeout=PROVIDER_TIMEOUT,
+                        timeout=budget,
                     )
                 self.turns.append([user_msg] + new_msgs)
                 self.turns = self.turns[-MAX_HISTORY_TURNS:]
@@ -935,7 +949,7 @@ class BrainSession:
                 return reply
             except Exception as e:
                 if isinstance(e, (asyncio.TimeoutError, TimeoutError)):
-                    e = RuntimeError(f"proveedor sin respuesta en {PROVIDER_TIMEOUT:.0f} s")
+                    e = RuntimeError(f"proveedor sin respuesta en {budget:.0f} s")
                 logger.error(f"Proveedor '{name}' falló: {e}")
                 logger.info("PROVIDER_END id=%s provider=%s elapsed_ms=%.1f status=error", _trace_id(self), name, (time.perf_counter() - provider_started) * 1000)
                 errors.append(f"{name}: {e}")
@@ -988,13 +1002,23 @@ class BrainSession:
             spoken_parts.append(texto)
             await on_delta(texto)
 
+        turn_deadline = time.monotonic() + TURN_TIMEOUT
         for name in self.brain.fallback_chain:
+            # Presupuesto global: cada proveedor respeta su tope, pero la suma de
+            # toda la cadena no debe superar el turno. Si ya no queda margen, se
+            # corta aquí en vez de encadenar esperas que el usuario vive como cuelgue.
+            remaining = turn_deadline - time.monotonic()
+            if remaining <= 0:
+                errors.append(f"{name}: sin margen (turno agotado)")
+                logger.error("Turno agotado tras %ss; no se intenta %s", TURN_TIMEOUT, name)
+                break
+            budget = min(PROVIDER_TIMEOUT, remaining)
             built = _build_client(name)
             if not built:
                 errors.append(f"{name}: no configurado")
                 continue
             client, model = built
-            logger.info(f"Intentando proveedor (stream): {name} ({model})")
+            logger.info(f"Intentando proveedor (stream): {name} ({model}) presupuesto={budget:.0f}s")
             provider_started = time.perf_counter()
             try:
                 # Tope por proveedor: la cadena debe avanzar siempre. Sin esto, un
@@ -1003,13 +1027,13 @@ class BrainSession:
                 if name == "anthropic":
                     reply, new_msgs = await asyncio.wait_for(
                         _complete_with_anthropic(client, model, messages, self),
-                        timeout=PROVIDER_TIMEOUT,
+                        timeout=budget,
                     )
-                    await asyncio.wait_for(_delta(reply), timeout=PROVIDER_TIMEOUT)
+                    await asyncio.wait_for(_delta(reply), timeout=budget)
                 else:
                     reply, new_msgs = await asyncio.wait_for(
                         _complete_with_tools(client, model, messages, self, on_delta=_delta, provider=name),
-                        timeout=PROVIDER_TIMEOUT,
+                        timeout=budget,
                     )
                 self.turns.append([user_msg] + new_msgs)
                 self.turns = self.turns[-MAX_HISTORY_TURNS:]
@@ -1018,7 +1042,7 @@ class BrainSession:
                 return reply
             except Exception as e:
                 if isinstance(e, (asyncio.TimeoutError, TimeoutError)):
-                    e = RuntimeError(f"proveedor sin respuesta en {PROVIDER_TIMEOUT:.0f} s")
+                    e = RuntimeError(f"proveedor sin respuesta en {budget:.0f} s")
                 logger.error(f"Proveedor '{name}' falló (stream): {e}")
                 logger.info("PROVIDER_END id=%s provider=%s elapsed_ms=%.1f status=error", _trace_id(self), name, (time.perf_counter() - provider_started) * 1000)
                 errors.append(f"{name}: {e}")
