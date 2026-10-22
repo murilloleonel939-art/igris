@@ -238,7 +238,7 @@ def _build_client(name: str):
         base = os.environ.get("IGRIS_LOCAL_URL", "http://localhost:11434").rstrip("/")
         if not base.endswith("/v1"):
             base += "/v1"
-        return AsyncOpenAI(api_key="ollama", base_url=base, timeout=spec["timeout"]), model
+        return AsyncOpenAI(api_key="ollama", base_url=base, timeout=spec["timeout"], max_retries=0), model
 
     api_key = os.environ.get(spec["key_env"], "")
     if not api_key:
@@ -260,12 +260,15 @@ def _build_client(name: str):
         base = base.rstrip("/")
         if base.endswith("/v1"):
             base = base[: -len("/v1")]
-        return AsyncAnthropic(api_key=api_key, base_url=base, timeout=spec["timeout"]), model
+        return AsyncAnthropic(api_key=api_key, base_url=base, timeout=spec["timeout"], max_retries=0), model
 
     return AsyncOpenAI(
         api_key=api_key,
         base_url=base,
         timeout=spec["timeout"],
+        # La cadena de fallback ya reintenta con otros proveedores; reintentar el
+        # mismo solo multiplica la espera y, con 429, la alarga sin dar error.
+        max_retries=0,
         default_headers=extra_headers or None,
     ), model
 
@@ -450,7 +453,20 @@ async def _stream_chat(client, kwargs: dict, on_delta) -> Tuple[str, list, Optio
     proveedores envían las llamadas antes del contenido, y mostrar ese texto
     dejaría en pantalla una respuesta que luego se descarta.
     """
-    stream = await client.chat.completions.create(**kwargs, stream=True)
+    # El propio create() debe estar acotado. El SDK de OpenAI responde los 429
+    # reintentando por dentro (2 veces por defecto) y esa espera ocurre ANTES de
+    # que exista el stream, así que el reloj de los fragmentos no la cubre: sin
+    # este tope, un proveedor que solo devuelve errores se queda reintentando
+    # indefinidamente. Los reintentos se desactivan además al construir el cliente.
+    try:
+        stream = await asyncio.wait_for(
+            client.chat.completions.create(**kwargs, stream=True),
+            timeout=STREAM_FIRST_CHUNK_TIMEOUT,
+        )
+    except (asyncio.TimeoutError, TimeoutError):
+        raise RuntimeError(
+            f"proveedor colgado: sin abrir el stream en {STREAM_FIRST_CHUNK_TIMEOUT:.0f} s"
+        ) from None
     content_parts: List[str] = []
     accumulated: dict = {}
     finish_reason = None
