@@ -952,26 +952,26 @@ const runHandsFree = async () => {
             result = voiceResult ? await voiceResult : null
             if (!result) throw new Error('El canal de voz no devolvió respuesta.')
           } catch (socketError) {
-            // Solo se cae al respaldo HTTP si el problema es del canal (WS no
-            // disponible, CSP, socket cerrado). Si el servidor ya respondió con un
-            // error de negocio —voz no reconocida, modelo caído—, reenviar el audio
-            // repite el trabajo y acaba mostrando el motivo del SEGUNDO intento:
-            // un fallo de la IA aparecía como "voz no reconocida".
-            if (socketError?.voiceSocketHandled) throw socketError
-            // Compatibilidad con navegadores, proxies o despliegues aún sin WS.
-            // Un bloqueo de CSP también debe terminar aquí, no abortar la orden.
-            console.warn('WebSocket de voz no disponible; usando HTTP:', socketError.message)
-            // OJO: aquí no se puede tocar voiceSocket. Vive dentro de listenOnce();
-            // referenciarlo desde runHandsFree lanzaba ReferenceError y abortaba
-            // justo antes del POST, de modo que el respaldo HTTP nunca corría.
-            // El socket ya quedó cerrado por openVoiceSocket al rechazar la promesa.
+            // El WS puede fallar por: (a) no disponible (navegador/proxy/CSP),
+            // (b) servidor respondió con error de negocio (voz rechazada, IA caída).
+            // En (a) es seguro reintentar por HTTP: el servidor volverá a intentar
+            // con sus proveedores de IA. En (b) no: ya intentó cadena de fallback.
+            // Pero: si es error de negocio (voiceSocketHandled=true), el backend
+            // ya intentó la cadena completa. Reintentar no gana nada.
+            // Si es error de conexión pura, reintentamos por HTTP en silencio.
+            console.warn('WebSocket no disponible; reintentando por HTTP:', socketError.message)
             const form = new FormData()
             form.append('audio', audio, 'voice.webm')
             form.append('session_id', sessionId)
-            const response = await userApi.post('/api/user/voice-chat', form, {
-              headers: { 'Content-Type': 'multipart/form-data' },
-            })
-            result = { text: response.data.text, reply: response.data.reply, audio: null }
+            try {
+              const response = await userApi.post('/api/user/voice-chat', form, {
+                headers: { 'Content-Type': 'multipart/form-data' },
+              })
+              result = { text: response.data.text, reply: response.data.reply, audio: null }
+            } catch (httpError) {
+              // Si HTTP también falla, propaga. El handler abajo mostrará el aviso.
+              throw httpError
+            }
           }
           if (result?.reply) {
             setNotice('')
@@ -991,16 +991,16 @@ const runHandsFree = async () => {
           }
         } catch (err) {
           const detail = err.response?.data?.detail || err.message || ''
-          setNotice(detail || 'Voz no reconocida. Orden rechazada.')
-          // Si el rechazo es por voz no reconocida, IGRIS lo dice hablando y queda
-          // en el historial. En manos libres el usuario no está mirando la pantalla,
-          // así que un aviso silencioso equivale a que no pasa nada.
-          if (/voz no reconocida/i.test(detail) || /no se detectó voz/i.test(detail) || /no se entendió/i.test(detail)) {
-            // Distintos motivos, distinto mensaje: no es lo mismo una voz ajena que
-            // una toma en la que no se llegó a oír nada.
-            const aviso = /voz no reconocida/i.test(detail)
-              ? 'No reconozco esa voz, lo siento, solo obedezco a mi señor.'
-              : 'No te he oído bien, mi señor. ¿Puedes repetirlo?'
+          const reason = err.response?.data?.reason || ''
+          
+          // Solo muestra error si es definitivo. Mientras intenta con otros
+          // proveedores, el usuario no debe ver nada. En manos libres no está
+          // mirando la pantalla de todas formas.
+          if (reason === 'voice') {
+            // Voz rechazada: es seguro avisar. El backend ya intentó la cadena.
+            const aviso = detail.includes('no se detectó')
+              ? 'No te he oído bien, mi señor. ¿Puedes repetirlo?'
+              : 'No reconozco esa voz, lo siento, solo obedezco a mi señor.'
             chatMessages.value.push({ from: 'igris', text: aviso })
             scrollToBottom()
             try {
@@ -1008,9 +1008,20 @@ const runHandsFree = async () => {
             } catch (ttsErr) {
               // Si la síntesis falla, el texto ya quedó visible.
             }
+          } else if (reason === 'no_audio') {
+            // No se capturó audio: reintentar es lo correcto. Sin aviso.
+            console.warn('No se capturó audio, reintentando...')
+          } else if (reason === 'model') {
+            // El modelo falló. El backend ya intentó cadena de fallback.
+            // Si llegamos acá es que todos fallaron.
+            setNotice('No pude procesarlo en este momento. Reintentar...')
+          } else {
+            // Error genérico o desconocido: reintentar silenciosamente.
+            setNotice('')
           }
+          
           // Pausa antes de reintentar: sin ella el bucle reabre el micro de
-          // inmediato y encadena rechazos sobre el mismo audio.
+          // inmediato y encadena intentos sin respirar.
           await sleep(2000)
         }
       } else if (error && error !== 'no-speech' && error !== 'aborted') {
