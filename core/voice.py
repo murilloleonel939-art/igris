@@ -8,6 +8,8 @@ import logging
 import os
 import subprocess
 import tempfile
+import threading
+import time
 from typing import Iterable
 
 import numpy as np
@@ -16,18 +18,29 @@ from core.crypto import encrypt, decrypt
 
 logger = logging.getLogger(__name__)
 _encoder = None
+# La carga de TitaNet tarda decenas de segundos y consume ~1 GB. Sin este lock,
+# dos turnos de voz simultáneos veían _encoder a None y cargaban el modelo dos
+# veces (verificado: 2 x 25 s y +1.1 GB de RAM).
+_encoder_lock = threading.Lock()
 
 
 def _get_encoder():
     global _encoder
-    if _encoder is None:
-        try:
-            from nemo.collections.asr.models import EncDecSpeakerLabelModel
-        except ImportError as exc:
-            raise RuntimeError(f"No se pudo cargar NVIDIA NeMo: {exc}") from exc
-        model_name = os.getenv("IGRIS_VOICE_MODEL", "nvidia/speakerverification_en_titanet_large")
-        _encoder = EncDecSpeakerLabelModel.from_pretrained(model_name=model_name)
-        _encoder.eval()
+    if _encoder is not None:
+        return _encoder
+    with _encoder_lock:
+        if _encoder is None:
+            started = time.monotonic()
+            logger.info("Cargando modelo de voz NeMo/TitaNet (una sola vez por proceso)")
+            try:
+                from nemo.collections.asr.models import EncDecSpeakerLabelModel
+            except ImportError as exc:
+                raise RuntimeError(f"No se pudo cargar NVIDIA NeMo: {exc}") from exc
+            model_name = os.getenv("IGRIS_VOICE_MODEL", "nvidia/speakerverification_en_titanet_large")
+            encoder = EncDecSpeakerLabelModel.from_pretrained(model_name=model_name)
+            encoder.eval()
+            _encoder = encoder
+            logger.info("Modelo de voz cargado en %.1f s", time.monotonic() - started)
     return _encoder
 
 
