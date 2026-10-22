@@ -42,9 +42,9 @@ IGRIS_STT_MODEL=tiny
 
 # WhatsApp Cloud API de Meta (nunca subir estos valores al repositorio)
 WHATSAPP_TOKEN=tu_token_de_acceso_permanente
-WHATSAPP_PHONE_NUMBER_ID=1437003389487811
-WHATSAPP_BUSINESS_ACCOUNT_ID=936702885750828
-WHATSAPP_TEST_TO=+573504807732
+WHATSAPP_PHONE_NUMBER_ID=tu_phone_number_id
+WHATSAPP_BUSINESS_ACCOUNT_ID=tu_business_account_id
+WHATSAPP_TEST_TO=+57xxxxxxxxxx
 
 # Zona horaria
 IGRIS_TZ=America/Bogota
@@ -107,6 +107,100 @@ npm run dev
 npm run build
 # Carpeta dist/ lista para servir
 ```
+
+---
+
+## 📱 Integración WhatsApp (Meta Cloud API)
+
+### Prerequisitos
+
+- Una **Cuenta Meta Business** (business.facebook.com)
+- Una **Cuenta de negocios de WhatsApp** vinculada
+- Un **número de teléfono verificado** para WhatsApp Business
+- Una **App de Facebook Developer** para obtener credenciales
+
+### 1. Obtener credenciales en Meta
+
+#### 1.1 Ir a Meta Business Suite
+
+1. Ve a **business.facebook.com**
+2. Inicia sesión con tu cuenta Meta
+3. Ve a **Configuración** → **Cuentas** → **WhatsApp**
+
+#### 1.2 Obtener `PHONE_NUMBER_ID`
+
+En **Administrador de WhatsApp** → **Números de teléfono**:
+- Verifica o añade tu número de teléfono
+- Copia el **ID de número de teléfono** (ej: `1437003389487811`)
+
+#### 1.3 Obtener `BUSINESS_ACCOUNT_ID`
+
+En **Administrador de WhatsApp** → **Configuración**:
+- Busca **ID de cuenta de negocio** (ej: `936702885750828`)
+- O en **Información de la cuenta** en la pestaña principal
+
+#### 1.4 Generar `WHATSAPP_TOKEN`
+
+En **developers.facebook.com**:
+
+1. Selecciona tu **App** (o crea una)
+2. Ve a **Herramientas y soporte** → **Referencia de Graph API**
+3. Ve a **Generador de tokens de acceso**
+4. Selecciona tu app y usuario
+5. Permisos requeridos:
+   - `whatsapp_business_messaging`
+   - `whatsapp_business_management`
+6. Genera un **token de acceso de larga duración** (60 días)
+7. Copia el token completo (comienza con `EAAB...`)
+
+### 2. Configurar en Coolify (Producción)
+
+En tu proyecto **igris** en Coolify:
+
+1. Ve a **Configuración** → **Variables de entorno**
+2. Añade o actualiza:
+
+```env
+WHATSAPP_TOKEN=EAABxxxxxxxxxxxxxxx
+WHATSAPP_PHONE_NUMBER_ID=1437003389487811
+WHATSAPP_BUSINESS_ACCOUNT_ID=936702885750828
+```
+
+3. **Redeploy** del backend
+4. Espera a que termine el deploy
+
+### 3. Guardar el destinatario en Conexiones
+
+1. Abre **Conexiones** en el panel de IGRIS
+2. En la sección **WhatsApp**, escribe el número destinatario en formato internacional (ej: `+573504807732`)
+3. Pulsa **Guardar**
+
+Ese número se guarda en la configuración global. **IGRIS no lo pide en el chat**: lo toma de aquí al enviar.
+
+### 4. Probar en IGRIS
+
+En el chat:
+
+```
+usuario: envíame un mensaje de WhatsApp diciendo hola
+IGRIS: Mensaje enviado por WhatsApp a +573504807732.
+```
+
+Si no hay número guardado en Conexiones, IGRIS responde que falta configurarlo; nunca lo pide por chat.
+
+### 5. Verificar que llegó el mensaje
+
+- El número receptor recibe el mensaje en **WhatsApp** desde el número de negocio configurado
+- Verifica en **Meta Business Suite** → **Administrador de WhatsApp** → **Estadísticas** que el mensaje aparece como "Entregado"
+
+### Notas importantes
+
+- ⚠️ **Nunca** hagas commit del `WHATSAPP_TOKEN` en git
+- El token se configura **solo en variables de entorno** (Coolify, .env local, etc)
+- Los números deben estar en formato internacional: `+código_país+número`
+- La API está limitada a números verificados en tu cuenta de negocio
+- Si la app está en modo desarrollo, el destinatario debe estar en la lista de números autorizados (developers.facebook.com → tu app con el producto WhatsApp → Configuración de la API → Administrar lista de números de teléfono)
+- Meta responde `200 OK` aunque el destinatario no esté autorizado; en ese caso el mensaje no se entrega y no aparece error en los logs
 
 ---
 

@@ -217,10 +217,10 @@ Variables requeridas:
 
 | Variable | Descripción |
 | --- | --- |
-| `WHATSAPP_TOKEN` | Token de acceso de Meta; nunca debe exponerse en el frontend |
-| `WHATSAPP_PHONE_NUMBER_ID` | ID del número de teléfono de WhatsApp Business |
-| `WHATSAPP_BUSINESS_ACCOUNT_ID` | ID de la cuenta de WhatsApp Business (WABA) |
-| `WHATSAPP_TEST_TO` | Destinatario internacional para mensajes de prueba |
+| `WHATSAPP_TOKEN` | **Obligatoria.** Token de acceso de Meta; nunca debe exponerse en el frontend |
+| `WHATSAPP_PHONE_NUMBER_ID` | **Obligatoria.** ID del número de teléfono de WhatsApp Business |
+| `WHATSAPP_BUSINESS_ACCOUNT_ID` | **Obligatoria.** ID de la cuenta de WhatsApp Business (WABA) |
+| `WHATSAPP_TEST_TO` | Opcional. Destinatario internacional para mensajes de prueba |
 
 Endpoints administrativos protegidos:
 
@@ -657,12 +657,40 @@ La integración usa la API oficial de Meta directamente para enviar mensajes de 
 
 | Variable | Descripción | Ejemplo |
 | --- | --- | --- |
-| `WHATSAPP_TOKEN` | Token permanente o de sistema de Meta | `EAAB...` |
-| `WHATSAPP_PHONE_NUMBER_ID` | Identificador del número de WhatsApp Business | `123456789012345` |
-| `WHATSAPP_BUSINESS_ACCOUNT_ID` | Identificador de la cuenta WABA | `123456789012345` |
+| `WHATSAPP_TOKEN` | Token de acceso permanente o de sistema de Meta | `EAAB...` |
+| `WHATSAPP_PHONE_NUMBER_ID` | Identificador del número de WhatsApp Business | `1437003389487811` |
+| `WHATSAPP_BUSINESS_ACCOUNT_ID` | Identificador de la cuenta WABA | `936702885750828` |
 | `WHATSAPP_TEST_TO` | Número de prueba en formato internacional | `+573000000000` |
 
-El administrador puede editar el número receptor en **Conexiones → WhatsApp**. El valor se valida, se limita a dígitos y el signo `+`, y se guarda en `core/settings.json`. Los tokens no se guardan en ese archivo ni se muestran en la interfaz.
+Las tres primeras son **obligatorias**: sin `WHATSAPP_PHONE_NUMBER_ID` o sin `WHATSAPP_BUSINESS_ACCOUNT_ID` el envío falla aunque el token sea válido. `WHATSAPP_TEST_TO` solo se usa en la prueba manual `send_test_message()` de `core/whatsapp.py`.
+
+#### Dónde se obtiene cada credencial
+
+1. **`WHATSAPP_PHONE_NUMBER_ID`** — Administrador de WhatsApp → **Números de teléfono** → selecciona el número → el campo "Identificador de número de teléfono" aparece junto al nombre visible.
+2. **`WHATSAPP_BUSINESS_ACCOUNT_ID`** — Administrador de WhatsApp → **Información general** de la cuenta, o en la URL de Business Suite (`business_id=...` de la cuenta de WhatsApp Business).
+3. **`WHATSAPP_TOKEN`** — developers.facebook.com → tu app → **WhatsApp → Configuración de la API**, o **Herramientas → Generador de tokens** con los permisos `whatsapp_business_messaging` y `whatsapp_business_management`. Conviene generarlo de sistema para que no caduque a los 60 días.
+
+#### Destinatario
+
+El administrador guarda el número receptor en **Conexiones → WhatsApp**; se valida, se limita a dígitos y el signo `+`, y se guarda en la configuración global (base de datos). Los tokens no se guardan ahí ni se muestran en la interfaz.
+
+La herramienta `send_whatsapp_message` **no pide el número al usuario**: lo resuelve el servidor desde esa configuración. Si no hay número guardado, devuelve un error explicando que debe configurarse en Conexiones.
+
+#### Comprobar que funciona
+
+1. Guarda el destinatario en **Conexiones → WhatsApp**.
+2. Pide en el chat: «envíame un mensaje de WhatsApp diciendo hola».
+3. El log del backend debe mostrar `WhatsApp enviado a +<número> wamid=...`.
+4. En Meta Business Suite → Administrador de WhatsApp → **Números de teléfono** → **Estadísticas de entrega** aparece como entregado. Ajusta el rango de fechas: por defecto muestra los últimos 30 días y el mensaje de hoy puede quedar fuera si el rango está en el pasado.
+
+#### Errores habituales
+
+| Síntoma | Causa |
+| --- | --- |
+| «Faltan las credenciales de la Cloud API» | Falta `WHATSAPP_TOKEN` o `WHATSAPP_PHONE_NUMBER_ID` en el entorno del backend; hay que redeployar tras añadirlas |
+| «No hay número de WhatsApp configurado en Conexiones» | El destinatario no se ha guardado en Conexiones |
+| Meta responde `200 OK` pero el mensaje no llega | La app está en modo desarrollo y el destinatario no está en la lista de números autorizados (developers.facebook.com → app con producto WhatsApp → Configuración de la API → Administrar lista de números de teléfono). Meta acepta el envío y lo descarta sin devolver error |
+| El mensaje no llega al propio número de negocio | Un número registrado en Cloud API deja de funcionar en la app normal de WhatsApp, así que no hay dispositivo que lo reciba |
 
 ### Telegram
 | Variable | Descripción |
