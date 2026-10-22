@@ -1,5 +1,6 @@
 """Brain module for IGRIS - orquestación de IA con cadena de fallback y herramientas"""
 
+import asyncio
 import json
 import logging
 import os
@@ -37,6 +38,13 @@ MAX_TOKENS = int(os.environ.get("IGRIS_MAX_TOKENS", "2048"))
 
 # Máximo de rondas de herramientas por mensaje (evita bucles infinitos).
 MAX_TOOL_ROUNDS = 4
+
+# Límites del stream. El timeout del cliente HTTP no cubre un stream que se abre y
+# nunca envía datos, así que hace falta un reloj propio: si el primer fragmento no
+# llega a tiempo (proveedor colgado, cuota agotada con reintentos internos) se
+# lanza un error y el turno pasa al siguiente proveedor de la cadena.
+STREAM_FIRST_CHUNK_TIMEOUT = float(os.environ.get("IGRIS_STREAM_FIRST_CHUNK_TIMEOUT", "15"))
+STREAM_TOTAL_TIMEOUT = float(os.environ.get("IGRIS_STREAM_TOTAL_TIMEOUT", "120"))
 
 # Pateway admite controlar el razonamiento de GPT-6 Luna. "none" prioriza latencia.
 REASONING_EFFORT = os.environ.get("IGRIS_REASONING_EFFORT", "none").strip().lower()
@@ -403,6 +411,17 @@ class _StreamToolCall:
         self.function = _StreamFunction(name, arguments)
 
 
+async def _close_stream(stream) -> None:
+    """Cierra el stream sin propagar errores: ya estamos en una ruta de fallo."""
+    close = getattr(stream, "close", None)
+    if close is None:
+        return
+    try:
+        await asyncio.wait_for(asyncio.shield(close()), timeout=5)
+    except Exception:
+        logger.debug("No se pudo cerrar el stream", exc_info=True)
+
+
 async def _stream_chat(client, kwargs: dict, on_delta) -> Tuple[str, list, Optional[str]]:
     """Llama al modelo en streaming y reenvía cada fragmento de texto.
 
@@ -419,7 +438,30 @@ async def _stream_chat(client, kwargs: dict, on_delta) -> Tuple[str, list, Optio
     finish_reason = None
     emitted = False
     cancelled = False
-    async for chunk in stream:
+    deadline = time.monotonic() + STREAM_TOTAL_TIMEOUT
+    first = True
+    iterator = stream.__aiter__()
+    while True:
+        # El timeout del cliente cubre conectar y leer, pero no un stream que se
+        # abre y nunca envía datos: ahí se queda esperando para siempre. Los
+        # proveedores que reintentan por dentro (openrouter/free ante un 429)
+        # provocan exactamente eso y bloqueaban el turno de voz sin devolver error,
+        # así que el fallback nunca llegaba a actuar.
+        budget = STREAM_FIRST_CHUNK_TIMEOUT if first else max(0.0, deadline - time.monotonic())
+        try:
+            chunk = await asyncio.wait_for(anext(iterator), timeout=budget)
+        except StopAsyncIteration:
+            break
+        except (asyncio.TimeoutError, TimeoutError):
+            await _close_stream(stream)
+            detail = "sin primer fragmento" if first else "sin nuevos fragmentos"
+            if emitted:
+                # Ya se envió texto al usuario: cortar aquí evita que el fallback
+                # repita en voz lo que ya se dijo.
+                logger.warning("Stream interrumpido (%s) tras emitir texto; se devuelve lo recibido", detail)
+                break
+            raise RuntimeError(f"proveedor colgado: {detail} en {budget:.0f} s") from None
+        first = False
         choices = getattr(chunk, "choices", None)
         if not choices:
             continue
