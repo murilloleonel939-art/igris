@@ -77,6 +77,12 @@ def embedding(audio: bytes, suffix: str = ".ogg") -> np.ndarray:
     # voz). Sin esta comprobación NeMo falla con un IndexError poco claro.
     if signal.shape[1] == 0:
         raise ValueError("El audio no contiene voz reconocible")
+    # TitaNet necesita unos 2-3 s de voz continua para dar un vector estable.
+    # Con tomas más cortas la similitud baja aunque sea la misma persona, así que
+    # conviene verlo en el log junto al score, no adivinarlo.
+    duration = signal.shape[1] / float(sample_rate or 16000)
+    rms = float(signal.abs().mean())
+    logger.info("Embedding de voz: %.2f s, nivel medio %.4f", duration, rms)
     signal_length = torch.tensor([signal.shape[1]], dtype=torch.long)
     with torch.no_grad():
         _logits, vector = _get_encoder().forward(
