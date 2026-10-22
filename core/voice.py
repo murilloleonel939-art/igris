@@ -45,14 +45,29 @@ def _get_encoder():
 
 
 def _wav_bytes(audio: bytes, suffix: str = ".ogg") -> bytes:
-    """Convierte audio recibido del navegador o Telegram a WAV mono 16 kHz."""
+    """Convierte audio recibido del navegador o Telegram a WAV mono 16 kHz.
+
+    Solo se recorta el silencio del principio. Antes se usaba
+    ``silenceremove=...:stop_periods=-1``, que elimina TODOS los silencios
+    internos y empalma los trozos de voz: según dónde cayeran las pausas al
+    hablar, el audio resultante cambiaba y TitaNet devolvía un vector distinto
+    para la misma persona. Con la huella recién registrada, el mismo hablante
+    daba similitudes entre -0.02 y 0.32, oscilando alrededor del umbral.
+
+    También se quitó ``dynaudnorm=g=15``: recomprimía la dinámica de cada sílaba
+    y alteraba el timbre con el que trabaja el modelo. Entre el registro y la
+    verificación basta con que el audio llegue sin recortes distintos; el nivel
+    lo ajusta el propio modelo.
+    """
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as source:
         source.write(audio)
         source_path = source.name
     try:
         result = subprocess.run(
             ["ffmpeg", "-nostdin", "-loglevel", "error", "-i", source_path,
-             "-af", "silenceremove=start_periods=1:start_duration=0.15:start_threshold=-35dB:stop_periods=-1:stop_duration=0.25:stop_threshold=-35dB,dynaudnorm=f=150:g=15",
+             # start_periods recorta la espera antes de hablar y conserva las
+             # pausas internas, que son parte de cómo habla la persona.
+             "-af", "silenceremove=start_periods=1:start_duration=0.10:start_threshold=-40dB:detection=peak",
              "-ac", "1", "-ar", "16000", "-f", "wav", "pipe:1"],
             check=True,
             stdout=subprocess.PIPE,
