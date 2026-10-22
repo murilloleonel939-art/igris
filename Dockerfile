@@ -85,6 +85,16 @@ ENV PYTHONUNBUFFERED=1 \
     IGRIS_WHISPER_CPP_MODEL=/app/models/ggml-medium-q5_0.bin
 
 # --------------------------------------------------------------
+# Healthcheck: Coolify solo reinicia el contenedor si sabe que está caído.
+# Sin esto el servicio queda en "Running (no healthcheck)" y un cuelgue pasa
+# inadvertido hasta que un usuario se queja.
+# start-period=180s cubre las migraciones y el primer arranque, que es cuando
+# más tarda en responder.
+# --------------------------------------------------------------
+HEALTHCHECK --interval=30s --timeout=5s --start-period=180s --retries=3 \
+    CMD curl -fsS http://127.0.0.1:8000/health || exit 1
+
+# --------------------------------------------------------------
 # Comando de arranque
 # --------------------------------------------------------------
 CMD ["uvicorn", "server.main:app", "--host", "0.0.0.0", "--port", "8000"]
