@@ -1299,7 +1299,11 @@ async def user_voice_ws(websocket: WebSocket) -> None:
     como respaldo para navegadores o proxies sin WebSocket.
     """
     await websocket.accept()
-    db = SessionLocal()
+    # Ninguna conexión del pool se retiene durante el socket. Un socket abierto
+    # puede durar minutos esperando a que el usuario hable; si guardara su sesión
+    # de BD todo ese tiempo, cada oyente ocuparía una conexión del pool y unos
+    # pocos usuarios concurrentes agotarían el pool para toda la aplicación.
+    # Cada bloque abre su sesión y la cierra al terminar.
     try:
         hello = json.loads(await asyncio.wait_for(websocket.receive_text(), timeout=10))
         if hello.get("type") != "hello":
@@ -1308,7 +1312,9 @@ async def user_voice_ws(websocket: WebSocket) -> None:
             return
 
         try:
-            user = _user_from_bearer(f"Bearer {hello.get('token', '')}", db)
+            with SessionLocal() as db:
+                user = _user_from_bearer(f"Bearer {hello.get('token', '')}", db)
+                db.expunge(user)
         except HTTPException as exc:
             await websocket.send_json({"type": "error", "message": str(exc.detail)})
             await websocket.close(code=1008)
@@ -1422,18 +1428,20 @@ async def user_voice_ws(websocket: WebSocket) -> None:
             await websocket.send_json({"type": "error", "message": "El audio está vacío o es demasiado corto."})
             return
 
-        profile = db.query(Profile).filter(
-            Profile.user_id == user.id,
-            Profile.name == "Voz principal",
-            Profile.is_authorized.is_(True),
-        ).first()
-        if profile is None or not profile.voice_print:
+        with SessionLocal() as db:
+            profile = db.query(Profile).filter(
+                Profile.user_id == user.id,
+                Profile.name == "Voz principal",
+                Profile.is_authorized.is_(True),
+            ).first()
+            voice_print = profile.voice_print if profile is not None else None
+        if not voice_print:
             await websocket.send_json({"type": "error", "message": "Registra tu perfil de voz antes de usar comandos por voz."})
             return
 
         await websocket.send_json({"type": "state", "state": "processing"})
         try:
-            verified, score = await asyncio.to_thread(voice.verify, audio, profile.voice_print, ".webm")
+            verified, score = await asyncio.to_thread(voice.verify, audio, voice_print, ".webm")
         except ValueError:
             logger.warning("Audio sin voz en WebSocket para usuario %s", user.id)
             await websocket.send_json({"type": "error", "reason": "no_audio", "message": "No se detectó voz en la grabación."})
@@ -1465,9 +1473,11 @@ async def user_voice_ws(websocket: WebSocket) -> None:
 
         session_key = _session_key(user.id, session_id)
         session = _sessions.get(session_key)
-        _bind_identity(session, user, db, query=text)
-        remember_from_text(db, user.id, text, session_key=session_key)
-        session.neural_memory = neural_memory_context(db, user.id, text)
+        # Todo el trabajo de base de datos del turno va en un bloque corto: la
+        # conexión vuelve al pool antes de llamar al modelo, que es lo lento.
+        with SessionLocal() as db:
+            _bind_identity(session, user, db, query=text)
+            remember_from_text(db, user.id, text, session_key=session_key)
 
         # Cada frase se sintetiza y se envía en cuanto el modelo la termina: no se
         # espera a la respuesta completa. El texto también se envía por frases para
@@ -1554,7 +1564,8 @@ async def user_voice_ws(websocket: WebSocket) -> None:
         await speaker
 
         try:
-            learn_from_assistant(db, user.id, reply, source="chat", session_key=session_key)
+            with SessionLocal() as db:
+                learn_from_assistant(db, user.id, reply, source="chat", session_key=session_key)
         except Exception:
             logger.exception("No se pudo guardar el aprendizaje de la respuesta de voz")
         await websocket.send_json({"type": "reply", "reply": reply})
@@ -1562,7 +1573,6 @@ async def user_voice_ws(websocket: WebSocket) -> None:
     except (WebSocketDisconnect, asyncio.TimeoutError, json.JSONDecodeError):
         return
     finally:
-        db.close()
         try:
             await websocket.close()
         except Exception:

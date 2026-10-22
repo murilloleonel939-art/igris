@@ -90,12 +90,18 @@ def _build_engine():
         # pool_pre_ping: descarta conexiones muertas (Coolify reinicia Postgres
         # sin avisar y, sin esto, la primera petición después falla).
         # pool_recycle: renueva las conexiones cada 30 min.
+        # pool_timeout: si el pool se agota, la petición falla en 10 s con un
+        #   error claro en lugar de quedarse esperando para siempre.
+        # pool_size/max_overflow: 5+10 no alcanzaba; varias peticiones HTTP y
+        #   algunos turnos de voz en paralelo dejaban al resto esperando.
+        #   Son configurables para ajustarlos al límite de Postgres de Coolify.
         return create_engine(
             DATABASE_URL,
             pool_pre_ping=True,
             pool_recycle=1800,
-            pool_size=5,
-            max_overflow=10,
+            pool_size=int(os.getenv("IGRIS_DB_POOL_SIZE", "20")),
+            max_overflow=int(os.getenv("IGRIS_DB_MAX_OVERFLOW", "30")),
+            pool_timeout=float(os.getenv("IGRIS_DB_POOL_TIMEOUT", "10")),
         )
 
     # SQLite (desarrollo local / RPi)
