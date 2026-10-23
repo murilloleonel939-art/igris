@@ -1493,7 +1493,7 @@ async def user_voice_ws(websocket: WebSocket) -> None:
             await websocket.send_json({"type": "error", "message": "No se entendió la orden."})
             return
 
-        await websocket.send_json({"type": "transcript", "text": text, "voice_score": round(score, 3)})
+        await websocket.send_json({"type": "transcript", "text": text, "voice_score": round(score, 3) if score is not None else None})
         if _sessions is None:
             await websocket.send_json({"type": "error", "message": "El chat no está disponible en este momento."})
             return
