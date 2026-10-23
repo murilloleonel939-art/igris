@@ -43,6 +43,16 @@ documents/
 .npm-cache/
 .uv-cache/
 .tools/
+.tmp/
+
+# Grafo de conocimiento de Graphify (herramienta de análisis local).
+# Es un artefacto derivado: se regenera con `graphify update .` en segundos y
+# sin coste de LLM. Versionarlo supondría ~11 MB de JSON/HTML con un diff
+# distinto en cada commit, que ensuciaría el historial sin aportar nada al
+# proyecto. Cada quien lo reconstruye en su máquina cuando lo necesite.
+# OJO: esto deja inerte el merge driver `graphify` registrado en .git/config;
+# si algún día se decide versionar graph.json, hay que quitar esta línea.
+graphify-out/
 
 # Backup files
 *.bak
