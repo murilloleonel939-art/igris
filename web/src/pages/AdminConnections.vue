@@ -100,12 +100,46 @@
               </div>
               <div class="ha-assign-form">
                 <p v-if="haEntitiesError" class="ha-entities-note">{{ haEntitiesError }}</p>
-                <select :value="assignForm[user.id]?.entity || ''" @input="event => { initAssignForm(user.id); assignForm[user.id].entity = event.target.value }" placeholder="Selecciona dispositivo">
-                  <option value="">Selecciona dispositivo…</option>
-                  <option v-for="entity in availableEntities" :key="entity.entity_id" :value="entity.entity_id">
-                    {{ entity.name || entity.entity_id }}
-                  </option>
-                </select>
+
+                <!-- Buscador con lista, al estilo de Home Assistant: con muchos
+                     dispositivos un desplegable nativo es inservible. -->
+                <div class="ha-picker" :data-open="pickerFor === user.id ? 'true' : 'false'">
+                  <button type="button" class="ha-picker-trigger" @click="togglePicker(user.id)">
+                    <span v-if="selectedEntity(user.id)" class="ha-picker-value">
+                      {{ selectedEntity(user.id).name || selectedEntity(user.id).entity_id }}
+                    </span>
+                    <span v-else class="ha-picker-placeholder">Buscar dispositivo…</span>
+                    <span class="ha-picker-caret">▾</span>
+                  </button>
+
+                  <div v-if="pickerFor === user.id" class="ha-picker-panel">
+                    <input
+                      :value="pickerQuery"
+                      @input="event => pickerQuery = event.target.value"
+                      type="text"
+                      class="ha-picker-search"
+                      placeholder="Buscar por nombre o entidad"
+                      autofocus
+                    />
+                    <p v-if="!filteredEntities.length" class="ha-picker-empty">
+                      Ningún dispositivo coincide.
+                    </p>
+                    <ul v-else class="ha-picker-list">
+                      <li v-for="entity in filteredEntities" :key="entity.entity_id">
+                        <button
+                          type="button"
+                          class="ha-picker-item"
+                          :class="{ active: assignForm[user.id]?.entity === entity.entity_id }"
+                          @click="chooseEntity(user.id, entity)"
+                        >
+                          <span class="ha-picker-item-name">{{ entity.name || entity.entity_id }}</span>
+                          <small class="ha-picker-item-id">{{ entity.entity_id }}</small>
+                        </button>
+                      </li>
+                    </ul>
+                  </div>
+                </div>
+
                 <input :value="assignForm[user.id]?.name || ''" @input="event => { initAssignForm(user.id); assignForm[user.id].name = event.target.value }" type="text" placeholder="Nombre amigable" />
                 <button class="connect" :disabled="assigning === user.id || !assignForm[user.id]?.entity?.trim()" @click="assignDevice(user.id)">
                   {{ assigning === user.id ? 'Asignando…' : 'Asignar' }}
@@ -120,7 +154,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import api from '../api'
 import { getToken, getUser } from '../userApi'
 import { getKey } from '../api'
@@ -155,6 +189,47 @@ const haError = ref('')
 const haStatus = ref({ configured: false, connected: false, total_devices_assigned: 0, users_assigned: 0 })
 const availableEntities = ref([])
 const haEntitiesError = ref('')
+// Buscador de dispositivos: qué usuario lo tiene abierto y qué se escribió.
+const pickerFor = ref(null)
+const pickerQuery = ref('')
+
+const filteredEntities = computed(() => {
+  const q = pickerQuery.value.trim().toLowerCase()
+  const list = availableEntities.value || []
+  if (!q) return list.slice(0, 50)
+  return list
+    .filter((e) =>
+      (e.name || '').toLowerCase().includes(q) ||
+      (e.entity_id || '').toLowerCase().includes(q),
+    )
+    .slice(0, 50)
+})
+
+function togglePicker(userId) {
+  if (pickerFor.value === userId) {
+    pickerFor.value = null
+    return
+  }
+  pickerFor.value = userId
+  pickerQuery.value = ''
+}
+
+function selectedEntity(userId) {
+  const id = assignForm.value[userId]?.entity
+  if (!id) return null
+  return availableEntities.value.find((e) => e.entity_id === id) || { entity_id: id, name: id }
+}
+
+function chooseEntity(userId, entity) {
+  initAssignForm(userId)
+  assignForm.value[userId].entity = entity.entity_id
+  // Se propone el nombre de HA como nombre amigable, que el admin puede cambiar.
+  if (!assignForm.value[userId].name) {
+    assignForm.value[userId].name = entity.name || entity.entity_id
+  }
+  pickerFor.value = null
+  pickerQuery.value = ''
+}
 const assignForm = ref({})
 const assigning = ref(null)
 const removing = ref(null)
@@ -461,4 +536,19 @@ onMounted(() => { load(); loadWhatsAppConfig(); loadPrograms(); loadAgentTokens(
 
 <style scoped>
 .connection-tabs{display:flex;gap:.35rem}.agent-manual{margin-bottom:1rem;padding:1.1rem 1.2rem;border:1px solid rgba(255,255,255,.1);border-radius:.8rem;background:rgba(255,255,255,.025)}.agent-manual h2{margin:.25rem 0 .8rem;color:#fff;font-size:1rem}.agent-manual ol{display:grid;gap:.55rem;margin:0;padding-left:1.25rem;color:#b7aaa4;font-size:.72rem;line-height:1.5}.agent-manual li::marker{color:#f29a8e;font-weight:700}.agent-manual b{color:#eee}.agent-manual em{color:#f0c1b9;font-style:normal}.agent-manual code{border-radius:.25rem;background:rgba(255,255,255,.08);padding:.1rem .25rem;color:#f0c1b9;font-size:.68rem}.agent-note{margin:.9rem 0 0;border-left:2px solid #e97769;padding-left:.7rem;color:#a99b95;font-size:.68rem;line-height:1.5}.connection-tab{border:1px solid rgba(255,255,255,.1);border-radius:.5rem;padding:.5rem .75rem;color:#a99b95;font-size:.72rem;text-decoration:none}.connection-tab:hover,.connection-tab.active{border-color:rgba(240,128,114,.4);background:rgba(240,128,114,.1);color:#fff}.agent-card{display:flex;align-items:center;justify-content:space-between;gap:1.5rem;margin-bottom:1rem;padding:1.1rem 1.2rem;border:1px solid rgba(240,128,114,.2);border-radius:.8rem;background:linear-gradient(110deg,rgba(240,128,114,.1),rgba(255,255,255,.025))}.agent-card h2{margin:.25rem 0;color:#fff;font-size:1rem}.agent-card p{max-width:48rem;margin:0;color:#a99b95;font-size:.72rem;line-height:1.5}.agent-kicker{color:#f29a8e;font-size:.62rem;text-transform:uppercase;letter-spacing:.12em}.program-item{display:flex;align-items:flex-start;gap:.45rem;min-width:0;cursor:pointer}.program-item input{margin-top:.12rem;accent-color:#e97769}.program-item b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.agent-download{flex:none;border-radius:.5rem;background:#e97769;padding:.65rem .85rem;color:#fff;font-size:.72rem;font-weight:600;text-decoration:none}.agent-download:hover{background:#f28a7c}.user-portal-hint{margin:0 1rem .45rem;color:#8c7d77;font-size:.63rem;line-height:1.45}.user-portal-link{display:inline-block;margin:0 1rem .8rem;border:1px solid rgba(240,90,80,.25);border-radius:.4rem;padding:.36rem .55rem;color:#f29b92;font-size:.62rem;text-decoration:none}.connections-page{background:#100807}.whatsapp-settings{display:flex;align-items:center;gap:1rem;margin-bottom:1rem;padding:1rem;border:1px solid rgba(255,255,255,.1);border-radius:.8rem;background:rgba(255,255,255,.025)}.whatsapp-settings>div:first-child{display:flex;flex:1;flex-direction:column;gap:.25rem}.whatsapp-settings b{color:#fff;font-size:.85rem}.whatsapp-settings span{color:#9e918c;font-size:.7rem}.whatsapp-form{display:flex;gap:.5rem}.whatsapp-form input{width:15rem;border:1px solid rgba(255,255,255,.12);border-radius:.45rem;background:rgba(0,0,0,.2);padding:.55rem .65rem;color:#eee;font-size:.75rem}.whatsapp-error,.whatsapp-success{font-size:.7rem}.whatsapp-error{color:#f29a8e}.whatsapp-success{color:#5bd6a1}.empty-state{display:flex;min-height:8rem;flex-direction:column;align-items:center;justify-content:center;gap:.4rem;border:1px dashed rgba(255,255,255,.13);border-radius:.8rem;color:#887b76;font-size:.78rem}.empty-state b{color:#ded4cf;font-weight:550}.connection-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,25rem),1fr));gap:.85rem}.connection-card{overflow:hidden;border:1px solid rgba(255,255,255,.1);border-radius:.8rem;background:rgba(255,255,255,.025)}.connection-card__head{display:flex;align-items:center;gap:.75rem;padding:1rem;border-bottom:1px solid rgba(255,255,255,.07)}.user-avatar{display:grid;width:2.4rem;height:2.4rem;flex:none;place-items:center;border:1px solid rgba(240,72,65,.22);border-radius:50%;background:rgba(240,72,65,.09);color:#f29a8e;font-size:.72rem;font-weight:700}.user-title{display:flex;min-width:0;flex:1;flex-direction:column;gap:.2rem}.user-title b{color:#fff;font-size:.82rem}.user-title span{overflow:hidden;color:#a99b95;font-size:.68rem;text-overflow:ellipsis;white-space:nowrap}.state-chip{border-radius:999px;padding:.2rem .48rem;font-size:.58rem}.state-chip.active{background:rgba(43,190,130,.1);color:#5bd6a1}.state-chip.inactive{background:rgba(238,72,66,.1);color:#f28e86}.services{padding:.3rem 1rem}.service{display:flex;align-items:center;gap:.7rem;min-height:3.7rem;border-bottom:1px solid rgba(255,255,255,.06)}.service:last-child{border:0}.service-icon{display:grid;width:1.8rem;height:1.8rem;flex:none;place-items:center;border:1px solid rgba(255,255,255,.1);border-radius:.5rem;background:rgba(255,255,255,.04);font-size:.8rem;font-weight:700}.service-icon.google{color:#e8aa72}.service-icon.telegram{color:#7dbfe3}.service-info{display:flex;min-width:0;flex:1;flex-direction:column;gap:.18rem}.service-info b{color:#e8dfdb;font-size:.72rem;font-weight:550}.service-info span{color:#847873;font-size:.64rem}.service-info .warning{color:#d5a860}.connect{flex:none;border:1px solid rgba(240,90,80,.3);border-radius:.4rem;background:rgba(240,80,72,.08);padding:.32rem .55rem;color:#f29b92;font-size:.62rem;text-decoration:none;cursor:pointer}.connect:hover,.user-portal-link:hover{background:rgba(240,80,72,.16)}.service-status{width:.42rem;height:.42rem;flex:none;border-radius:50%;background:#635853}.service-status.ok{background:#51cb94;box-shadow:0 0 8px #51cb9455}.service-status.bad{background:#e96d64}.unlink{border:1px solid rgba(239,68,68,.22);border-radius:.4rem;background:transparent;padding:.32rem .5rem;color:#f29891;font-size:.62rem;cursor:pointer}.unlink:hover{background:rgba(127,29,29,.25)}.unlink:disabled{opacity:.5}
-.agent-token-form{display:flex;flex-wrap:wrap;gap:.45rem;margin:.5rem 0}.agent-token-form input,.agent-token-form select{border:1px solid rgba(255,255,255,.25);border-radius:.35rem;background:#211516;color:#fff;padding:.45rem .55rem;font-size:.72rem}.agent-token-form input::placeholder{color:#a99b95;opacity:1}.agent-token-form select option{background:#211516;color:#fff}.agent-token-result{color:#fff;font-size:.72rem}.agent-token-row{display:flex;align-items:center;justify-content:space-between;gap:.75rem;border-top:1px solid rgba(255,255,255,.08);padding:.55rem 0;color:#eee;font-size:.72rem}.agent-token-row small{display:block;color:#a99b95;font-size:.62rem}.agent-token-row button{margin-left:.35rem}.agent-token-link{border:1px solid rgba(255,255,255,.25);border-radius:.35rem;background:#211516;color:#fff;padding:.3rem .4rem;font-size:.66rem}.agent-token-link option{background:#211516;color:#fff}.homeassistant-settings{padding:1rem;border:1px solid rgba(255,255,255,.1);border-radius:.8rem;background:rgba(255,255,255,.025)}.homeassistant-settings>div:first-child{display:flex;flex-direction:column;gap:.25rem;margin-bottom:1rem}.homeassistant-settings b{color:#fff;font-size:.85rem}.homeassistant-settings span{color:#9e918c;font-size:.7rem}.ha-not-configured{padding:1rem;border:1px dashed rgba(255,255,255,.13);border-radius:.6rem;color:#9e918c;font-size:.72rem;line-height:1.5}.ha-status{display:flex;align-items:center;gap:1rem;margin-bottom:1.5rem;padding:.75rem;border:1px solid rgba(255,255,255,.08);border-radius:.6rem;background:rgba(255,255,255,.02)}.status-chip{border-radius:999px;padding:.3rem .6rem;font-size:.62rem;font-weight:600}.status-chip.connected{background:rgba(43,190,130,.1);color:#5bd6a1}.status-chip.disconnected{background:rgba(238,72,66,.1);color:#f28e86}.status-info{color:#9e918c;font-size:.68rem}.ha-status-error{margin:0 0 1rem;padding:.6rem .75rem;border:1px solid rgba(240,80,72,.3);border-radius:.5rem;background:rgba(120,30,28,.25);color:#f3a79f;font-size:.68rem;line-height:1.5;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;word-break:break-word}.ha-entities-note{margin:0;color:#f3a79f;font-size:.62rem;line-height:1.4}.ha-users-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,20rem),1fr));gap:1rem;margin-top:1rem}.ha-user-card{border:1px solid rgba(255,255,255,.1);border-radius:.6rem;background:rgba(255,255,255,.04);overflow:hidden}.ha-user-header{display:flex;align-items:center;gap:.75rem;padding:.75rem;border-bottom:1px solid rgba(255,255,255,.07);background:rgba(255,255,255,.01)}.ha-user-header .user-avatar{width:2.2rem;height:2.2rem;font-size:.65rem}.user-info{display:flex;flex:1;flex-direction:column;gap:.2rem;min-width:0}.user-info b{color:#fff;font-size:.78rem}.user-info span{color:#9e918c;font-size:.64rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ha-devices{padding:.75rem;border-bottom:1px solid rgba(255,255,255,.05)}.no-devices{color:#8c7d77;font-size:.68rem;text-align:center;padding:.5rem}.device-list{display:flex;flex-direction:column;gap:.4rem}.device-item{display:flex;align-items:center;justify-content:space-between;gap:.5rem;padding:.4rem;background:rgba(255,255,255,.04);border-radius:.4rem;border:1px solid rgba(255,255,255,.05)}.device-name{flex:1;color:#eee;font-size:.7rem;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.device-entity{color:#9e918c;font-size:.62rem;flex:0}.device-item .remove{border:none;background:transparent;color:#f29b92;cursor:pointer;padding:.2rem .4rem;font-size:.6rem;line-height:1}.device-item .remove:hover{background:rgba(240,80,72,.15);border-radius:.3rem}.ha-assign-form{display:flex;flex-direction:column;gap:.5rem;padding:.75rem;border-top:1px solid rgba(255,255,255,.05)}.ha-assign-form select,.ha-assign-form input{border:1px solid rgba(255,255,255,.15);border-radius:.4rem;background:rgba(0,0,0,.2);padding:.4rem .5rem;color:#eee;font-size:.68rem}.ha-assign-form select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%23d5d5d5' d='M1 1l5 5 5-5'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right .4rem center;padding-right:1.8rem}.ha-assign-form select option{background:#211516;color:#fff}</style>
+.agent-token-form{display:flex;flex-wrap:wrap;gap:.45rem;margin:.5rem 0}.agent-token-form input,.agent-token-form select{border:1px solid rgba(255,255,255,.25);border-radius:.35rem;background:#211516;color:#fff;padding:.45rem .55rem;font-size:.72rem}.agent-token-form input::placeholder{color:#a99b95;opacity:1}.agent-token-form select option{background:#211516;color:#fff}.agent-token-result{color:#fff;font-size:.72rem}.agent-token-row{display:flex;align-items:center;justify-content:space-between;gap:.75rem;border-top:1px solid rgba(255,255,255,.08);padding:.55rem 0;color:#eee;font-size:.72rem}.agent-token-row small{display:block;color:#a99b95;font-size:.62rem}.agent-token-row button{margin-left:.35rem}.agent-token-link{border:1px solid rgba(255,255,255,.25);border-radius:.35rem;background:#211516;color:#fff;padding:.3rem .4rem;font-size:.66rem}.agent-token-link option{background:#211516;color:#fff}.homeassistant-settings{padding:1rem;border:1px solid rgba(255,255,255,.1);border-radius:.8rem;background:rgba(255,255,255,.025)}.homeassistant-settings>div:first-child{display:flex;flex-direction:column;gap:.25rem;margin-bottom:1rem}.homeassistant-settings b{color:#fff;font-size:.85rem}.homeassistant-settings span{color:#9e918c;font-size:.7rem}.ha-not-configured{padding:1rem;border:1px dashed rgba(255,255,255,.13);border-radius:.6rem;color:#9e918c;font-size:.72rem;line-height:1.5}.ha-status{display:flex;align-items:center;gap:1rem;margin-bottom:1.5rem;padding:.75rem;border:1px solid rgba(255,255,255,.08);border-radius:.6rem;background:rgba(255,255,255,.02)}.status-chip{border-radius:999px;padding:.3rem .6rem;font-size:.62rem;font-weight:600}.status-chip.connected{background:rgba(43,190,130,.1);color:#5bd6a1}.status-chip.disconnected{background:rgba(238,72,66,.1);color:#f28e86}.status-info{color:#9e918c;font-size:.68rem}.ha-status-error{margin:0 0 1rem;padding:.6rem .75rem;border:1px solid rgba(240,80,72,.3);border-radius:.5rem;background:rgba(120,30,28,.25);color:#f3a79f;font-size:.68rem;line-height:1.5;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;word-break:break-word}.ha-picker{position:relative}
+.ha-picker-trigger{display:flex;align-items:center;justify-content:space-between;gap:.5rem;width:100%;border:1px solid rgba(255,255,255,.15);border-radius:.4rem;background:rgba(0,0,0,.2);padding:.45rem .55rem;color:#eee;font-size:.68rem;cursor:pointer;text-align:left}
+.ha-picker-trigger:hover{border-color:rgba(255,255,255,.3)}
+.ha-picker-value{color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ha-picker-placeholder{color:#8c7d77}
+.ha-picker-caret{color:#9e918c;font-size:.6rem;flex-shrink:0}
+.ha-picker-panel{position:absolute;z-index:40;left:0;right:0;top:calc(100% + .3rem);border:1px solid rgba(255,255,255,.16);border-radius:.5rem;background:#211516;box-shadow:0 12px 30px rgba(0,0,0,.55);overflow:hidden}
+.ha-picker-search{width:100%;border:none;border-bottom:1px solid rgba(255,255,255,.12);background:transparent;padding:.55rem .65rem;color:#fff;font-size:.7rem;outline:none}
+.ha-picker-search::placeholder{color:#8c7d77}
+.ha-picker-list{list-style:none;margin:0;padding:.25rem;max-height:14rem;overflow-y:auto}
+.ha-picker-item{display:flex;flex-direction:column;gap:.1rem;width:100%;border:none;border-radius:.35rem;background:transparent;padding:.4rem .5rem;color:#eee;font-size:.7rem;cursor:pointer;text-align:left}
+.ha-picker-item:hover,.ha-picker-item.active{background:rgba(255,255,255,.08)}
+.ha-picker-item-name{color:#fff}
+.ha-picker-item-id{color:#8c7d77;font-size:.6rem}
+.ha-picker-empty{margin:0;padding:.7rem .65rem;color:#8c7d77;font-size:.66rem;text-align:center}
+.ha-entities-note{margin:0;color:#f3a79f;font-size:.62rem;line-height:1.4}.ha-users-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,20rem),1fr));gap:1rem;margin-top:1rem}.ha-user-card{border:1px solid rgba(255,255,255,.1);border-radius:.6rem;background:rgba(255,255,255,.04);overflow:hidden}.ha-user-header{display:flex;align-items:center;gap:.75rem;padding:.75rem;border-bottom:1px solid rgba(255,255,255,.07);background:rgba(255,255,255,.01)}.ha-user-header .user-avatar{width:2.2rem;height:2.2rem;font-size:.65rem}.user-info{display:flex;flex:1;flex-direction:column;gap:.2rem;min-width:0}.user-info b{color:#fff;font-size:.78rem}.user-info span{color:#9e918c;font-size:.64rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.ha-devices{padding:.75rem;border-bottom:1px solid rgba(255,255,255,.05)}.no-devices{color:#8c7d77;font-size:.68rem;text-align:center;padding:.5rem}.device-list{display:flex;flex-direction:column;gap:.4rem}.device-item{display:flex;align-items:center;justify-content:space-between;gap:.5rem;padding:.4rem;background:rgba(255,255,255,.04);border-radius:.4rem;border:1px solid rgba(255,255,255,.05)}.device-name{flex:1;color:#eee;font-size:.7rem;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.device-entity{color:#9e918c;font-size:.62rem;flex:0}.device-item .remove{border:none;background:transparent;color:#f29b92;cursor:pointer;padding:.2rem .4rem;font-size:.6rem;line-height:1}.device-item .remove:hover{background:rgba(240,80,72,.15);border-radius:.3rem}.ha-assign-form{display:flex;flex-direction:column;gap:.5rem;padding:.75rem;border-top:1px solid rgba(255,255,255,.05)}.ha-assign-form select,.ha-assign-form input{border:1px solid rgba(255,255,255,.15);border-radius:.4rem;background:rgba(0,0,0,.2);padding:.4rem .5rem;color:#eee;font-size:.68rem}.ha-assign-form select{appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%23d5d5d5' d='M1 1l5 5 5-5'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right .4rem center;padding-right:1.8rem}.ha-assign-form select option{background:#211516;color:#fff}</style>
