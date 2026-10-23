@@ -4,10 +4,31 @@ Home Assistant - Integración con Home Assistant para control de dispositivos
 import asyncio
 import logging
 import os
+import socket
 from typing import Any, Optional
 import aiohttp
 
 logger = logging.getLogger(__name__)
+
+
+def _client_session() -> aiohttp.ClientSession:
+    """Sesión HTTP que solo usa IPv4.
+
+    En la red interna de Docker el mismo contenedor responde por IPv4 y por
+    IPv6, y el resolver puede devolver primero la IPv6. aiohttp escoge una
+    sola familia por petición: si se queda con la IPv6 y esa ruta no existe,
+    la llamada muere por timeout aunque la IPv4 del mismo host funcione.
+    `curl` no lo sufre porque prueba ambas en paralelo, y por eso desde la
+    terminal parecía que todo estaba bien.
+    """
+    try:
+        return aiohttp.ClientSession(
+            connector=aiohttp.TCPConnector(family=socket.AF_INET)
+        )
+    except (TypeError, ValueError):
+        # Versiones de aiohttp sin el parámetro `family`: mejor intentarlo sin
+        # forzar que dejar la integración inservible.
+        return aiohttp.ClientSession()
 
 
 async def validate_homeassistant_connection(url: str, token: str) -> dict[str, Any]:
@@ -27,7 +48,7 @@ async def validate_homeassistant_connection(url: str, token: str) -> dict[str, A
         # Normalizar URL (sin trailing slash)
         url = url.rstrip('/')
         
-        async with aiohttp.ClientSession() as session:
+        async with _client_session() as session:
             headers = {"Authorization": f"Bearer {token}"}
             
             # Verificar conexión
@@ -68,7 +89,7 @@ async def list_homeassistant_devices(url: str, token: str) -> dict[str, Any]:
     
     try:
         url = url.rstrip('/')
-        async with aiohttp.ClientSession() as session:
+        async with _client_session() as session:
             headers = {"Authorization": f"Bearer {token}"}
             
             # Obtener estados de todas las entidades
@@ -124,7 +145,7 @@ async def get_homeassistant_device_state(url: str, token: str, entity_id: str) -
     
     try:
         url = url.rstrip('/')
-        async with aiohttp.ClientSession() as session:
+        async with _client_session() as session:
             headers = {"Authorization": f"Bearer {token}"}
             
             async with session.get(
@@ -176,7 +197,7 @@ async def call_homeassistant_service(
     
     try:
         url = url.rstrip('/')
-        async with aiohttp.ClientSession() as session:
+        async with _client_session() as session:
             headers = {"Authorization": f"Bearer {token}"}
             
             payload = {
@@ -516,7 +537,7 @@ async def validate_server_connection(url: str, token: str) -> dict:
     headers = {"Authorization": f"Bearer {token}"}
     
     try:
-        async with aiohttp.ClientSession() as session:
+        async with _client_session() as session:
             async with session.get(
                 f"{url}/api/",
                 headers=headers,
@@ -545,7 +566,7 @@ async def list_server_entities(url: str, token: str) -> dict:
     headers = {"Authorization": f"Bearer {token}"}
     
     try:
-        async with aiohttp.ClientSession() as session:
+        async with _client_session() as session:
             async with session.get(
                 f"{url}/api/states",
                 headers=headers,
