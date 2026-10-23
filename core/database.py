@@ -150,7 +150,7 @@ class User(Base):
     can_use_spotify = Column(Boolean, default=False, nullable=False)
     can_use_notes = Column(Boolean, default=False, nullable=False)
     can_use_reminders = Column(Boolean, default=False, nullable=False)
-    can_use_tuya = Column(Boolean, default=True, nullable=False)
+    can_use_tuya = Column(Boolean, default=False, nullable=False)
     can_use_device = Column(Boolean, default=False, nullable=False)
     can_use_whatsapp = Column(Boolean, default=False, nullable=False)
 

@@ -576,43 +576,49 @@ Los **usuarios** no usan esta variable: tienen su propia cuenta (usuario y contr
 
 Igris descubre los dispositivos autorizados de Smart Life y los controles virtuales guardados en los hubs infrarrojos. Los dispositivos directos usan la API estándar de Tuya; los mandos IR usan la API específica del hub. Las órdenes explícitas se ejecutan inmediatamente.
 
-#### Una cuenta de Tuya por usuario
+#### Cómo funciona la vinculación por usuario
 
-Cada usuario vincula **su propia** cuenta de Smart Life desde `/u/conexiones` → «Mi casa». Al pulsar «Conectar mi cuenta Tuya» se abre la página de autorización de Tuya, el usuario entra con sus credenciales y Tuya devuelve un `uid` al backend. Ese `uid` se guarda en la tabla `tuya_accounts` y desde entonces sus dispositivos se listan con él, no con una cuenta compartida. Así cada usuario ve solo los aparatos de su casa.
+Hay **dos pasos separados** y conviene no confundirlos:
 
-No hace falta que nadie copie UID a mano ni toque el panel de Tuya: el flujo es OAuth 2.0 completo.
+1. **El administrador da el permiso.** En `/panel/usuarios`, cada usuario tiene un botón **«Permisos»** que abre la lista de funciones. Ahí hay que marcar **«Casa inteligente (Tuya / Smart Life)»** y guardar. Sin este paso la sección «Mi casa» no aparece y las herramientas de Tuya están bloqueadas para ese usuario.
 
-**Requisito previo en Tuya:** en el proyecto, *Devices → Link App Account → Configure OAuth 2.0 Authorization* debe estar configurado con una llave de tipo *Others*, el icono de la app, el nombre del solicitante y la Callback URL apuntando a `https://igris.zottagroup.com/api/user/tuya/callback`.
+   > El formulario «Crear usuario» de arriba en esa misma página también muestra esa casilla, pero solo aplica al usuario que se está creando. Marcar ahí no cambia los permisos de las cuentas que ya existen.
+
+2. **El usuario vincula su cuenta.** Entra a `/u/conexiones` con **su** usuario y contraseña (no con la clave de administrador) y abre la sección **«Mi casa»**. Pulsa «Conectar mi cuenta Tuya», autoriza en la página de Tuya y vuelve. Igris guarda el `uid` en la tabla `tuya_accounts` y desde entonces lista los dispositivos con ese identificador.
+
+Cada usuario tiene su propio `uid`, así que ve únicamente los aparatos de su casa. No hay UID compartido ni que copiar a mano: el flujo es OAuth 2.0 completo.
 
 Si un usuario no ha vinculado su cuenta, las herramientas de Tuya le responden que aún no la tiene conectada. No hay respaldo con una cuenta global.
 
-#### Funciones del asistente
+#### Configuración en Tuya
 
-Ejemplos de lenguaje natural:
+En el proyecto de Tuya hacen falta **dos credenciales distintas**, y no se sustituyen entre sí:
 
-- «Prende la lámpara» o «Apaga el enchufe».
-- «Prende el televisor», «Sube el volumen» o «Cambia el canal».
-- «¿El aire está encendido?» o «¿Qué estado tiene el televisor?».
+| Pestaña en Tuya | Tipo | Para qué sirve |
+| --- | --- | --- |
+| *Cloud Authorization* | Cloud Authorization | Firmar las llamadas de control de dispositivos |
+| *App Authorization* | Others | Autorizar la cuenta de cada usuario (OAuth 2.0) |
 
-Para el aire acondicionado, Igris consulta el estado específico del mando IR. Para otros dispositivos consulta el estado que reporta Smart Life o el mando virtual.
+Además, en *Devices → Link App Account → Configure OAuth 2.0 Authorization* hay que:
 
-Si una referencia coincide con varios dispositivos, Igris no ejecuta la orden ni consulta un dispositivo al azar: muestra los nombres coincidentes y pide especificar uno, por ejemplo «aire de la pieza», «aire de la sala» o «televisor de la habitación». Los alias configurados con `TUYA_DEVICE_ALIASES` también identifican directamente cada dispositivo.
+- Seleccionar la llave de tipo *Others* en **Authorization Key**.
+- Subir un **App Icon** en PNG de 1024×1024 (obligatorio; sin él no deja guardar).
+- Escribir el **Applicant Name (English)**.
+- Dejar la **Callback URL** en `https://igris.zottagroup.com/api/user/tuya/callback`.
 
-Variables del backend:
+#### Variables del backend
 
 | Variable | Descripción | Ejemplo |
 | --- | --- | --- |
-| `TUYA_ACCESS_ID` | Access ID del proyecto Tuya (Cloud Authorization). Firma las llamadas de control. | `tu_access_id` |
-| `TUYA_ACCESS_SECRET` | Access Secret del proyecto Tuya | `tu_access_secret` |
-| `TUYA_OAUTH_CLIENT_ID` | Client ID de la app OAuth (App Authorization). Autoriza cuentas de usuario. | `87ykwm8...` |
-| `TUYA_OAUTH_CLIENT_SECRET` | Client Secret de la app OAuth | `486484f0...` |
-| `TUYA_OAUTH_CALLBACK` | URL de retorno registrada en Tuya (opcional) | `https://igris.zottagroup.com/api/user/tuya/callback` |
+| `TUYA_ACCESS_ID` | Access ID del proyecto (Cloud Authorization). Firma el control. | `s4dsd3...` |
+| `TUYA_ACCESS_SECRET` | Access Secret del proyecto | — |
+| `TUYA_OAUTH_CLIENT_ID` | Client ID de la app OAuth (App Authorization) | `87ykwm8...` |
+| `TUYA_OAUTH_CLIENT_SECRET` | Client Secret de la app OAuth | — |
+| `TUYA_OAUTH_CALLBACK` | URL de retorno; si falta se usa la de IGRIS | `https://igris.zottagroup.com/api/user/tuya/callback` |
 | `TUYA_REGION` | Región de la cuenta Tuya | `us` |
 | `TUYA_ENDPOINT` | Endpoint opcional; se deriva de la región | `https://openapi.tuyaus.com` |
 | `TUYA_DEVICE_IDS` | Lista opcional de IDs permitidos separados por comas | `id_1,id_2` |
 | `TUYA_DEVICE_ALIASES` | Alias opcionales con formato `nombre:id` | `televisor:id_tv` |
-
-`TUYA_ACCESS_ID` y `TUYA_OAUTH_CLIENT_ID` son credenciales **distintas** y no se sustituyen entre sí: la primera firma las llamadas de control, la segunda autoriza cuentas.
 
 También debes habilitar **IR Control Hub Open Service** en Tuya para usar mandos infrarrojos.
 
@@ -625,6 +631,11 @@ También debes habilitar **IR Control Hub Open Service** en Tuya para usar mando
 | `GET` | `/api/user/tuya/callback` | Retorno de Tuya; canjea el `code` y guarda el `uid` |
 | `GET` | `/api/user/tuya/devices` | Dispositivos de la cuenta de ese usuario |
 | `DELETE` | `/api/user/tuya/link` | Desvincula la cuenta |
+
+#### Dónde se ve en el panel
+
+- `/panel/conexiones` → pestaña **Cuentas**: cada usuario muestra una fila **«Smart Life (Tuya)»** con su estado (vinculada, sin vincular o función desactivada).
+- `/panel/usuarios` → botón **«Permisos»** de cada cuenta: la casilla que hay que marcar.
 
 
 ### Google (Gmail y Calendar)
