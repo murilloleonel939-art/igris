@@ -40,6 +40,7 @@ FEATURE_ORDER = (
     "notes",
     "reminders",
     "tuya",
+    "homeassistant",
     "device",
     "whatsapp",
 )
@@ -150,6 +151,12 @@ FEATURES: dict[str, Feature] = {
         label="Recordatorios",
         description="Programar avisos; le llegan por Telegram si lo tiene vinculado.",
     ),
+    "homeassistant": Feature(
+        key="homeassistant",
+        column="can_use_homeassistant",
+        label="Home Assistant",
+        description="Consultar y controlar los dispositivos que el administrador le haya asignado.",
+    ),
     "device": Feature(
         key="device",
         column="can_use_device",
@@ -209,6 +216,9 @@ TOOL_FEATURES: dict[str, str] = {
     "list_tuya_devices": "tuya",
     "get_tuya_device_status": "tuya",
     "control_tuya_device": "tuya",
+    "list_homeassistant_devices": "homeassistant",
+    "get_homeassistant_device_state": "homeassistant",
+    "control_homeassistant_device": "homeassistant",
     "send_whatsapp_message": "whatsapp",
     "open_chrome": "device",
     "search_youtube": "device",
