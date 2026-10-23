@@ -329,6 +329,25 @@ def _no_user() -> dict[str, Any]:
     }
 
 
+def _session_user_id(_session) -> Optional[int]:
+    """Id del usuario de la sesión, venga como BrainSession o como User.
+
+    En el chat llega un BrainSession (con .user_id). Las rutas HTTP pasan
+    directamente el modelo User, que expone .id. Sin esto, las llamadas desde
+    /api/user/homeassistant/* no encontraban usuario y devolvían "no se pudo
+    identificar al usuario".
+    """
+    if _session is None:
+        return None
+    value = getattr(_session, "user_id", None)
+    if value is None:
+        value = getattr(_session, "id", None)
+    try:
+        return int(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
 def _assigned_entity_ids(user_id: int) -> dict[str, str]:
     """{entity_id: nombre_visible} de las entidades asignadas al usuario.
 
@@ -366,7 +385,7 @@ async def list_homeassistant_devices_for_session(_session=None) -> dict[str, Any
     if not url or not token:
         return _not_configured()
 
-    user_id = getattr(_session, "user_id", None)
+    user_id = _session_user_id(_session)
     if not user_id:
         return _no_user()
 
@@ -411,7 +430,7 @@ async def get_homeassistant_device_state_for_session(
     if not url or not token:
         return _not_configured()
 
-    user_id = getattr(_session, "user_id", None)
+    user_id = _session_user_id(_session)
     if not user_id:
         return _no_user()
 
@@ -441,7 +460,7 @@ async def control_homeassistant_device_for_session(
     if not url or not token:
         return _not_configured()
 
-    user_id = getattr(_session, "user_id", None)
+    user_id = _session_user_id(_session)
     if not user_id:
         return _no_user()
 
@@ -476,7 +495,7 @@ async def resolve_entity_for_session(name_or_id: str, _session=None) -> dict[str
     Devuelve {"success": True, "entity_id": ...} o un error con las opciones
     disponibles, para que el modelo pueda repreguntar en vez de inventar.
     """
-    user_id = getattr(_session, "user_id", None)
+    user_id = _session_user_id(_session)
     if not user_id:
         return _no_user()
 

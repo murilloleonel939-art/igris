@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from core.database import User, get_db
+from core.database import HomeAssistantDevice, User, get_db, utcnow
 from core.tools import homeassistant as ha
 from server.user_routes import require_user
 
@@ -23,6 +23,11 @@ router = APIRouter()
 
 
 # ============= MODELOS =============
+
+class RenameDeviceRequest(BaseModel):
+    """Nombre con el que el usuario conocerá el dispositivo."""
+    name: str = Field(..., min_length=1, max_length=120)
+
 
 class ControlDeviceRequest(BaseModel):
     """Solicitud para controlar un dispositivo."""
@@ -104,3 +109,50 @@ async def get_device_state(
         entity_id=entity_id,
         _session=user,
     )
+
+
+@router.post("/api/user/homeassistant/devices/{entity_id}/rename")
+async def rename_device(
+    entity_id: str,
+    payload: RenameDeviceRequest,
+    user: User = Depends(require_user),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Pone el nombre que el usuario prefiera a un dispositivo suyo.
+
+    Solo toca su propia fila: dos usuarios pueden tener la misma entidad física
+    con nombres distintos, y el de uno no cambia el del otro. Tampoco modifica
+    nada en Home Assistant, solo cómo lo llama Igris.
+    """
+    name = (payload.name or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="El nombre no puede estar vacío")
+
+    row = (
+        db.query(HomeAssistantDevice)
+        .filter(
+            HomeAssistantDevice.user_id == user.id,
+            HomeAssistantDevice.entity_id == entity_id,
+        )
+        .first()
+    )
+    if row is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Ese dispositivo no está asignado a tu cuenta",
+        )
+
+    # Si el nombre coincide con el de Home Assistant se guarda vacío, para que
+    # siga los cambios que el administrador haga allí.
+    original = (row.original_name or "").strip()
+    row.custom_name = None if name == original else name
+    row.last_sync = utcnow()
+    db.commit()
+    db.refresh(row)
+
+    logger.info("HA: usuario %s renombró %s a %s", user.id, entity_id, name)
+    return {
+        "success": True,
+        "entity_id": row.entity_id,
+        "name": name,
+    }

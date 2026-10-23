@@ -58,6 +58,7 @@ from core.memory import link_memories, linked_memories_block, load_memories, neu
 from core.neural import model_status, train_user_model
 from core.knowledge_graph import confirm_graph_relation, export_graph, graph_audit, graph_context, graph_neighbors, graph_summary, import_graph, learn_from_assistant, preview_graph_import, search_graph_nodes, set_graph_relation_status, stale_graph_relations, validate_graph_payload
 from core.tools import gcalendar, gmail
+from core.tools import homeassistant as ha_tools
 from core.tools.time_tools import DEFAULT_TZ, _format
 from core import stt, voice
 
@@ -1850,6 +1851,12 @@ def user_connections(
             "online": row.id in _connections,
             "last_seen_at": row.last_seen_at.isoformat() if row.last_seen_at else None,
         } for row in tv_boxes],
+        # Solo se informa de que existe la función; los dispositivos concretos
+        # se piden aparte para no cargar el panel con listas largas.
+        "homeassistant": {
+            "enabled": caps.has("homeassistant"),
+            "configured": ha_tools.ha_is_configured(),
+        },
     }
 
 

@@ -248,6 +248,43 @@
             </div>
           </section>
 
+          <section v-if="conn.ha && conn.ha.enabled">
+            <h3>Mi casa</h3>
+            <p class="conn-note">
+              Los dispositivos que el administrador te asignó. Puedes cambiarles el nombre:
+              Igris usará ese nombre cuando le hables.
+            </p>
+            <p v-if="!conn.ha.configured" class="conn-note">
+              El administrador todavía no ha configurado Home Assistant en el servidor.
+            </p>
+            <template v-else>
+              <p v-if="conn.haError" class="conn-error">{{ conn.haError }}</p>
+              <p v-if="conn.haLoading" class="conn-note">Cargando dispositivos…</p>
+              <p v-else-if="!conn.haDevices.length" class="conn-note">
+                Todavía no tienes dispositivos asignados. Pídeselos al administrador.
+              </p>
+              <ul v-else class="ha-list">
+                <li v-for="device in conn.haDevices" :key="device.entity_id" class="ha-item">
+                  <div class="ha-item-info">
+                    <b>{{ device.name || device.entity_id }}</b>
+                    <small>{{ device.state || 'sin estado' }}</small>
+                  </div>
+                  <div class="ha-item-actions">
+                    <button
+                      v-if="canToggle(device)"
+                      class="btn ghost"
+                      :disabled="conn.haBusy === device.entity_id"
+                      @click="toggleHaDevice(device)"
+                    >
+                      {{ isOn(device) ? 'Apagar' : 'Encender' }}
+                    </button>
+                    <button class="btn ghost" @click="renameHaDevice(device)">Renombrar</button>
+                  </div>
+                </li>
+              </ul>
+            </template>
+          </section>
+
           <section>
             <h3>Mi TV Box</h3>
             <p class="conn-note">Descarga el agente Android, genera un código temporal y escríbelo una sola vez en tu TV Box.</p>
@@ -1312,12 +1349,84 @@ const conn = ref({
   tvboxCode: '',
   tvboxExpiresAt: '',
   tvboxCreating: false,
+  ha: null,
+  haDevices: [],
+  haLoading: false,
+  haError: '',
+  haBusy: '',
+  haNames: {},
 })
 
 const tvboxExpiryLabel = computed(() => {
   if (!conn.value.tvboxExpiresAt) return ''
   return new Date(conn.value.tvboxExpiresAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 })
+
+// ── Home Assistant ──
+// Los dispositivos ya vienen filtrados por el servidor: aquí solo se muestran
+// los que el administrador asignó a este usuario. Nunca se pide URL ni token.
+
+function haEntityDomain(device) {
+  if (device?.domain) return device.domain
+  const id = device?.entity_id || ''
+  return id.includes('.') ? id.split('.')[0] : ''
+}
+
+function canToggle(device) {
+  return ['light', 'switch', 'fan', 'input_boolean', 'media_player'].includes(haEntityDomain(device))
+}
+
+function isOn(device) {
+  const state = (device?.state || '').toLowerCase()
+  return ['on', 'open', 'playing', 'heat', 'cool'].includes(state)
+}
+
+async function loadHaDevices() {
+  if (!conn.value.ha?.configured) return
+  conn.value.haLoading = true
+  conn.value.haError = ''
+  try {
+    const res = await userApi.get('/api/user/homeassistant/devices')
+    conn.value.haDevices = res.data?.devices || []
+  } catch (e) {
+    conn.value.haError = errorMessage(e, 'No se pudieron cargar tus dispositivos')
+  } finally {
+    conn.value.haLoading = false
+  }
+}
+
+async function toggleHaDevice(device) {
+  const action = isOn(device) ? 'turn_off' : 'turn_on'
+  conn.value.haBusy = device.entity_id
+  conn.value.haError = ''
+  try {
+    await userApi.post(
+      `/api/user/homeassistant/devices/${encodeURIComponent(device.entity_id)}/control`,
+      { action },
+    )
+    await loadHaDevices()
+  } catch (e) {
+    conn.value.haError = errorMessage(e, 'No se pudo controlar el dispositivo')
+  } finally {
+    conn.value.haBusy = ''
+  }
+}
+
+async function renameHaDevice(device) {
+  const current = device.name || device.entity_id
+  const name = window.prompt('¿Cómo quieres llamar a este dispositivo?', current)?.trim()
+  if (!name || name === current) return
+  conn.value.haError = ''
+  try {
+    await userApi.post(
+      `/api/user/homeassistant/devices/${encodeURIComponent(device.entity_id)}/rename`,
+      { name },
+    )
+    await loadHaDevices()
+  } catch (e) {
+    conn.value.haError = errorMessage(e, 'No se pudo cambiar el nombre')
+  }
+}
 
 async function createTvBoxCode() {
   const deviceName = window.prompt('Nombre para tu TV Box', 'Mi TV Box')?.trim()
@@ -1447,6 +1556,7 @@ async function refreshConnections() {
     conn.value.spotify = res.data?.spotify || null
     conn.value.telegram = res.data?.telegram || { linked: false, username: null }
     conn.value.tvBoxes = res.data?.tv_boxes || []
+    conn.value.ha = res.data?.homeassistant || null
     // El código caduca: si el usuario ya se vinculó, se deja de mostrar.
     if (conn.value.telegram.linked) conn.value.telegramCode = ''
   } catch (e) {
@@ -1462,6 +1572,9 @@ function openConnections() {
   // Solo se pide al servidor la primera vez; después se refresca desde los
   // botones de dentro, para no repetir la llamada en cada apertura.
   if (!conn.value.features.length && !conn.value.google) refreshConnections()
+  // La lista de dispositivos se refresca siempre: el administrador puede
+  // asignar o quitar algo mientras el usuario tiene el panel abierto.
+  loadHaDevices()
 }
 
 // Entrar por el menú a /conexiones no vuelve a montar el componente: Vue
@@ -1603,6 +1716,14 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+/* ───────────── Home Assistant (dispositivos asignados) ───────────── */
+.ha-list{list-style:none;margin:.5rem 0 0;padding:0;display:flex;flex-direction:column;gap:.4rem}
+.ha-item{display:flex;align-items:center;justify-content:space-between;gap:.75rem;padding:.55rem .65rem;border:1px solid rgba(255,255,255,.08);border-radius:.5rem;background:rgba(255,255,255,.03)}
+.ha-item-info{display:flex;flex-direction:column;gap:.15rem;min-width:0}
+.ha-item-info b{color:#fff;font-size:.76rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ha-item-info small{color:#9e918c;font-size:.64rem}
+.ha-item-actions{display:flex;gap:.35rem;flex-shrink:0}
+
 /* ── Paneles (conexiones y memoria) — diseño del workspace ── */
 .proactive-alerts {
   position: fixed;
