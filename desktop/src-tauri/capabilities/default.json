@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Permisos de la ventana del chat de IGRIS",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

@@ -1,7 +1,7 @@
-; Ganchos del instalador NSIS de IGRIS Chat.
+; Ganchos del instalador NSIS de IGRIS Chat (Tauri 2).
 ; Tauri los inyecta en su plantilla mediante "installerHooks".
 ;
-; Objetivo: que la desinstalación deje el PC exactamente como estaba.
+; Objetivo: que instalar y desinstalar dejen el PC siempre coherente.
 
 !macro NSIS_HOOK_PREINSTALL
   ; Quita un arranque automático de una instalación anterior antes de reinstalar.
@@ -9,37 +9,31 @@
 !macroend
 
 !macro NSIS_HOOK_POSTINSTALL
-  ; Acceso directo en el menú Inicio para abrir el chat.
-  CreateShortcut "$SMPROGRAMS\${PRODUCTNAME}.lnk" "$INSTDIR\${MAINBINARYNAME}.exe"
+  ; Acceso directo visible al desinstalador, junto al del chat
+  ; ($SMPROGRAMS\IGRIS\IGRIS.lnk lo crea la propia plantilla de Tauri).
+  CreateShortcut "$SMPROGRAMS\IGRIS\Desinstalar IGRIS.lnk" "$INSTDIR\uninstall.exe"
 
-  ; Acceso directo visible al desinstalador, además del de Aplicaciones instaladas.
-  CreateShortcut "$SMPROGRAMS\Desinstalar ${PRODUCTNAME}.lnk" "$INSTDIR\uninstall.exe"
-
-  ; Arranque automático al iniciar sesión, activo desde la propia instalación
-  ; (no solo tras el primer lanzamiento de la app).
+  ; Arranque automático al iniciar sesión, activo desde la propia instalación.
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "IGRIS" '"$INSTDIR\${MAINBINARYNAME}.exe"'
 !macroend
 
 !macro NSIS_HOOK_PREUNINSTALL
-  ; Quita el arranque automático: sin esto, Windows intentaría abrir un
-  ; ejecutable que ya no existe en cada inicio de sesión.
+  ; Quita el arranque automático.
+  ; (La plantilla de Tauri también lo borra, pero solo si no se está actualizando.)
   DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "IGRIS"
 
-  ; Elimina los accesos directos creados por este instalador.
-  Delete "$SMPROGRAMS\${PRODUCTNAME}.lnk"
-  Delete "$SMPROGRAMS\Desinstalar ${PRODUCTNAME}.lnk"
-  Delete "$DESKTOP\${PRODUCTNAME}.lnk"
+  ; Elimina el acceso directo al desinstalador. Debe hacerse antes de que la
+  ; plantilla borre la carpeta del menú Inicio, o la carpeta queda vacía.
+  Delete "$SMPROGRAMS\IGRIS\Desinstalar IGRIS.lnk"
 !macroend
 
 !macro NSIS_HOOK_POSTUNINSTALL
-  ; Borra los datos locales del WebView2. Ahí queda guardada la clave de acceso
-  ; del chat y la sesión del usuario: no deben sobrevivir a la desinstalación.
+  ; Borra los datos locales del WebView2, donde quedan la clave de acceso al
+  ; chat y la sesión del usuario. No deben sobrevivir a la desinstalación.
   ;
-  ; El desinstalador de Tauri se ejecuta desde una copia en %TEMP%, por eso se
-  ; usa la ruta explícita de datos de la aplicación y no $INSTDIR.
-  RMDir /r "$LOCALAPPDATA\com.zottagroup.igris.chat"
-  RMDir /r "$APPDATA\com.zottagroup.igris.chat"
-
-  ; Borra la carpeta de instalación si quedó vacía tras retirar los archivos.
-  RMDir "$INSTDIR"
+  ; Se omite al actualizar ($UpdateMode = 1): ahí interesa conservar la sesión.
+  ${If} $UpdateMode <> 1
+    RMDir /r "$LOCALAPPDATA\com.zottagroup.igris.chat"
+    RMDir /r "$APPDATA\com.zottagroup.igris.chat"
+  ${EndIf}
 !macroend

@@ -1,62 +1,44 @@
 {
-  "$schema": "https://schema.tauri.app/config/1",
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "IGRIS",
+  "version": "1.0.0",
+  "identifier": "com.zottagroup.igris.chat",
   "build": {
-    "beforeDevCommand": "",
-    "beforeBuildCommand": "",
-    "devPath": "https://webigris.zottagroup.com",
-    "distDir": "../dist",
-    "withGlobalTauri": false
+    "frontendDist": "../dist",
+    "devUrl": "https://webigris.zottagroup.com"
   },
-  "package": {
-    "productName": "IGRIS",
-    "version": "1.0.0"
-  },
-  "tauri": {
-    "allowlist": {},
-    "bundle": {
-      "active": true,
-      "targets": [
-        "nsis"
-      ],
-      "identifier": "com.zottagroup.igris.chat",
-      "icon": [
-        "icons/icon.ico",
-        "icons/icon.png"
-      ],
-      "windows": {
-        "nsis": {
-          "installMode": "currentUser",
-          "displayLanguageSelector": false,
-          "languages": [
-            "Spanish"
-          ],
-          "installerIcon": "icons/icon.ico",
-          "installerHooks": "windows/hooks.nsh",
-          "startMenuFolder": "IGRIS",
-          "allowDowngrades": true
-        }
-      },
-      "shortDescription": "Chat de IGRIS",
-      "longDescription": "Ventana de escritorio del chat de IGRIS con avatar y voz."
-    },
+  "app": {
+    "withGlobalTauri": false,
     "security": {
       "csp": null
     },
-    "windows": [
-      {
-        "label": "main",
-        "title": "IGRIS",
-        "width": 1280,
-        "height": 820,
-        "minWidth": 900,
-        "minHeight": 640,
-        "resizable": true,
-        "fullscreen": false,
-        "center": true,
-        "decorations": true,
-        "url": "https://webigris.zottagroup.com",
-        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --use-fake-ui-for-media-stream --autoplay-policy=no-user-gesture-required"
+    "windows": []
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "nsis"
+    ],
+    "icon": [
+      "icons/icon.ico",
+      "icons/icon.png"
+    ],
+    "shortDescription": "Chat de IGRIS",
+    "longDescription": "Ventana de escritorio del chat de IGRIS con avatar y voz.",
+    "windows": {
+      "allowDowngrades": true,
+      "nsis": {
+        "installMode": "currentUser",
+        "languages": [
+          "Spanish"
+        ],
+        "displayLanguageSelector": false,
+        "compression": "lzma",
+        "installerIcon": "icons/icon.ico",
+        "uninstallerIcon": "icons/icon.ico",
+        "installerHooks": "windows/hooks.nsh",
+        "startMenuFolder": "IGRIS"
       }
-    ]
+    }
   }
 }
