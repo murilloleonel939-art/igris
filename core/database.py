@@ -172,7 +172,6 @@ class User(Base):
     memories = relationship("UserMemory", back_populates="user", cascade="all, delete-orphan")
     knowledge_nodes = relationship("KnowledgeNode", back_populates="user", cascade="all, delete-orphan")
     knowledge_relations = relationship("KnowledgeRelation", back_populates="user", cascade="all, delete-orphan")
-    ha_assignments = relationship("HAAssignment", back_populates="user", cascade="all, delete-orphan")
 
 
 class TwoFactorAuth(Base):
@@ -575,27 +574,6 @@ class TelegramLink(Base):
     linked_at = Column(DateTime, nullable=True)
 
     user = relationship("User", back_populates="telegram_link")
-
-
-class HAAssignment(Base):
-    """Asignación de dispositivos HA a usuarios.
-    
-    Un dispositivo HA (entity_id) puede ser asignado a uno o más usuarios
-    para que puedan controlarlo desde la interfaz de chat.
-    """
-    __tablename__ = "ha_assignments"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
-    entity_id = Column(String(255), nullable=False, index=True)
-    friendly_name = Column(String(255), nullable=False)  # Nombre amigable para el usuario
-    created_at = Column(DateTime, default=utcnow, nullable=False)
-    
-    user = relationship("User", back_populates="ha_assignments")
-    
-    __table_args__ = (
-        UniqueConstraint("user_id", "entity_id", name="uq_ha_assignment_user_entity"),
-    )
 
 
 # Crear tablas

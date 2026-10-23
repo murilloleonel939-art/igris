@@ -1,265 +1,276 @@
-"""
-Endpoints admin para gestionar conexiones Home Assistant de usuarios.
+"""IGRIS — Administración del Home Assistant centralizado (/api/admin/homeassistant/*)
 
-Protegidos con admin key (X-Igris-Key header).
-"""
+Hay UN solo Home Assistant para toda la instalación, con sus credenciales en las
+variables de entorno del backend (IGRIS_HA_URL / IGRIS_HA_TOKEN). El usuario
+final nunca ve ni introduce URL ni token.
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.orm import Session
-from pydantic import BaseModel
+Aquí el administrador:
+  1. Ve el estado de la conexión.
+  2. Consulta las entidades que expone HA.
+  3. Asigna una entidad a un usuario con el nombre que quiera.
+
+La tabla `homeassistant_devices` es el control de acceso: sin fila asignada a un
+usuario, la entidad no existe para él aunque esté en el HA compartido.
+"""
+from __future__ import annotations
+
 import logging
+from typing import Any, Optional
 
-from core.database import get_db, User, HAAssignment
-from core.tools import homeassistant as ha_tools
+from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
 
-# require_key se importará dinámicamente en main.py
-require_admin_key = None
+from core.database import HomeAssistantDevice, User, get_db, utcnow
+from core.tools import homeassistant as ha
+from server.user_routes import require_admin_key
 
 logger = logging.getLogger(__name__)
 
-router_admin = APIRouter(prefix="/api/admin/homeassistant", tags=["admin-homeassistant"])
+router = APIRouter(prefix="/api/admin/homeassistant", tags=["admin-homeassistant"])
 
 
-class HAStatusResponse(BaseModel):
-    """Estado de conexión HA de un usuario."""
-    user_id: int
-    user_name: str
-    ha_url: str | None
-    is_connected: bool
-    device_count: int
-
-
-class HAUserDevicesResponse(BaseModel):
-    """Dispositivos de un usuario."""
-    user_id: int
-    user_name: str
-    devices: list[dict]
-
-
-class ConnectHARequest(BaseModel):
-    """Conectar HA a un usuario."""
-    user_id: int
-    ha_url: str
-    ha_token: str
-
-
-class DisconnectHARequest(BaseModel):
-    """Desconectar HA de un usuario."""
-    user_id: int
-
+# ============= MODELOS =============
 
 class AssignDeviceRequest(BaseModel):
-    """Asignar dispositivo a usuario."""
-    user_id: int
-    entity_id: str
-    friendly_name: str
+    """Asigna una entidad de HA a un usuario, con el nombre que él verá."""
+    user_id: int = Field(..., description="Id del usuario que podrá controlarla")
+    entity_id: str = Field(..., description="Entidad de HA, ej: light.sala")
+    name: str = Field(default="", description="Nombre visible para el usuario")
 
 
 class UnassignDeviceRequest(BaseModel):
-    """Desasignar dispositivo de usuario."""
-    user_id: int
-    entity_id: str
+    """Quita la asignación de una entidad a un usuario."""
+    user_id: int = Field(...)
+    entity_id: str = Field(...)
 
 
-@router_admin.get("/status", response_model=list[HAStatusResponse])
-async def get_ha_status_all(
-    db: Session = Depends(get_db),
-    _: None = Depends(lambda: require_admin_key),
-) -> list[HAStatusResponse]:
-    """Lista estado HA de todos los usuarios."""
-    users = db.query(User).all()
-    result = []
+# ============= HELPERS =============
 
-    for user in users:
-        is_connected = bool(user.homeassistant_url and user.homeassistant_token)
-        device_count = (
-            db.query(HAAssignment).filter_by(user_id=user.id).count()
-            if is_connected
-            else 0
+def _require_configured() -> tuple[str, str]:
+    """(url, token) del HA compartido, o 503 si el servidor no está configurado."""
+    url, token = ha._ha_credentials()
+    if not url or not token:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "Home Assistant no está configurado en el servidor. "
+                "Define IGRIS_HA_URL e IGRIS_HA_TOKEN en el entorno del backend."
+            ),
         )
-
-        result.append(
-            HAStatusResponse(
-                user_id=user.id,
-                user_name=user.name or f"User {user.id}",
-                ha_url=user.homeassistant_url if is_connected else None,
-                is_connected=is_connected,
-                device_count=device_count,
-            )
-        )
-
-    return result
+    return url, token
 
 
-@router_admin.get("/status/{user_id}", response_model=HAStatusResponse)
-async def get_ha_status(
-    user_id: int,
+def _visible_name(row: HomeAssistantDevice) -> str:
+    """Nombre con el que el usuario conoce la entidad."""
+    return (row.custom_name or row.original_name or row.entity_id or "").strip() or row.entity_id
+
+
+# ============= ENDPOINTS =============
+
+@router.get("/status")
+async def ha_status(
+    _: None = Depends(require_admin_key),
     db: Session = Depends(get_db),
-    _: None = Depends(lambda: require_admin_key),
-) -> HAStatusResponse:
-    """Obtiene estado HA de un usuario específico."""
-    user = db.query(User).filter_by(id=user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+) -> dict[str, Any]:
+    """Estado de la conexión con el HA compartido y uso por usuario.
 
-    is_connected = bool(user.homeassistant_url and user.homeassistant_token)
-    device_count = (
-        db.query(HAAssignment).filter_by(user_id=user.id).count()
-        if is_connected
-        else 0
-    )
+    Nunca devuelve el token. La URL sí, porque no es un secreto y ayuda a
+    diagnosticar a qué HA está apuntando el backend.
+    """
+    url, token = ha._ha_credentials()
+    if not url:
+        return {
+            "configured": False,
+            "connected": False,
+            "url": None,
+            "total_devices_assigned": 0,
+            "users_assigned": 0,
+        }
 
-    return HAStatusResponse(
-        user_id=user.id,
-        user_name=user.name or f"User {user.id}",
-        ha_url=user.homeassistant_url if is_connected else None,
-        is_connected=is_connected,
-        device_count=device_count,
-    )
+    connected = False
+    error: Optional[str] = None
+    try:
+        result = await ha.validate_server_connection(url, token)
+        connected = bool(result.get("success"))
+        if not connected:
+            error = result.get("error")
+    except Exception as exc:  # pragma: no cover
+        logger.error("Error comprobando HA: %s", exc)
+        error = "Error al contactar con Home Assistant"
+
+    rows = db.query(HomeAssistantDevice).all()
+    assigned = [r for r in rows if r.user_id is not None]
+
+    return {
+        "configured": True,
+        "connected": connected,
+        "url": url,
+        "error": error,
+        "total_devices_assigned": len(assigned),
+        "users_assigned": len({r.user_id for r in assigned}),
+    }
 
 
-@router_admin.post("/connect")
-async def connect_ha_admin(
-    req: ConnectHARequest,
+@router.get("/entities")
+async def list_entities(
+    _: None = Depends(require_admin_key),
     db: Session = Depends(get_db),
-    _: None = Depends(lambda: require_admin_key),
-) -> dict:
-    """Conecta HA a un usuario. Admin valida credentials."""
-    user = db.query(User).filter_by(id=req.user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+) -> dict[str, Any]:
+    """Entidades que expone el HA compartido, con quién las tiene asignadas.
 
-    # Validar credenciales
-    validation = await ha_tools.validate_server_connection(req.ha_url, req.ha_token)
-    if not validation.get("success"):
-        raise HTTPException(status_code=400, detail=validation.get("error", "Validación fallida"))
+    Se consulta HA en vivo. Si HA no responde se devuelve igualmente lo que hay
+    guardado en la base, para que el panel no quede inservible cuando HA está
+    caído o reiniciándose.
+    """
+    url, token = _require_configured()
 
-    # Guardar credenciales
-    user.homeassistant_url = req.ha_url.rstrip("/")
-    user.homeassistant_token = req.ha_token
-    user.can_use_homeassistant = True
+    assigned_by_entity: dict[str, list[HomeAssistantDevice]] = {}
+    for row in db.query(HomeAssistantDevice).all():
+        assigned_by_entity.setdefault(row.entity_id, []).append(row)
 
-    db.commit()
-    logger.info(f"Admin connected HA for user {user.id}")
+    usernames = {u.id: u.username for u in db.query(User).all()}
 
-    return {"success": True, "message": f"HA conectado para {user.name or f'User {user.id}'}"}
+    live: list[dict[str, Any]] = []
+    ha_error: Optional[str] = None
+    try:
+        result = await ha.list_server_entities(url, token)
+        if result.get("success"):
+            live = result.get("entities") or []
+        else:
+            ha_error = result.get("error")
+    except Exception as exc:  # pragma: no cover
+        logger.error("Error consultando entidades de HA: %s", exc)
+        ha_error = "Error al contactar con Home Assistant"
 
+    entities: list[dict[str, Any]] = []
+    seen: set[str] = set()
 
-@router_admin.post("/disconnect")
-async def disconnect_ha_admin(
-    req: DisconnectHARequest,
-    db: Session = Depends(get_db),
-    _: None = Depends(lambda: require_admin_key),
-) -> dict:
-    """Desconecta HA de un usuario."""
-    user = db.query(User).filter_by(id=req.user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    for item in live:
+        entity_id = item.get("entity_id")
+        if not entity_id:
+            continue
+        seen.add(entity_id)
+        rows = assigned_by_entity.get(entity_id, [])
+        entities.append({
+            "entity_id": entity_id,
+            "name": item.get("friendly_name") or entity_id,
+            # Una misma entidad puede estar asignada a varios usuarios: cada uno
+            # con su propio nombre. Se listan todos para que el panel lo muestre.
+            "assignments": [
+                {"user_id": r.user_id, "username": usernames.get(r.user_id), "name": _visible_name(r)}
+                for r in rows if r.user_id is not None
+            ],
+        })
 
-    user.homeassistant_url = None
-    user.homeassistant_token = None
-    user.can_use_homeassistant = False
+    # Entidades guardadas que ya no están en HA: se muestran marcadas en vez de
+    # desaparecer sin explicación.
+    for entity_id, rows in assigned_by_entity.items():
+        if entity_id in seen:
+            continue
+        entities.append({
+            "entity_id": entity_id,
+            "name": rows[0].original_name or entity_id,
+            "missing_in_ha": True,
+            "assignments": [
+                {"user_id": r.user_id, "username": usernames.get(r.user_id), "name": _visible_name(r)}
+                for r in rows if r.user_id is not None
+            ],
+        })
 
-    # Borrar asignaciones de dispositivos
-    db.query(HAAssignment).filter_by(user_id=user.id).delete()
+    entities.sort(key=lambda e: (e.get("entity_id") or ""))
 
-    db.commit()
-    logger.info(f"Admin disconnected HA for user {user.id}")
-
-    return {"success": True, "message": f"HA desconectado para {user.name or f'User {user.id}'}"}
-
-
-@router_admin.get("/devices/{user_id}", response_model=HAUserDevicesResponse)
-async def get_user_devices(
-    user_id: int,
-    db: Session = Depends(get_db),
-    _: None = Depends(lambda: require_admin_key),
-) -> HAUserDevicesResponse:
-    """Lista dispositivos disponibles en HA del usuario."""
-    user = db.query(User).filter_by(id=user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="Usuario no encontrado")
-
-    if not user.homeassistant_url or not user.homeassistant_token:
-        raise HTTPException(status_code=400, detail="Usuario sin HA conectado")
-
-    # Listar entidades del servidor HA
-    entities_result = await ha_tools.list_server_entities(
-        user.homeassistant_url, user.homeassistant_token
-    )
-    if not entities_result.get("success"):
-        raise HTTPException(status_code=400, detail=entities_result.get("error", "Error listando entidades"))
-
-    entities = entities_result.get("entities", [])
-
-    # Marcar cuáles están asignadas
-    assignments = db.query(HAAssignment).filter_by(user_id=user.id).all()
-    assigned_ids = {a.entity_id for a in assignments}
-
-    for entity in entities:
-        entity["assigned"] = entity["entity_id"] in assigned_ids
-
-    return HAUserDevicesResponse(
-        user_id=user.id,
-        user_name=user.name or f"User {user.id}",
-        devices=entities,
-    )
+    return {"entities": entities, "total": len(entities), "ha_error": ha_error}
 
 
-@router_admin.post("/devices/assign")
+@router.post("/assign")
 async def assign_device(
-    req: AssignDeviceRequest,
+    payload: AssignDeviceRequest,
+    _: None = Depends(require_admin_key),
     db: Session = Depends(get_db),
-    _: None = Depends(lambda: require_admin_key),
-) -> dict:
-    """Asigna un dispositivo HA a un usuario."""
-    user = db.query(User).filter_by(id=req.user_id).first()
+) -> dict[str, Any]:
+    """Asigna una entidad a un usuario. Si ya estaba, actualiza el nombre."""
+    user = db.query(User).filter(User.id == payload.user_id).first()
     if not user:
-        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+        raise HTTPException(status_code=404, detail="Ese usuario no existe")
 
-    # Verificar que no esté ya asignado
-    existing = (
-        db.query(HAAssignment)
-        .filter_by(user_id=req.user_id, entity_id=req.entity_id)
+    entity_id = (payload.entity_id or "").strip()
+    if not entity_id:
+        raise HTTPException(status_code=400, detail="Falta la entidad")
+
+    name = (payload.name or "").strip() or entity_id
+
+    row = (
+        db.query(HomeAssistantDevice)
+        .filter(
+            HomeAssistantDevice.user_id == payload.user_id,
+            HomeAssistantDevice.entity_id == entity_id,
+        )
         .first()
     )
-    if existing:
-        raise HTTPException(status_code=400, detail="Dispositivo ya asignado")
 
-    assignment = HAAssignment(
-        user_id=req.user_id,
-        entity_id=req.entity_id,
-        friendly_name=req.friendly_name,
-    )
-    db.add(assignment)
+    if row is None:
+        # Nombre original de HA, para no perderlo si el usuario luego borra el suyo.
+        original_name = entity_id
+        entity_type = entity_id.split(".")[0] if "." in entity_id else None
+        try:
+            url, token = _require_configured()
+            result = await ha.list_server_entities(url, token)
+            if result.get("success"):
+                for item in result.get("entities") or []:
+                    if item.get("entity_id") == entity_id:
+                        original_name = item.get("friendly_name") or entity_id
+                        break
+        except HTTPException:
+            # HA caído: se guarda igualmente con lo que sabemos. El nombre se
+            # corrige en la próxima asignación.
+            pass
+
+        row = HomeAssistantDevice(
+            user_id=payload.user_id,
+            entity_id=entity_id,
+            original_name=original_name,
+            custom_name=name if name != original_name else None,
+            entity_type=entity_type,
+            last_sync=utcnow(),
+            created_at=utcnow(),
+        )
+        db.add(row)
+    else:
+        row.custom_name = name
+
     db.commit()
+    db.refresh(row)
 
-    logger.info(f"Admin assigned {req.entity_id} to user {req.user_id}")
+    logger.info("HA: entidad %s asignada al usuario %s", entity_id, payload.user_id)
 
-    return {"success": True, "message": f"Dispositivo '{req.friendly_name}' asignado"}
+    return {
+        "success": True,
+        "user_id": row.user_id,
+        "entity_id": row.entity_id,
+        "name": _visible_name(row),
+    }
 
 
-@router_admin.post("/devices/unassign")
+@router.post("/unassign")
 async def unassign_device(
-    req: UnassignDeviceRequest,
+    payload: UnassignDeviceRequest,
+    _: None = Depends(require_admin_key),
     db: Session = Depends(get_db),
-    _: None = Depends(lambda: require_admin_key),
-) -> dict:
-    """Desasigna un dispositivo HA de un usuario."""
-    user = db.query(User).filter_by(id=req.user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="Usuario no encontrado")
-
+) -> dict[str, Any]:
+    """Quita la asignación. No toca la entidad real de Home Assistant."""
     deleted = (
-        db.query(HAAssignment)
-        .filter_by(user_id=req.user_id, entity_id=req.entity_id)
+        db.query(HomeAssistantDevice)
+        .filter(
+            HomeAssistantDevice.user_id == payload.user_id,
+            HomeAssistantDevice.entity_id == payload.entity_id,
+        )
         .delete()
     )
     db.commit()
 
-    if deleted == 0:
-        raise HTTPException(status_code=404, detail="Asignación no encontrada")
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Esa asignación no existe")
 
-    logger.info(f"Admin unassigned {req.entity_id} from user {req.user_id}")
-
-    return {"success": True, "message": "Dispositivo desasignado"}
+    logger.info("HA: entidad %s desasignada del usuario %s", payload.entity_id, payload.user_id)
+    return {"success": True, "entity_id": payload.entity_id, "user_id": payload.user_id}

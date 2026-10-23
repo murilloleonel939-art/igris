@@ -132,11 +132,6 @@ app = FastAPI(
 app.include_router(device_router)
 app.include_router(tvbox_router)
 app.include_router(homeassistant_router)
-
-# Inyectar require_key para admin routes
-import server.homeassistant_admin_routes as ha_admin_module
-ha_admin_module.require_admin_key = require_key
-
 app.include_router(homeassistant_admin_router)
 
 # CORS - solo el frontend (y el servidor de desarrollo local).

@@ -51,7 +51,7 @@ from core.capabilities import (
     admin_capabilities,
     capabilities_from_user,
 )
-from core.database import GoogleAccount, KnowledgeNode, MemoryLink, Note, Profile, Reminder, SessionLocal, SpotifyAccount, TelegramLink, TvBoxPairingCode, TvBoxToken, User, UserMemory, get_db
+from core.database import GoogleAccount, HomeAssistantDevice, KnowledgeNode, MemoryLink, Note, Profile, Reminder, SessionLocal, SpotifyAccount, TelegramLink, TvBoxPairingCode, TvBoxToken, User, UserMemory, get_db
 from server.tvbox_routes import _connections, _digest
 from core.settings_manager import get_settings
 from core.memory import link_memories, linked_memories_block, load_memories, neural_memory_context, remember_from_text
@@ -471,16 +471,23 @@ def _public_user(u: User, db: Session = None) -> dict[str, Any]:
         )
         connection["voice"] = bool(voice and voice.voice_print and voice.is_authorized)
 
+    # Dispositivos de Home Assistant asignados a este usuario. El panel los
+    # muestra en la pestaña de HA. Nunca se expone el token: solo los nombres.
     ha_devices = []
     if db is not None and bool(getattr(u, "can_use_homeassistant", False)):
+        rows = (
+            db.query(HomeAssistantDevice)
+            .filter(HomeAssistantDevice.user_id == u.id)
+            .all()
+        )
         ha_devices = [
             {
-                "entity_id": a.entity_id,
-                "friendly_name": a.friendly_name,
+                "entity_id": r.entity_id,
+                "name": (r.custom_name or r.original_name or r.entity_id),
             }
-            for a in u.ha_assignments
+            for r in rows
         ]
-    
+
     return {
         "id": u.id,
         "username": u.username,
