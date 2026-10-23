@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from core.database import User, get_db
-from core.auth import require_user
+from server.user_routes import require_user
 from core.tools.homeassistant import (
     validate_homeassistant_connection,
     list_homeassistant_devices,
