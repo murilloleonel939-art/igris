@@ -5,6 +5,7 @@ import asyncio
 import logging
 import os
 import socket
+import time
 from typing import Any, Optional
 import aiohttp
 
@@ -29,6 +30,35 @@ def _client_session() -> aiohttp.ClientSession:
         # Versiones de aiohttp sin el parámetro `family`: mejor intentarlo sin
         # forzar que dejar la integración inservible.
         return aiohttp.ClientSession()
+
+
+# ── Caché de la lista de entidades ──
+# /api/states devuelve TODAS las entidades con sus atributos: en una instalación
+# con muchas integraciones son cientos de KB y tarda decenas de segundos. El
+# panel la pide al abrir y después de cada asignación, así que sin caché cada
+# clic cuesta una espera larga. Es una lista que cambia poco: vale guardarla.
+_ENTITIES_TTL = 60.0
+_entities_cache: dict[str, tuple[float, dict]] = {}
+
+
+def _cache_get(key: str) -> Optional[dict]:
+    entry = _entities_cache.get(key)
+    if not entry:
+        return None
+    stamp, payload = entry
+    if time.monotonic() - stamp > _ENTITIES_TTL:
+        _entities_cache.pop(key, None)
+        return None
+    return payload
+
+
+def _cache_set(key: str, payload: dict) -> None:
+    _entities_cache[key] = (time.monotonic(), payload)
+
+
+def invalidate_entity_cache() -> None:
+    """Olvida la lista guardada. Se llama al asignar, para ver cambios al momento."""
+    _entities_cache.clear()
 
 
 async def validate_homeassistant_connection(url: str, token: str) -> dict[str, Any]:
@@ -575,15 +605,26 @@ async def validate_server_connection(url: str, token: str) -> dict:
 
 
 async def list_server_entities(url: str, token: str) -> dict:
-    """Lista todos los dispositivos de una instancia HA.
-    
+    """Entidades controlables de HA, con la lista completa como referencia.
+
     Retorna:
-        {"success": True, "entities": [{"entity_id": "...", "friendly_name": "..."}, ...]}
-        {"success": False, "error": "..."}
+        {"success": True,
+         "entities": [{"entity_id", "friendly_name"}],   # solo controlables
+         "total_entities": N,                            # todo lo que hay en HA
+         "domains": {"light": 3, "sensor": 40, ...}}     # recuento por dominio
+
+    Los recuentos permiten explicar por qué la lista sale vacía: si HA solo
+    tiene sensores, no hay nada que asignar y hay que decírselo al administrador
+    en vez de dejar el desplegable en blanco.
     """
     url = url.rstrip("/")
     headers = {"Authorization": f"Bearer {token}"}
-    
+
+    cache_key = f"{url}|{token[:12]}"
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return cached
+
     try:
         async with _client_session() as session:
             async with session.get(
@@ -607,18 +648,28 @@ async def list_server_entities(url: str, token: str) -> dict:
                 }
                 
                 entities = []
+                domains: dict[str, int] = {}
                 for state in states:
                     entity_id = state.get("entity_id", "")
                     domain = entity_id.split(".")[0] if "." in entity_id else ""
-                    
+                    if domain:
+                        domains[domain] = domains.get(domain, 0) + 1
+
                     if domain in controllable_domains:
                         friendly_name = state.get("attributes", {}).get("friendly_name", entity_id)
                         entities.append({
                             "entity_id": entity_id,
                             "friendly_name": friendly_name,
                         })
-                
-                return {"success": True, "entities": entities}
+
+                payload = {
+                    "success": True,
+                    "entities": entities,
+                    "total_entities": len(states),
+                    "domains": dict(sorted(domains.items(), key=lambda kv: -kv[1])),
+                }
+                _cache_set(cache_key, payload)
+                return payload
     except asyncio.TimeoutError:
         return {"success": False, "error": "Conexión agotada (timeout 5s)"}
     except Exception as e:

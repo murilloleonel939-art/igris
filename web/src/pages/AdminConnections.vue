@@ -102,7 +102,6 @@
                 <p v-if="haEntitiesError" class="ha-entities-note">{{ haEntitiesError }}</p>
                 <select :value="assignForm[user.id]?.entity || ''" @input="event => { initAssignForm(user.id); assignForm[user.id].entity = event.target.value }" placeholder="Selecciona dispositivo">
                   <option value="">Selecciona dispositivo…</option>
-                  <option v-if="!availableEntities.length" value="" disabled>Cargando…</option>
                   <option v-for="entity in availableEntities" :key="entity.entity_id" :value="entity.entity_id">
                     {{ entity.name || entity.entity_id }}
                   </option>
@@ -183,9 +182,21 @@ async function loadHAEntities() {
     // responde, junto con el motivo. Sin esto el desplegable salía vacío
     // sin explicar nada.
     const haErr = res.data?.ha_error
-    haEntitiesError.value = haErr
-      ? `No se pudo leer la lista de Home Assistant: ${haErr}`
-      : (availableEntities.value.length ? '' : 'Home Assistant no devolvió dispositivos controlables.')
+    if (haErr) {
+      haEntitiesError.value = `No se pudo leer la lista de Home Assistant: ${haErr}`
+    } else if (availableEntities.value.length) {
+      haEntitiesError.value = ''
+    } else {
+      // Sin esto el panel solo decía "no devolvió dispositivos", que no ayuda
+      // a saber si HA está vacío o si lo que hay son sensores.
+      const total = res.data?.total_entities || 0
+      const domains = res.data?.domains || {}
+      const top = Object.entries(domains).slice(0, 4)
+        .map(([name, count]) => `${name} (${count})`).join(', ')
+      haEntitiesError.value = total
+        ? `Home Assistant tiene ${total} entidades, pero ninguna controlable. Tipos encontrados: ${top}.`
+        : 'Home Assistant respondió sin ninguna entidad.'
+    }
   } catch (e) {
     haError.value = errorMessage(e, 'No se pudieron cargar los dispositivos disponibles')
   }

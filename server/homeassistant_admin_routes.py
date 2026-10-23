@@ -135,10 +135,14 @@ async def list_entities(
 
     live: list[dict[str, Any]] = []
     ha_error: Optional[str] = None
+    total_entities = 0
+    domains: dict[str, int] = {}
     try:
         result = await ha.list_server_entities(url, token)
         if result.get("success"):
             live = result.get("entities") or []
+            total_entities = result.get("total_entities") or 0
+            domains = result.get("domains") or {}
         else:
             ha_error = result.get("error")
     except Exception as exc:  # pragma: no cover
@@ -182,7 +186,14 @@ async def list_entities(
 
     entities.sort(key=lambda e: (e.get("entity_id") or ""))
 
-    return {"entities": entities, "total": len(entities), "ha_error": ha_error}
+    return {
+        "entities": entities,
+        "total": len(entities),
+        "ha_error": ha_error,
+        # Se devuelven para que el panel pueda explicar un desplegable vacío.
+        "total_entities": total_entities,
+        "domains": domains,
+    }
 
 
 @router.post("/assign")
@@ -243,6 +254,7 @@ async def assign_device(
 
     db.commit()
     db.refresh(row)
+    ha.invalidate_entity_cache()
 
     logger.info("HA: entidad %s asignada al usuario %s", entity_id, payload.user_id)
 
