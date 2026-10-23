@@ -1,0 +1,62 @@
+{
+  "$schema": "https://schema.tauri.app/config/1",
+  "build": {
+    "beforeDevCommand": "",
+    "beforeBuildCommand": "",
+    "devPath": "https://webigris.zottagroup.com",
+    "distDir": "../dist",
+    "withGlobalTauri": false
+  },
+  "package": {
+    "productName": "IGRIS",
+    "version": "1.0.0"
+  },
+  "tauri": {
+    "allowlist": {},
+    "bundle": {
+      "active": true,
+      "targets": [
+        "nsis"
+      ],
+      "identifier": "com.zottagroup.igris.chat",
+      "icon": [
+        "icons/icon.ico",
+        "icons/icon.png"
+      ],
+      "windows": {
+        "nsis": {
+          "installMode": "currentUser",
+          "displayLanguageSelector": false,
+          "languages": [
+            "Spanish"
+          ],
+          "installerIcon": "icons/icon.ico",
+          "installerHooks": "windows/hooks.nsh",
+          "startMenuFolder": "IGRIS",
+          "allowDowngrades": true
+        }
+      },
+      "shortDescription": "Chat de IGRIS",
+      "longDescription": "Ventana de escritorio del chat de IGRIS con avatar y voz."
+    },
+    "security": {
+      "csp": null
+    },
+    "windows": [
+      {
+        "label": "main",
+        "title": "IGRIS",
+        "width": 1280,
+        "height": 820,
+        "minWidth": 900,
+        "minHeight": 640,
+        "resizable": true,
+        "fullscreen": false,
+        "center": true,
+        "decorations": true,
+        "url": "https://webigris.zottagroup.com",
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --use-fake-ui-for-media-stream --autoplay-policy=no-user-gesture-required"
+      }
+    ]
+  }
+}

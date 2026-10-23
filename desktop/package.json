@@ -1,0 +1,17 @@
+{
+  "name": "igris-desktop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Ventana de escritorio de IGRIS (chat y avatar) para Windows",
+  "scripts": {
+    "tauri": "tauri",
+    "dev": "tauri dev",
+    "build": "tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^1.5.11"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^1.5.3"
+  }
+}

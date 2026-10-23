@@ -1,0 +1,99 @@
+name: Build Windows chat installer
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'desktop/**'
+      - '.github/workflows/build-windows-chat.yml'
+    tags: ['chat-v*']
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri
+
+      - name: Install frontend dependencies
+        working-directory: desktop
+        run: npm install
+
+      - name: Build installer
+        working-directory: desktop
+        run: npm run build
+
+      - name: Verify installer
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem "desktop\src-tauri\target\release\bundle\nsis\*.exe" -ErrorAction SilentlyContinue
+          if (-not $exe) { throw "Tauri terminó sin generar el instalador NSIS" }
+          $exe | Format-List FullName,Length
+
+          # El desinstalador es obligatorio: debe existir y limpiar el arranque automático.
+          $hooks = Get-Content "desktop\src-tauri\windows\hooks.nsh" -Raw
+          foreach ($value in @(
+            'NSIS_HOOK_PREUNINSTALL',
+            'DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "IGRIS"',
+            'uninstall.exe',
+            'RMDir /r "$LOCALAPPDATA\com.zottagroup.igris.chat"'
+          )) {
+            if (-not $hooks.Contains($value)) { throw "El desinstalador no contiene: $value" }
+          }
+          $conf = Get-Content "desktop\src-tauri\tauri.conf.json" -Raw
+          if (-not $conf.Contains('"installerHooks": "windows/hooks.nsh"')) {
+            throw "El instalador no carga los ganchos de desinstalación"
+          }
+
+      - name: Collect installer
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem "desktop\src-tauri\target\release\bundle\nsis\*.exe" | Select-Object -First 1
+          New-Item -ItemType Directory -Force -Path "desktop\output" | Out-Null
+          Copy-Item $exe.FullName "desktop\output\IgrisChatSetup-v1.exe" -Force
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: IgrisChatSetup-v1
+          path: desktop/output/IgrisChatSetup-v1.exe
+
+      - name: Copy installer into frontend
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path "web\public\downloads" | Out-Null
+          Copy-Item desktop/output/IgrisChatSetup-v1.exe web/public/downloads/IgrisChatSetup-v1.exe -Force
+
+      - name: Publish installer in repository
+        if: github.ref == 'refs/heads/main'
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add web/public/downloads/IgrisChatSetup-v1.exe
+          git diff --cached --quiet
+          if ($LASTEXITCODE -ne 0) {
+            git commit -m "build: publicar instalador IgrisChat v1"
+            if ($LASTEXITCODE -ne 0) { throw "No se pudo crear el commit del instalador" }
+            git push origin HEAD:main
+            if ($LASTEXITCODE -ne 0) { throw "No se pudo publicar el instalador en main" }
+          }
+
+      - name: Publish release asset
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: desktop/output/IgrisChatSetup-v1.exe
