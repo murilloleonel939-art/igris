@@ -23,7 +23,7 @@ Micrófono, altavoz y cámara se conceden automáticamente mediante
 
 ## Instalación y desinstalación
 
-**Instalar**: doble clic en `IgrisChatSetup-v1.exe`. Se instala en el perfil del usuario, sin pedir administrador. Deja:
+**Instalar**: doble clic en `IgrisChatSetup-v2.exe`. Se instala en el perfil del usuario, sin pedir administrador. Deja:
 
 - `Inicio → IGRIS → IGRIS` (abrir el chat).
 - `Inicio → IGRIS → Desinstalar IGRIS` (desinstalador visible, además del de Aplicaciones instaladas).
@@ -49,8 +49,8 @@ El ejecutable **se compila en GitHub Actions**, no hace falta tener Rust ni Wind
 
 Se dispara al tocar `desktop/**`, a mano desde la pestaña Actions, o con un tag `chat-v*`. Genera:
 
-- `desktop/output/IgrisChatSetup-v1.exe` → instalador NSIS, instalación por usuario, sin administrador.
-- Copia automática a `web/public/downloads/IgrisChatSetup-v1.exe`.
+- `desktop/output/IgrisChatSetup-v2.exe` → instalador NSIS, instalación por usuario, sin administrador.
+- Copia automática a `web/public/downloads/IgrisChatSetup-v2.exe`.
 - Commit del instalador en `main` y artifact descargable.
 
 Para compilar en un Windows propio:
