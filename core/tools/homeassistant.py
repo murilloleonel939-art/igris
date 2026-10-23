@@ -589,7 +589,11 @@ async def list_server_entities(url: str, token: str) -> dict:
             async with session.get(
                 f"{url}/api/states",
                 headers=headers,
-                timeout=aiohttp.ClientTimeout(total=5),
+                # /api/states devuelve TODAS las entidades con sus atributos: en
+                # una instalación con muchas integraciones tarda bastante más
+                # que /api/. Con 5 s la lista llegaba vacía por timeout mientras
+                # el estado de conexión sí funcionaba.
+                timeout=aiohttp.ClientTimeout(total=20),
             ) as r:
                 if r.status != 200:
                     return {"success": False, "error": f"Error HTTP {r.status}"}

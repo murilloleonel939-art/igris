@@ -75,8 +75,8 @@ async def ha_status(
 ) -> dict[str, Any]:
     """Estado de la conexión con el HA compartido y uso por usuario.
 
-    Nunca devuelve el token. La URL sí, porque no es un secreto y ayuda a
-    diagnosticar a qué HA está apuntando el backend.
+    No devuelve ni el token ni la dirección interna: al administrador no le
+    aportan nada en el panel y son detalles de la red del servidor.
     """
     url, token = ha._ha_credentials()
     if not url or not token:
@@ -86,7 +86,6 @@ async def ha_status(
         return {
             "configured": False,
             "connected": False,
-            "url": url or None,
             "error": "Falta " + " y ".join(missing) + " en el entorno del backend",
             "total_devices_assigned": 0,
             "users_assigned": 0,
@@ -109,7 +108,6 @@ async def ha_status(
     return {
         "configured": True,
         "connected": connected,
-        "url": url,
         "error": error,
         "total_devices_assigned": len(assigned),
         "users_assigned": len({r.user_id for r in assigned}),
