@@ -15,6 +15,11 @@ desktop/node_modules/
 desktop/.cache/
 desktop/.npm-cache/
 
+# El frontend del ejecutable de escritorio se versiona: Tauri lo necesita
+# para compilar y no hay un paso previo que lo genere en el workflow.
+!desktop/dist/
+!desktop/dist/**
+
 # Python
 __pycache__/
 *.py[cod]
