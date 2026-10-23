@@ -79,11 +79,15 @@ async def ha_status(
     diagnosticar a qué HA está apuntando el backend.
     """
     url, token = ha._ha_credentials()
-    if not url:
+    if not url or not token:
+        # Se distingue el caso "falta una de las dos" para no mandar al
+        # administrador a revisar el token cuando lo que falta es la URL.
+        missing = [n for n, v in (("IGRIS_HA_URL", url), ("IGRIS_HA_TOKEN", token)) if not v]
         return {
             "configured": False,
             "connected": False,
-            "url": None,
+            "url": url or None,
+            "error": "Falta " + " y ".join(missing) + " en el entorno del backend",
             "total_devices_assigned": 0,
             "users_assigned": 0,
         }
