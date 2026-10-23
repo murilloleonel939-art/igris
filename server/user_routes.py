@@ -1270,21 +1270,23 @@ async def user_voice_chat(
         Profile.is_authorized.is_(True),
     ).first()
     score: float | None = None
-    if profile is None or not profile.voice_print or not profile.is_authorized:
-        raise HTTPException(status_code=403, detail="Registra tu perfil de voz antes de usar comandos por voz")
-    try:
-        async with _voice_semaphore():
-            verified, score = await asyncio.to_thread(voice.verify, data, profile.voice_print, ".webm")
-    except ValueError as exc:
-        # Audio silencioso o sin voz: no es un fallo del servidor.
-        logger.warning("Audio sin voz para usuario %s: %s", user.id, exc)
-        raise HTTPException(status_code=422, detail="No se detectó voz en la grabación")
-    except Exception as exc:
-        logger.exception("Falló la verificación de voz")
-        raise HTTPException(status_code=500, detail=f"No se pudo verificar la voz: {exc}")
-    if not verified:
-        logger.warning("Voz no reconocida para usuario %s: score=%.4f threshold=%s", user.id, score, os.getenv("IGRIS_VOICE_THRESHOLD", "0.40"))
-        raise HTTPException(status_code=403, detail=f"Voz no reconocida (similitud {score:.2f})")
+    
+    # Verificación biométrica solo si hay perfil de voz registrado y autorizado.
+    # Sin perfil, acepta la orden sin verificar.
+    if profile and profile.voice_print and profile.is_authorized:
+        try:
+            async with _voice_semaphore():
+                verified, score = await asyncio.to_thread(voice.verify, data, profile.voice_print, ".webm")
+        except ValueError as exc:
+            # Audio silencioso o sin voz: no es un fallo del servidor.
+            logger.warning("Audio sin voz para usuario %s: %s", user.id, exc)
+            raise HTTPException(status_code=422, detail="No se detectó voz en la grabación")
+        except Exception as exc:
+            logger.exception("Falló la verificación de voz")
+            raise HTTPException(status_code=500, detail=f"No se pudo verificar la voz: {exc}")
+        if not verified:
+            logger.warning("Voz no reconocida para usuario %s: score=%.4f threshold=%s", user.id, score, os.getenv("IGRIS_VOICE_THRESHOLD", "0.40"))
+            raise HTTPException(status_code=403, detail=f"Voz no reconocida (similitud {score:.2f})")
 
     try:
         text = await transcribe_user_audio(data, audio.content_type or "audio/webm")
@@ -1449,6 +1451,7 @@ async def user_voice_ws(websocket: WebSocket) -> None:
             await websocket.send_json({"type": "error", "message": "El audio está vacío o es demasiado corto."})
             return
 
+        score: float | None = None
         with SessionLocal() as db:
             profile = db.query(Profile).filter(
                 Profile.user_id == user.id,
@@ -1456,25 +1459,27 @@ async def user_voice_ws(websocket: WebSocket) -> None:
                 Profile.is_authorized.is_(True),
             ).first()
             voice_print = profile.voice_print if profile is not None else None
-        if not voice_print:
-            await websocket.send_json({"type": "error", "message": "Registra tu perfil de voz antes de usar comandos por voz."})
-            return
-
-        await websocket.send_json({"type": "state", "state": "processing"})
-        try:
-            async with _voice_semaphore():
-                verified, score = await asyncio.to_thread(voice.verify, audio, voice_print, ".webm")
-        except ValueError:
-            logger.warning("Audio sin voz en WebSocket para usuario %s", user.id)
-            await websocket.send_json({"type": "error", "reason": "no_audio", "message": "No se detectó voz en la grabación."})
-            return
-        except Exception:
-            logger.exception("Falló la verificación de voz por WebSocket")
-            await websocket.send_json({"type": "error", "message": "No se pudo verificar la voz."})
-            return
-        if not verified:
-            await websocket.send_json({"type": "error", "reason": "voice", "message": f"Voz no reconocida (similitud {score:.2f})."})
-            return
+        
+        # Verificación biométrica solo si hay perfil de voz registrado y autorizado.
+        # Sin perfil, acepta la orden sin verificar.
+        if voice_print:
+            await websocket.send_json({"type": "state", "state": "processing"})
+            try:
+                async with _voice_semaphore():
+                    verified, score = await asyncio.to_thread(voice.verify, audio, voice_print, ".webm")
+            except ValueError:
+                logger.warning("Audio sin voz en WebSocket para usuario %s", user.id)
+                await websocket.send_json({"type": "error", "reason": "no_audio", "message": "No se detectó voz en la grabación."})
+                return
+            except Exception:
+                logger.exception("Falló la verificación de voz por WebSocket")
+                await websocket.send_json({"type": "error", "message": "No se pudo verificar la voz."})
+                return
+            if not verified:
+                await websocket.send_json({"type": "error", "reason": "voice", "message": f"Voz no reconocida (similitud {score:.2f})."})
+                return
+        else:
+            await websocket.send_json({"type": "state", "state": "processing"})
 
         try:
             text = " ".join(deepgram_transcripts).strip()
