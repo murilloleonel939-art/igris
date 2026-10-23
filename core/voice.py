@@ -17,13 +17,6 @@ import numpy as np
 from core.crypto import encrypt, decrypt
 
 logger = logging.getLogger(__name__)
-
-# Nivel de energía al que se lleva el audio antes de extraer el embedding, y
-# ganancia máxima aplicable. 0.06 equivale a una voz cercana y clara; el tope de
-# 12x evita que una toma casi muda se convierta en ruido amplificado que el
-# modelo interpretaría como habla.
-TARGET_RMS = 0.06
-MAX_GAIN = 12.0
 _encoder = None
 # La carga de TitaNet tarda decenas de segundos y consume ~1 GB. Sin este lock,
 # dos turnos de voz simultáneos veían _encoder a None y cargaban el modelo dos
@@ -105,19 +98,6 @@ def embedding(audio: bytes, suffix: str = ".ogg") -> np.ndarray:
     duration = signal.shape[1] / float(sample_rate or 16000)
     rms = float(signal.abs().mean())
     logger.info("Embedding de voz: %.2f s, nivel medio %.4f", duration, rms)
-
-    # Nivelar la energía antes de la inferencia. El log del 23-10 mostró que el
-    # resultado dependía casi por completo del volumen de entrada: las tomas con
-    # nivel 0.001-0.02 daban similitudes de 0.06-0.24 con la huella recién
-    # registrada, y las de nivel 0.03-0.04 daban 0.35 o más. El autoGainControl
-    # del navegador no compensa micrófonos lejanos, así que lo hace el servidor:
-    # al comparar siempre contra el mismo nivel, hablar lejos deja de restar.
-    # La ganancia se acota para no convertir ruido de fondo en una falsa voz.
-    if rms > 1e-5:
-        gain = min(TARGET_RMS / rms, MAX_GAIN)
-        # Acotar después de amplificar: una toma con picos altos y media baja
-        # podría salirse del rango [-1, 1] y distorsionar el timbre.
-        signal = (signal * gain).clamp(-1.0, 1.0)
     signal_length = torch.tensor([signal.shape[1]], dtype=torch.long)
     with torch.no_grad():
         _logits, vector = _get_encoder().forward(
