@@ -797,8 +797,9 @@ TOOLS = [
         "function": {
             "name": "list_homeassistant_devices",
             "description": (
-                "Lista todos los dispositivos disponibles en Home Assistant del usuario. "
-                "Úsala cuando el usuario pregunte por sus dispositivos inteligentes o quiera ver qué puede controlar."
+                "Lista los dispositivos de Home Assistant ASIGNADOS a este usuario, con su nombre y estado. "
+                "Úsala cuando pregunte por sus dispositivos inteligentes o quiera ver qué puede controlar. "
+                "Devuelve el campo 'name' (el nombre que el usuario les puso) y el 'entity_id' interno."
             ),
             "parameters": {"type": "object", "properties": {}, "required": []},
         },
@@ -808,8 +809,9 @@ TOOLS = [
         "function": {
             "name": "get_homeassistant_device_state",
             "description": (
-                "Obtiene el estado actual de un dispositivo específico en Home Assistant. "
-                "Úsala cuando el usuario pregunte si una luz está encendida, qué temperatura marca un sensor, etc."
+                "Obtiene el estado de UN dispositivo asignado al usuario. "
+                "Úsala cuando pregunte si una luz está encendida o cómo está un aparato concreto. "
+                "Usa el 'entity_id' que devolvió list_homeassistant_devices."
             ),
             "parameters": {
                 "type": "object",
@@ -828,8 +830,9 @@ TOOLS = [
         "function": {
             "name": "control_homeassistant_device",
             "description": (
-                "Controla un dispositivo en Home Assistant: encender, apagar, cambiar valores. "
-                "Llámala cuando el usuario pida controlar una luz, ventilador, cerradura u otro dispositivo."
+                "Enciende, apaga o alterna un dispositivo de Home Assistant asignado al usuario. "
+                "Usa el 'entity_id' exacto devuelto por list_homeassistant_devices; "
+                "nunca inventes uno ni uses el de otro usuario."
             ),
             "parameters": {
                 "type": "object",

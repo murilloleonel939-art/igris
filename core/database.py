@@ -329,6 +329,35 @@ class Note(Base):
     created_at = Column(DateTime, default=utcnow, nullable=False)
 
 
+class HomeAssistantDevice(Base):
+    """Dispositivo de Home Assistant asignado a un usuario.
+
+    Hay UN solo Home Assistant (compartido) para toda la instalación. Esta
+    tabla es el control de acceso: un usuario solo puede ver y controlar las
+    entidades que el administrador le haya asignado aquí. El nombre con el que
+    Igris identifica el dispositivo es `custom_name`; si está vacío se usa el
+    `original_name` que devuelve Home Assistant.
+
+    `entity_id` no es único por sí solo: dos usuarios pueden tener asignada la
+    misma entidad física (por ejemplo, la luz del salón compartida) y cada uno
+    ponerle un nombre distinto. De ahí la restricción (user_id, entity_id).
+    """
+    __tablename__ = "homeassistant_devices"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    entity_id = Column(String(255), nullable=False)
+    original_name = Column(String(255), nullable=True)
+    custom_name = Column(String(255), nullable=True)
+    entity_type = Column(String(64), nullable=True)
+    last_sync = Column(DateTime, default=utcnow, nullable=False)
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "entity_id", name="uq_ha_device_user_entity"),
+    )
+
+
 class MemoryLink(Base):
     """Relación entre recuerdos de las dos memorias persistentes del usuario."""
     __tablename__ = "memory_links"
@@ -699,6 +728,31 @@ def _run_migrations(engine) -> None:
         if not _column_exists(conn, dialect, "users", "homeassistant_token"):
             conn.execute(text("ALTER TABLE users ADD COLUMN homeassistant_token VARCHAR(255)"))
             logger.info("Migración aplicada: users.homeassistant_token (%s)", dialect)
+
+        # ── homeassistant_devices: asignación de entidades HA a usuarios ────
+        # La tabla la crea create_all() cuando no existe, pero se deja aquí la
+        # comprobación explícita para que quede registrada junto al resto de
+        # migraciones y sobreviva a un create_all que se saltó por un fallo de
+        # conexión previo.
+        if not _table_exists(conn, dialect, "homeassistant_devices"):
+            conn.execute(text(
+                "CREATE TABLE homeassistant_devices ("
+                "id INTEGER PRIMARY KEY, "
+                "user_id INTEGER NOT NULL REFERENCES users(id), "
+                "entity_id VARCHAR(255) NOT NULL, "
+                "original_name VARCHAR(255), "
+                "custom_name VARCHAR(255), "
+                "entity_type VARCHAR(64), "
+                "last_sync DATETIME NOT NULL, "
+                "created_at DATETIME NOT NULL, "
+                "CONSTRAINT uq_ha_device_user_entity UNIQUE (user_id, entity_id)"
+                ")"
+            ))
+            conn.execute(text(
+                "CREATE INDEX ix_homeassistant_devices_user_id "
+                "ON homeassistant_devices (user_id)"
+            ))
+            logger.info("Migración aplicada: tabla homeassistant_devices (%s)", dialect)
 
         # ── Separación de datos por usuario (notes, reminders) ──────────────
         # Se añade la columna y se asignan las filas existentes al dueño de la

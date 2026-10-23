@@ -3,6 +3,7 @@ Home Assistant - Integración con Home Assistant para control de dispositivos
 """
 import asyncio
 import logging
+import os
 from typing import Any, Optional
 import aiohttp
 
@@ -242,77 +243,260 @@ async def turn_off_device(url: str, token: str, entity_id: str) -> dict[str, Any
     return await call_homeassistant_service(url, token, domain, "turn_off", entity_id)
 
 
+
 # ──────────────────────────────────────────────────────────────────────────
-# Versiones que aceptan _session para integración con el servidor iGRIS
+# Adaptador para el servidor IGRIS: Home Assistant CENTRALIZADO
 # ──────────────────────────────────────────────────────────────────────────
+#
+# Hay UN solo Home Assistant para toda la instalación, con sus credenciales en
+# las variables de entorno del backend (IGRIS_HA_URL / IGRIS_HA_TOKEN). Ningún
+# usuario introduce URL ni token.
+#
+# El control de acceso es la asignación: homeassistant_devices dice qué
+# entidades puede usar cada usuario. Sin fila en esa tabla, la entidad no
+# existe para él, aunque esté en el HA compartido.
+#
+# Esta comprobación se hace AQUÍ y no solo al ofrecer las herramientas al
+# modelo: run_tool() es la última puerta y un prompt inyectado podría intentar
+# llamar a una entidad de otro usuario.
+
+# Dominios que se ofrecen como "dispositivos manejables". El resto de entidades
+# de HA (sensores, automatizaciones, zonas…) se ignoran a propósito: no tienen
+# acciones de control y llenarían el prompt sin aportar nada.
+_MANAGEABLE_DOMAINS = frozenset({
+    "light", "switch", "climate", "cover", "fan", "lock",
+    "media_player", "vacuum", "scene", "script", "input_boolean",
+})
+
+_SERVICE_ACTIONS = {
+    "turn_on": "turn_on",
+    "turn_off": "turn_off",
+    "toggle": "toggle",
+}
+
+
+def _ha_credentials() -> tuple[str, str]:
+    """(url, token) del Home Assistant compartido, o ("", "") si no está configurado."""
+    return (
+        (os.environ.get("IGRIS_HA_URL") or "").strip().rstrip("/"),
+        (os.environ.get("IGRIS_HA_TOKEN") or "").strip(),
+    )
+
+
+def ha_is_configured() -> bool:
+    url, token = _ha_credentials()
+    return bool(url and token)
+
+
+def _not_configured() -> dict[str, Any]:
+    return {
+        "success": False,
+        "error": (
+            "Home Assistant no está configurado en el servidor. "
+            "Pídele al administrador que revise la conexión."
+        ),
+    }
+
+
+def _no_user() -> dict[str, Any]:
+    return {
+        "success": False,
+        "error": (
+            "No se pudo identificar al usuario de esta conversación. "
+            "Pídele que vuelva a entrar a su cuenta de Igris."
+        ),
+    }
+
+
+def _assigned_entity_ids(user_id: int) -> dict[str, str]:
+    """{entity_id: nombre_visible} de las entidades asignadas al usuario.
+
+    El nombre visible es el custom_name si existe; si no, el original_name; y
+    si tampoco, el propio entity_id. Es el nombre con el que Igris identifica
+    el dispositivo cuando el usuario le habla.
+    """
+    from core import database
+    from core.database import HomeAssistantDevice
+
+    assigned: dict[str, str] = {}
+    try:
+        with database.SessionLocal() as db:
+            rows = (
+                db.query(HomeAssistantDevice)
+                .filter(HomeAssistantDevice.user_id == user_id)
+                .all()
+            )
+            for row in rows:
+                visible = (row.custom_name or row.original_name or row.entity_id or "").strip()
+                assigned[row.entity_id] = visible or row.entity_id
+    except Exception as exc:  # pragma: no cover - la BD no debería fallar aquí
+        logger.error("Error leyendo entidades asignadas del usuario %s: %s", user_id, exc)
+        return {}
+    return assigned
+
 
 async def list_homeassistant_devices_for_session(_session=None) -> dict[str, Any]:
-    """Lista dispositivos de Home Assistant del usuario actual.
-    
-    Obtiene credenciales de HA del usuario de la sesión.
+    """Lista SOLO las entidades asignadas al usuario, con su estado actual.
+
+    Devuelve `name` (el nombre con el que el usuario las conoce) junto al
+    `entity_id`, para que el modelo pueda hablar de ellas con naturalidad.
     """
-    if not _session or not _session.user:
-        return {"success": False, "error": "Usuario no autenticado"}
-    
-    user = _session.user
-    if not user.can_use_homeassistant:
-        return {"success": False, "error": "Home Assistant no está habilitado para este usuario"}
-    
-    if not user.homeassistant_url or not user.homeassistant_token:
-        return {"success": False, "error": "Home Assistant no está configurado. Ve a Conexiones para vincular tu cuenta."}
-    
-    return await list_homeassistant_devices(user.homeassistant_url, user.homeassistant_token)
+    url, token = _ha_credentials()
+    if not url or not token:
+        return _not_configured()
+
+    user_id = getattr(_session, "user_id", None)
+    if not user_id:
+        return _no_user()
+
+    assigned = _assigned_entity_ids(user_id)
+    if not assigned:
+        return {
+            "success": True,
+            "devices": [],
+            "count": 0,
+            "note": (
+                "Este usuario no tiene dispositivos de Home Assistant asignados. "
+                "El administrador debe asignárselos desde el panel de Conexiones."
+            ),
+        }
+
+    result = await list_homeassistant_devices(url, token)
+    if not result.get("success"):
+        return result
+
+    # Se cruza lo que hay en HA con lo asignado: si el administrador borró una
+    # entidad del HA real, deja de aparecer en vez de dar un error al usarla.
+    devices = []
+    for entity_id, info in (result.get("devices") or {}).items():
+        if entity_id not in assigned:
+            continue
+        devices.append({
+            "entity_id": entity_id,
+            "name": assigned[entity_id],
+            "state": info.get("state"),
+            "domain": info.get("domain"),
+            "attributes": info.get("attributes", {}),
+        })
+
+    return {"success": True, "devices": devices, "count": len(devices)}
 
 
-async def get_homeassistant_device_state_for_session(entity_id: str, _session=None) -> dict[str, Any]:
-    """Obtiene el estado de un dispositivo HA del usuario actual."""
-    if not _session or not _session.user:
-        return {"success": False, "error": "Usuario no autenticado"}
-    
-    user = _session.user
-    if not user.can_use_homeassistant:
-        return {"success": False, "error": "Home Assistant no está habilitado"}
-    
-    if not user.homeassistant_url or not user.homeassistant_token:
-        return {"success": False, "error": "Home Assistant no está configurado"}
-    
-    return await get_homeassistant_device_state(user.homeassistant_url, user.homeassistant_token, entity_id)
+async def get_homeassistant_device_state_for_session(
+    entity_id: str, _session=None
+) -> dict[str, Any]:
+    """Estado de una entidad, solo si está asignada al usuario."""
+    url, token = _ha_credentials()
+    if not url or not token:
+        return _not_configured()
+
+    user_id = getattr(_session, "user_id", None)
+    if not user_id:
+        return _no_user()
+
+    assigned = _assigned_entity_ids(user_id)
+    if entity_id not in assigned:
+        # Mismo mensaje que si no existiera: no se filtra si la entidad existe
+        # en el HA compartido pero pertenece a otro usuario.
+        return {"success": False, "error": f"No tienes ningún dispositivo llamado '{entity_id}'."}
+
+    result = await get_homeassistant_device_state(url, token, entity_id)
+    if result.get("success"):
+        result["name"] = assigned[entity_id]
+    return result
 
 
 async def control_homeassistant_device_for_session(
     entity_id: str,
     action: str,
     data: Optional[dict] = None,
-    _session=None
+    _session=None,
 ) -> dict[str, Any]:
-    """Controla un dispositivo HA del usuario actual.
-    
-    Args:
-        entity_id: ID del dispositivo (ej: light.sala)
-        action: Acción (turn_on, turn_off, toggle)
-        data: Datos adicionales (optional)
-        _session: Sesión del usuario
-    """
-    if not _session or not _session.user:
-        return {"success": False, "error": "Usuario no autenticado"}
-    
-    user = _session.user
-    if not user.can_use_homeassistant:
-        return {"success": False, "error": "Home Assistant no está habilitado"}
-    
-    if not user.homeassistant_url or not user.homeassistant_token:
-        return {"success": False, "error": "Home Assistant no está configurado"}
-    
-    domain = entity_id.split('.')[0] if '.' in entity_id else None
-    if not domain:
-        return {"success": False, "error": "Entity ID inválido"}
-    
-    return await call_homeassistant_service(
-        user.homeassistant_url,
-        user.homeassistant_token,
-        domain,
-        action,
-        entity_id,
-        data
-    )
+    """Controla una entidad, solo si está asignada al usuario.
 
+    `action` acepta turn_on / turn_off / toggle.
+    """
+    url, token = _ha_credentials()
+    if not url or not token:
+        return _not_configured()
+
+    user_id = getattr(_session, "user_id", None)
+    if not user_id:
+        return _no_user()
+
+    assigned = _assigned_entity_ids(user_id)
+    if entity_id not in assigned:
+        return {"success": False, "error": f"No tienes ningún dispositivo llamado '{entity_id}'."}
+
+    if "." not in entity_id:
+        return {"success": False, "error": "Entity ID inválido"}
+
+    service = _SERVICE_ACTIONS.get((action or "").strip().lower())
+    if not service:
+        return {
+            "success": False,
+            "error": "Acción no válida. Usa turn_on, turn_off o toggle.",
+        }
+
+    domain = entity_id.split(".")[0]
+    result = await call_homeassistant_service(url, token, domain, service, entity_id, data)
+    if result.get("success"):
+        result["name"] = assigned[entity_id]
+    return result
+
+
+async def resolve_entity_for_session(name_or_id: str, _session=None) -> dict[str, Any]:
+    """Traduce lo que dijo el usuario a una entidad asignada suya.
+
+    Acepta el entity_id exacto o el nombre visible (custom_name) sin distinguir
+    mayúsculas ni acentos. Es la pieza que permite decir «apaga la luz de la
+    sala» en vez de «apaga light.sala».
+
+    Devuelve {"success": True, "entity_id": ...} o un error con las opciones
+    disponibles, para que el modelo pueda repreguntar en vez de inventar.
+    """
+    user_id = getattr(_session, "user_id", None)
+    if not user_id:
+        return _no_user()
+
+    assigned = _assigned_entity_ids(user_id)
+    if not assigned:
+        return {"success": False, "error": "No tienes dispositivos de Home Assistant asignados."}
+
+    raw = (name_or_id or "").strip()
+    if not raw:
+        return {"success": False, "error": "Falta el nombre del dispositivo."}
+
+    # 1) entity_id exacto
+    if raw in assigned:
+        return {"success": True, "entity_id": raw, "name": assigned[raw]}
+
+    def _norm(text: str) -> str:
+        import unicodedata
+
+        decomposed = unicodedata.normalize("NFD", (text or "").lower())
+        return "".join(c for c in decomposed if unicodedata.category(c) != "Mn").strip()
+
+    target = _norm(raw)
+    # 2) nombre visible exacto (sin mayúsculas ni acentos)
+    exact = [eid for eid, label in assigned.items() if _norm(label) == target]
+    if len(exact) == 1:
+        return {"success": True, "entity_id": exact[0], "name": assigned[exact[0]]}
+
+    # 3) coincidencia parcial: «luz» encuentra «Luz de la sala»
+    partial = [eid for eid, label in assigned.items() if target in _norm(label)]
+    if len(partial) == 1:
+        return {"success": True, "entity_id": partial[0], "name": assigned[partial[0]]}
+    if len(partial) > 1:
+        options = ", ".join(f"'{assigned[e]}'" for e in partial)
+        return {
+            "success": False,
+            "error": f"Hay varios dispositivos que coinciden con '{raw}': {options}. ¿Cuál de ellos?",
+            "ambiguous": partial,
+        }
+
+    options = ", ".join(f"'{label}'" for label in sorted(assigned.values()))
+    return {
+        "success": False,
+        "error": f"No encuentro '{raw}' entre tus dispositivos. Tienes: {options}.",
+    }
