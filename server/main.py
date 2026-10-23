@@ -133,6 +133,7 @@ app.include_router(device_router)
 app.include_router(tvbox_router)
 app.include_router(homeassistant_router)
 app.include_router(homeassistant_admin_router)
+app.include_router(homeassistant_admin_router)
 
 # CORS - solo el frontend (y el servidor de desarrollo local).
 # Sin allow_credentials: ni la clave ni el token viajan en cookies.
