@@ -471,22 +471,12 @@ def _public_user(u: User, db: Session = None) -> dict[str, Any]:
         )
         connection["voice"] = bool(voice and voice.voice_print and voice.is_authorized)
 
-    # Dispositivos de Home Assistant asignados a este usuario. El panel los
-    # muestra en la pestaña de HA. Nunca se expone el token: solo los nombres.
-    ha_devices = []
-    if db is not None and bool(getattr(u, "can_use_homeassistant", False)):
-        rows = (
-            db.query(HomeAssistantDevice)
-            .filter(HomeAssistantDevice.user_id == u.id)
-            .all()
-        )
-        ha_devices = [
-            {
-                "entity_id": r.entity_id,
-                "name": (r.custom_name or r.original_name or r.entity_id),
-            }
-            for r in rows
-        ]
+    # Cuenta de Tuya vinculada por este usuario. Nunca se expone el uid: solo
+    # si está vinculada, que es lo que necesita el panel.
+    tuya_linked = False
+    if db is not None:
+        tuya_row = db.query(TuyaAccount).filter(TuyaAccount.user_id == u.id).first()
+        tuya_linked = tuya_row is not None
 
     return {
         "id": u.id,
@@ -498,7 +488,7 @@ def _public_user(u: User, db: Session = None) -> dict[str, Any]:
         "features": features,
         "connections": connection,
         "created_at": u.created_at.isoformat() if u.created_at else None,
-        "ha_devices": ha_devices,
+        "tuya_linked": tuya_linked,
     }
 
 
@@ -1850,12 +1840,6 @@ def user_connections(
             "online": row.id in _connections,
             "last_seen_at": row.last_seen_at.isoformat() if row.last_seen_at else None,
         } for row in tv_boxes],
-        # Solo se informa de que existe la función; los dispositivos concretos
-        # se piden aparte para no cargar el panel con listas largas.
-        "homeassistant": {
-            "enabled": caps.has("homeassistant"),
-            "configured": ha_tools.ha_is_configured(),
-        },
     }
 
 
