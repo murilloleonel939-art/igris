@@ -159,8 +159,8 @@ FEATURES: dict[str, Feature] = {
     "tuya": Feature(
         key="tuya",
         column="can_use_tuya",
-        label="Casa inteligente (Smart Life)",
-        description="Consultar y controlar los dispositivos vinculados a Tuya Cloud.",
+        label="Casa inteligente (Tuya / Smart Life)",
+        description="Vincular la cuenta de Smart Life de cada usuario y controlar sus dispositivos. Cada persona ve solo los suyos.",
     ),
     "whatsapp": Feature(
         key="whatsapp",
