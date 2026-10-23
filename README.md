@@ -670,12 +670,15 @@ La verificación de voz funciona localmente con el modelo indicado en `IGRIS_VOI
 
 El backend no se cuelga ni rechaza una orden cuando un proveedor de IA falla. Estas protecciones están activas por defecto:
 
-- **TitaNet se carga una sola vez por proceso.** Un lock evita que dos turnos de voz simultáneos carguen el modelo dos veces, que era la causa de los picos de memoria y de los reinicios del contenedor.
-- **El modelo viene horneado en la imagen.** Se descarga durante el build y queda en `/app/.cache/huggingface`, de modo que el primer uso en producción ya no espera una descarga de HuggingFace.
+- **TitaNet, Whisper y Piper se cargan una sola vez por proceso.** Un lock evita que dos turnos simultáneos carguen un modelo dos veces, que era la causa de los picos de memoria y de los reinicios del contenedor.
+- **Los modelos vienen horneados en la imagen.** Se descargan durante el build y quedan en `/app/.cache/huggingface`, de modo que el primer uso en producción ya no espera una descarga de HuggingFace.
 - **Cada intento tiene techo de tiempo.** Hay límite para abrir el stream, para recibir el primer fragmento, para un proveedor y para el turno completo. Ningún proveedor puede quedarse esperando indefinidamente.
 - **Los reintentos del SDK están desactivados.** Cuando un proveedor falla, IGRIS pasa al siguiente de la cadena en vez de esperar los reintentos internos de la librería.
 - **Los proveedores caídos entran en enfriamiento.** Un proveedor que falla se salta temporalmente y se reintenta solo al expirar el plazo. Cuando vuelve a responder recupera su lugar sin intervención.
 - **El usuario no ve el error mientras se busca proveedor.** El reintento es silencioso; solo se avisa cuando se agota la cadena entera o cuando el rechazo es realmente biométrico.
+- **Fallback de STT automático.** Si Deepgram no responde o no está configurado, se usa Whisper local sin error visible.
+- **Limite de inferencias de voz simultáneas.** Un semáforo previene que demasiadas órdenes de voz saturen el CPU y cuelguen el procesador. Las demás espera turno.
+- **Pool de base de datos dimensionado para concurrencia.** Se adapta dinámicamente según la carga y no se agota con 100+ usuarios simultáneos.
 
 Variables opcionales para ajustar esos límites:
 
@@ -688,6 +691,10 @@ Variables opcionales para ajustar esos límites:
 | `IGRIS_PROVIDER_COOLDOWN` | Enfriamiento inicial tras un fallo | `60` segundos |
 | `IGRIS_PROVIDER_COOLDOWN_MAX` | Enfriamiento máximo para fallos repetidos | `600` segundos |
 | `IGRIS_PROVIDER_DEAD_COOLDOWN` | Enfriamiento para errores 401, 403 o 404 | `1800` segundos |
+| `IGRIS_MAX_CONCURRENT_VOICE` | Máximo de inferencias de voz simultáneas | `3` |
+| `IGRIS_DB_POOL_SIZE` | Conexiones base del pool de base de datos | `20` |
+| `IGRIS_DB_MAX_OVERFLOW` | Conexiones extra cuando la demanda es alta | `30` |
+| `IGRIS_DB_POOL_TIMEOUT` | Segundos de espera si el pool está saturado | `10` |
 
 ### WhatsApp Cloud API de Meta
 
