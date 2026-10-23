@@ -31,7 +31,6 @@
 | 🔌 Órdenes Tuya ejecutadas inmediatamente, sin doble confirmación | Funcional |
 | 📊 Consulta de estado para dispositivos directos y controles infrarrojos | Funcional |
 | 🛡️ Protección contra órdenes ambiguas: exige identificar el dispositivo exacto | Funcional |
-| 🏡 **Integración con Home Assistant**: conexión con validación, listado de dispositivos, consulta de estado y control remoto | Funcional |
 | 📧 Gmail (lectura de la bandeja) | Funcional |
 | ✉️ **Enviar correos** con confirmación obligatoria antes de enviar | Funcional |
 | 🗑️ **Eliminar correos** (mueve a papelera, reversible desde Gmail) | Funcional |
@@ -425,13 +424,6 @@ Los endpoints del área de usuarios (`/api/user/*`) se autentican con `Authoriza
 | `PUT /api/ai-config` | Actualiza proveedor activo y cadena de fallback |
 | `POST /api/tts` | Texto a voz. Body: `{"text": "..."}`. Devuelve audio (`audio/mpeg`) |
 | `POST /telegram/webhook` | Webhook de Telegram (usa su propio secreto, no la clave de acceso) |
-| `GET /api/user/homeassistant/status` | Estado de conexión a Home Assistant (requiere token de usuario) |
-| `POST /api/user/homeassistant/validate` | Valida credenciales de HA sin guardar. Body: `{"url": "...", "token": "..."}` |
-| `POST /api/user/homeassistant/connect` | Conecta a Home Assistant. Body: `{"url": "...", "token": "..."}`. Responde `{"connected": true, "devices_count": N}` |
-| `POST /api/user/homeassistant/disconnect` | Desconecta de Home Assistant |
-| `GET /api/user/homeassistant/devices` | Lista todos los dispositivos en Home Assistant |
-| `GET /api/user/homeassistant/devices/{entity_id}/state` | Obtiene el estado de un dispositivo específico |
-| `POST /api/user/homeassistant/devices/{entity_id}/control` | Controla un dispositivo. Body: `{"action": "turn_on\|turn_off", "params": {...}}` |
 | `GET /health`, `GET /status` | Verificación del servicio (públicos) |
 ---
 ## 🧩 Estructura del proyecto
@@ -460,7 +452,6 @@ igris/
 │   ├── user_routes.py         # Área de usuarios (/api/user/*), voz en WebSocket y panel de administración (/api/admin/*)
 │   ├── device_routes.py       # WebSocket del agente Windows (/api/device/ws) y gestión de equipos
 │   ├── tvbox_routes.py        # WebSocket del agente Android TV Box (/api/tvbox/ws) y emparejamiento
-│   └── homeassistant_routes.py # Integración con Home Assistant (/api/user/homeassistant/*)
 ├── android_tv_agent/          # Agente Android independiente para TV Box (APK)
 │   ├── app/build.gradle.kts   # com.igris.tvagent, minSdk 29, targetSdk 35
 │   ├── app/src/main/AndroidManifest.xml  # Lanzador Leanback, servicio en primer plano y accesibilidad opcional
@@ -585,6 +576,18 @@ Los **usuarios** no usan esta variable: tienen su propia cuenta (usuario y contr
 
 Igris descubre los dispositivos autorizados de Smart Life y los controles virtuales guardados en los hubs infrarrojos. Los dispositivos directos usan la API estándar de Tuya; los mandos IR usan la API específica del hub. Las órdenes explícitas se ejecutan inmediatamente.
 
+#### Una cuenta de Tuya por usuario
+
+Cada usuario vincula **su propia** cuenta de Smart Life desde `/u/conexiones` → «Mi casa». Al pulsar «Conectar mi cuenta Tuya» se abre la página de autorización de Tuya, el usuario entra con sus credenciales y Tuya devuelve un `uid` al backend. Ese `uid` se guarda en la tabla `tuya_accounts` y desde entonces sus dispositivos se listan con él, no con una cuenta compartida. Así cada usuario ve solo los aparatos de su casa.
+
+No hace falta que nadie copie UID a mano ni toque el panel de Tuya: el flujo es OAuth 2.0 completo.
+
+**Requisito previo en Tuya:** en el proyecto, *Devices → Link App Account → Configure OAuth 2.0 Authorization* debe estar configurado con una llave de tipo *Others*, el icono de la app, el nombre del solicitante y la Callback URL apuntando a `https://igris.zottagroup.com/api/user/tuya/callback`.
+
+Si un usuario no ha vinculado su cuenta, las herramientas de Tuya le responden que aún no la tiene conectada. No hay respaldo con una cuenta global.
+
+#### Funciones del asistente
+
 Ejemplos de lenguaje natural:
 
 - «Prende la lámpara» o «Apaga el enchufe».
@@ -599,15 +602,30 @@ Variables del backend:
 
 | Variable | Descripción | Ejemplo |
 | --- | --- | --- |
-| `TUYA_ACCESS_ID` | Access ID del proyecto Tuya | `tu_access_id` |
+| `TUYA_ACCESS_ID` | Access ID del proyecto Tuya (Cloud Authorization). Firma las llamadas de control. | `tu_access_id` |
 | `TUYA_ACCESS_SECRET` | Access Secret del proyecto Tuya | `tu_access_secret` |
+| `TUYA_OAUTH_CLIENT_ID` | Client ID de la app OAuth (App Authorization). Autoriza cuentas de usuario. | `87ykwm8...` |
+| `TUYA_OAUTH_CLIENT_SECRET` | Client Secret de la app OAuth | `486484f0...` |
+| `TUYA_OAUTH_CALLBACK` | URL de retorno registrada en Tuya (opcional) | `https://igris.zottagroup.com/api/user/tuya/callback` |
 | `TUYA_REGION` | Región de la cuenta Tuya | `us` |
 | `TUYA_ENDPOINT` | Endpoint opcional; se deriva de la región | `https://openapi.tuyaus.com` |
-| `TUYA_UID` | UID de la cuenta Smart Life | `tu_usuario_smart_life` |
 | `TUYA_DEVICE_IDS` | Lista opcional de IDs permitidos separados por comas | `id_1,id_2` |
 | `TUYA_DEVICE_ALIASES` | Alias opcionales con formato `nombre:id` | `televisor:id_tv` |
 
+`TUYA_ACCESS_ID` y `TUYA_OAUTH_CLIENT_ID` son credenciales **distintas** y no se sustituyen entre sí: la primera firma las llamadas de control, la segunda autoriza cuentas.
+
 También debes habilitar **IR Control Hub Open Service** en Tuya para usar mandos infrarrojos.
+
+#### Endpoints de vinculación
+
+| Método | Ruta | Descripción |
+| --- | --- | --- |
+| `GET` | `/api/user/tuya/status` | Indica si el usuario tiene la cuenta vinculada |
+| `POST` | `/api/user/tuya/link` | Devuelve la URL de autorización de Tuya |
+| `GET` | `/api/user/tuya/callback` | Retorno de Tuya; canjea el `code` y guarda el `uid` |
+| `GET` | `/api/user/tuya/devices` | Dispositivos de la cuenta de ese usuario |
+| `DELETE` | `/api/user/tuya/link` | Desvincula la cuenta |
+
 
 ### Google (Gmail y Calendar)
 Las credenciales OAuth que usan `core/tools/google_client.py`, `gmail.py` y `gcalendar.py` se configuran también en el backend; consulta ese módulo para ver los nombres exactos de las variables. Para **crear eventos** el refresh token debe haberse generado con el permiso `https://www.googleapis.com/auth/calendar.events`; si no, Igris avisará de que falta el permiso de escritura.
