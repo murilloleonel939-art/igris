@@ -8,6 +8,10 @@
       </div>
     </header>
     <template v-if="tab === 'agente'">
+    <section id="chat-windows" class="agent-card">
+      <div><span class="agent-kicker">Aplicación de escritorio</span><h2>Chat de IGRIS para Windows</h2><p>Ventana propia del chat con avatar y voz, sin abrir el navegador. Usa el micrófono y los altavoces del equipo, arranca con Windows e incluye desinstalador. No necesita el agente: para hablar y escribir con Igris basta con esta aplicación.</p></div>
+      <a href="/downloads/IgrisChatSetup-v1.exe" download class="agent-download">Descargar chat Windows v1 <span>↓</span></a>
+    </section>
     <section id="agente-windows" class="agent-card">
       <div><span class="agent-kicker">Conexión local</span><h2>Agente Windows</h2><p>Descarga e instala el agente para que IGRIS controle tu computador Windows: aplicaciones, archivos, navegador, Spotify, Steam, Word, Excel y energía del equipo.</p></div>
       <a href="/downloads/IgrisAgentSetup-v11.exe" download class="agent-download">Descargar agente Windows v11 <span>↓</span></a>
