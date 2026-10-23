@@ -1524,6 +1524,7 @@ async def user_voice_ws(websocket: WebSocket) -> None:
             limited["chars"] += len(sentence)
             await websocket.send_json({"type": "sentence", "text": sentence})
             try:
+                logger.debug(f"TTS_START sentence={sentence[:50]}")
                 if tts.TTS_PROVIDER == "edge" and getattr(tts, "_edge_available", False):
                     voice_name = os.environ.get("IGRIS_TTS_VOICE", tts._TTS_CFG.get("voice", "es-ES-AlvaroNeural"))
                     communicator = tts.edge_tts.Communicate(
@@ -1534,11 +1535,20 @@ async def user_voice_ws(websocket: WebSocket) -> None:
                         if frame.get("type") == "audio" and frame.get("data"):
                             buffer.extend(frame["data"])
                     if not buffer:
+                        logger.warning("TTS_EMPTY no audio generado")
                         return
                     await websocket.send_bytes(bytes(buffer))
+                    logger.debug(f"TTS_SENT edge audio len={len(buffer)}")
                 else:
-                    await websocket.send_bytes(await tts.synthesize(sentence))
+                    try:
+                        audio_data = await asyncio.wait_for(tts.synthesize(sentence), timeout=30)
+                        await websocket.send_bytes(audio_data)
+                        logger.debug(f"TTS_SENT piper audio len={len(audio_data)}")
+                    except asyncio.TimeoutError:
+                        logger.error(f"TTS_TIMEOUT Piper tomó más de 30s para: {sentence[:50]}")
+                        return
                 await websocket.send_json({"type": "tts_chunk"})
+                logger.debug("TTS_COMPLETE")
             except Exception:
                 logger.exception("Falló el TTS de una frase")
 
@@ -1667,8 +1677,17 @@ async def user_tts(payload: TtsIn, user: User = Depends(require_user)):
         text = text[:TTS_MAX_CHARS]
 
     try:
-        audio_bytes = await tts.synthesize(text)
+        logger.debug(f"TTS_POST_START text={text[:50]}")
+        audio_bytes = await asyncio.wait_for(tts.synthesize(text), timeout=30)
+        logger.debug(f"TTS_POST_COMPLETE len={len(audio_bytes)}")
+    except asyncio.TimeoutError:
+        logger.error(f"TTS_POST_TIMEOUT Piper tomó más de 30s para: {text[:50]}")
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="Síntesis de voz agotó el tiempo (30s)",
+        )
     except Exception as e:
+        logger.exception(f"TTS_POST_ERROR: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"No se pudo generar la voz: {e}",
