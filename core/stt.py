@@ -173,16 +173,21 @@ def _transcribe_local(tmp_path: str, settings: dict) -> str:
     raise RuntimeError("Motor local STT desconocido. Usa whisper, faster-whisper o whisper.cpp.")
 
 
-def transcribe(audio: AudioInput, suffix: str = ".ogg") -> str:
+def transcribe(audio: AudioInput, suffix: str = ".ogg", provider: str = None) -> str:
     """
     Recibe el audio y su extensión real (por defecto OGG; el navegador usa WebM).
     Devuelve el texto reconocido.
 
     Es una función bloqueante: desde código async llámala con
     `await asyncio.to_thread(transcribe, audio)`.
+    
+    Si `provider` es None, lee de configuración/env; si se pasa explícitamente, lo usa.
     """
     stt_config = _settings()
-    provider = (stt_config.get("provider") or os.getenv("IGRIS_STT_PROVIDER", "local")).lower().strip()
+    if provider is None:
+        provider = (stt_config.get("provider") or os.getenv("IGRIS_STT_PROVIDER", "local")).lower().strip()
+    else:
+        provider = provider.lower().strip()
     data = _to_bytes(audio)
 
     if provider == "openai":

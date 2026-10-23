@@ -106,7 +106,8 @@ async def transcribe_user_audio(data: bytes, content_type: str = "audio/webm") -
         return text
     except Exception:
         logger.exception("Falló la transcripción con Deepgram; se intentará Whisper local")
-        return (await asyncio.to_thread(stt.transcribe, data, ".webm")).strip()
+        # Fallback explícito a local, pasando provider='local' para evitar que intente cargar deepgram desde config
+        return (await asyncio.to_thread(stt.transcribe, data, ".webm", "local")).strip()
 
 
 # ============= CONFIGURACIÓN =============

@@ -1,0 +1,702 @@
+0 verbose cli /usr/local/bin/node /usr/local/lib/node_modules/npm/bin/npm-cli.js
+1 info using npm@10.9.9
+2 info using node@v22.23.4
+3 silly config load:file:/usr/local/lib/node_modules/npm/npmrc
+4 silly config load:file:/home/dsh/.npmrc
+5 silly config load:file:/usr/local/etc/npmrc
+6 verbose title npm exec claude-mem install
+7 verbose argv "exec" "--yes" "--" "claude-mem" "install"
+8 verbose logfile logs-max:10 dir:/home/dsh/igrisfase3/.tmp/npm-cache/_logs/2026-10-23T05_14_46_119Z-
+9 verbose logfile /home/dsh/igrisfase3/.tmp/npm-cache/_logs/2026-10-23T05_14_46_119Z-debug-0.log
+10 silly logfile done cleaning log files
+11 silly packumentCache heap:2197815296 maxSize:549453824 maxEntrySize:274726912
+12 http fetch GET 200 https://registry.npmjs.org/npm 90ms
+13 http fetch GET 200 https://registry.npmjs.org/claude-mem 82ms (cache miss)
+14 silly packumentCache heap:2197815296 maxSize:549453824 maxEntrySize:274726912
+15 silly packumentCache heap:2197815296 maxSize:549453824 maxEntrySize:274726912
+16 silly idealTree buildDeps
+17 silly fetch manifest claude-mem@15.0.1
+18 silly packumentCache full:https://registry.npmjs.org/claude-mem cache-miss
+19 http fetch GET 200 https://registry.npmjs.org/claude-mem 125ms (cache miss)
+20 silly packumentCache full:https://registry.npmjs.org/claude-mem set size:undefined disposed:false
+21 silly placeDep ROOT claude-mem@15.0.1 OK for:  want: 15.0.1
+22 silly fetch manifest better-auth@^1.6.16
+23 silly packumentCache full:https://registry.npmjs.org/better-auth cache-miss
+24 http fetch GET 200 https://registry.npmjs.org/better-auth 144ms (cache miss)
+25 silly packumentCache full:https://registry.npmjs.org/better-auth set size:undefined disposed:false
+26 silly fetch manifest @better-auth/api-key@^1.6.16
+27 silly packumentCache full:https://registry.npmjs.org/@better-auth%2fapi-key cache-miss
+28 http fetch GET 200 https://registry.npmjs.org/@better-auth%2fapi-key 89ms (cache miss)
+29 silly packumentCache full:https://registry.npmjs.org/@better-auth%2fapi-key set size:undefined disposed:false
+30 silly fetch manifest @lynx-js/react@*
+31 silly packumentCache full:https://registry.npmjs.org/@lynx-js%2freact cache-miss
+32 http fetch GET 200 https://registry.npmjs.org/@lynx-js%2freact 32ms (cache miss)
+33 silly packumentCache full:https://registry.npmjs.org/@lynx-js%2freact set size:undefined disposed:false
+34 silly fetch manifest @lynx-js/types@*
+35 silly packumentCache full:https://registry.npmjs.org/@lynx-js%2ftypes cache-miss
+36 http fetch GET 200 https://registry.npmjs.org/@lynx-js%2ftypes 40ms (cache miss)
+37 silly packumentCache full:https://registry.npmjs.org/@lynx-js%2ftypes set size:undefined disposed:false
+38 silly fetch manifest @types/react@^18 || ^19.0.0
+39 silly packumentCache full:https://registry.npmjs.org/@types%2freact cache-miss
+40 http fetch GET 200 https://registry.npmjs.org/@types%2freact 67ms (cache miss)
+41 silly packumentCache full:https://registry.npmjs.org/@types%2freact set size:undefined disposed:false
+42 silly fetch manifest @prisma/client@^5.0.0 || ^6.0.0 || ^7.0.0
+43 silly packumentCache full:https://registry.npmjs.org/@prisma%2fclient cache-miss
+44 http fetch GET 200 https://registry.npmjs.org/@prisma%2fclient 1323ms (cache miss)
+45 silly packumentCache full:https://registry.npmjs.org/@prisma%2fclient set size:undefined disposed:false
+46 silly fetch manifest prisma@*
+47 silly packumentCache full:https://registry.npmjs.org/prisma cache-miss
+48 http fetch GET 200 https://registry.npmjs.org/prisma 751ms (cache miss)
+49 silly packumentCache full:https://registry.npmjs.org/prisma set size:undefined disposed:false
+50 silly fetch manifest typescript@>=5.4.0
+51 silly packumentCache full:https://registry.npmjs.org/typescript cache-miss
+52 http fetch GET 200 https://registry.npmjs.org/typescript 337ms (cache miss)
+53 silly packumentCache full:https://registry.npmjs.org/typescript set size:undefined disposed:false
+54 silly fetch manifest @sveltejs/kit@^2.0.0 || ^3.0.0
+55 silly packumentCache full:https://registry.npmjs.org/@sveltejs%2fkit cache-miss
+56 http fetch GET 200 https://registry.npmjs.org/@sveltejs%2fkit 93ms (cache miss)
+57 silly packumentCache full:https://registry.npmjs.org/@sveltejs%2fkit set size:undefined disposed:false
+58 silly fetch manifest @opentelemetry/api@^1.0.0
+59 silly packumentCache full:https://registry.npmjs.org/@opentelemetry%2fapi cache-miss
+60 http fetch GET 200 https://registry.npmjs.org/@opentelemetry%2fapi 47ms (cache miss)
+61 silly packumentCache full:https://registry.npmjs.org/@opentelemetry%2fapi set size:undefined disposed:false
+62 silly fetch manifest @sveltejs/vite-plugin-svelte@^7.0.0
+63 silly packumentCache full:https://registry.npmjs.org/@sveltejs%2fvite-plugin-svelte cache-miss
+64 http fetch GET 200 https://registry.npmjs.org/@sveltejs%2fvite-plugin-svelte 42ms (cache miss)
+65 silly packumentCache full:https://registry.npmjs.org/@sveltejs%2fvite-plugin-svelte set size:undefined disposed:false
+66 silly fetch manifest svelte@^5.46.4
+67 silly packumentCache full:https://registry.npmjs.org/svelte cache-miss
+68 http fetch GET 200 https://registry.npmjs.org/svelte 123ms (cache miss)
+69 silly packumentCache full:https://registry.npmjs.org/svelte set size:undefined disposed:false
+70 silly fetch manifest vite@^8.0.0-beta.7 || ^8.0.0
+71 silly packumentCache full:https://registry.npmjs.org/vite cache-miss
+72 http fetch GET 200 https://registry.npmjs.org/vite 1238ms (cache miss)
+73 silly packumentCache full:https://registry.npmjs.org/vite set size:undefined disposed:false
+74 silly fetch manifest @types/node@^20.19.0 || >=22.12.0
+75 silly packumentCache full:https://registry.npmjs.org/@types%2fnode cache-miss
+76 http fetch GET 200 https://registry.npmjs.org/@types%2fnode 279ms (cache miss)
+77 silly packumentCache full:https://registry.npmjs.org/@types%2fnode set size:undefined disposed:false
+78 silly fetch manifest @vitejs/devtools@^0.7.1 || ^0.8.0
+79 silly packumentCache full:https://registry.npmjs.org/@vitejs%2fdevtools cache-miss
+80 http fetch GET 200 https://registry.npmjs.org/@vitejs%2fdevtools 28ms (cache miss)
+81 silly packumentCache full:https://registry.npmjs.org/@vitejs%2fdevtools set size:undefined disposed:false
+82 silly fetch manifest @vitejs/devtools-oxc@^0.8.0
+83 silly packumentCache full:https://registry.npmjs.org/@vitejs%2fdevtools-oxc cache-miss
+84 http fetch GET 200 https://registry.npmjs.org/@vitejs%2fdevtools-oxc 35ms (cache miss)
+85 silly packumentCache full:https://registry.npmjs.org/@vitejs%2fdevtools-oxc set size:undefined disposed:false
+86 silly fetch manifest @vitejs/devtools-rolldown@^0.8.0
+87 silly packumentCache full:https://registry.npmjs.org/@vitejs%2fdevtools-rolldown cache-miss
+88 http fetch GET 200 https://registry.npmjs.org/@vitejs%2fdevtools-rolldown 29ms (cache miss)
+89 silly packumentCache full:https://registry.npmjs.org/@vitejs%2fdevtools-rolldown set size:undefined disposed:false
+90 silly fetch manifest @vitejs/devtools-vite@^0.8.0
+91 silly packumentCache full:https://registry.npmjs.org/@vitejs%2fdevtools-vite cache-miss
+92 http fetch GET 200 https://registry.npmjs.org/@vitejs%2fdevtools-vite 38ms (cache miss)
+93 silly packumentCache full:https://registry.npmjs.org/@vitejs%2fdevtools-vite set size:undefined disposed:false
+94 silly fetch manifest @vitejs/devtools-vitest@^0.8.0
+95 silly packumentCache full:https://registry.npmjs.org/@vitejs%2fdevtools-vitest cache-miss
+96 http fetch GET 200 https://registry.npmjs.org/@vitejs%2fdevtools-vitest 22ms (cache miss)
+97 silly packumentCache full:https://registry.npmjs.org/@vitejs%2fdevtools-vitest set size:undefined disposed:false
+98 silly fetch manifest vitest@*
+99 silly packumentCache full:https://registry.npmjs.org/vitest cache-miss
+100 http fetch GET 200 https://registry.npmjs.org/vitest 66ms (cache miss)
+101 silly packumentCache full:https://registry.npmjs.org/vitest set size:undefined disposed:false
+102 silly fetch manifest @edge-runtime/vm@*
+103 silly packumentCache full:https://registry.npmjs.org/@edge-runtime%2fvm cache-miss
+104 http fetch GET 200 https://registry.npmjs.org/@edge-runtime%2fvm 36ms (cache miss)
+105 silly packumentCache full:https://registry.npmjs.org/@edge-runtime%2fvm set size:undefined disposed:false
+106 silly fetch manifest @vitest/browser-playwright@5.0.5
+107 silly packumentCache full:https://registry.npmjs.org/@vitest%2fbrowser-playwright cache-miss
+108 http fetch GET 200 https://registry.npmjs.org/@vitest%2fbrowser-playwright 35ms (cache miss)
+109 silly packumentCache full:https://registry.npmjs.org/@vitest%2fbrowser-playwright set size:undefined disposed:false
+110 silly fetch manifest playwright@*
+111 silly packumentCache full:https://registry.npmjs.org/playwright cache-miss
+112 http fetch GET 200 https://registry.npmjs.org/playwright 325ms (cache miss)
+113 silly packumentCache full:https://registry.npmjs.org/playwright set size:undefined disposed:false
+114 silly fetch manifest @vitest/browser-preview@5.0.5
+115 silly packumentCache full:https://registry.npmjs.org/@vitest%2fbrowser-preview cache-miss
+116 http fetch GET 200 https://registry.npmjs.org/@vitest%2fbrowser-preview 38ms (cache miss)
+117 silly packumentCache full:https://registry.npmjs.org/@vitest%2fbrowser-preview set size:undefined disposed:false
+118 silly fetch manifest @vitest/browser-webdriverio@^5.0.0-beta.5 || >=5.0.0
+119 silly packumentCache full:https://registry.npmjs.org/@vitest%2fbrowser-webdriverio cache-miss
+120 http fetch GET 200 https://registry.npmjs.org/@vitest%2fbrowser-webdriverio 30ms (cache miss)
+121 silly packumentCache full:https://registry.npmjs.org/@vitest%2fbrowser-webdriverio set size:undefined disposed:false
+122 silly fetch manifest webdriverio@*
+123 silly packumentCache full:https://registry.npmjs.org/webdriverio cache-miss
+124 http fetch GET 200 https://registry.npmjs.org/webdriverio 99ms (cache miss)
+125 silly packumentCache full:https://registry.npmjs.org/webdriverio set size:undefined disposed:false
+126 silly fetch manifest puppeteer-core@>=24 <26
+127 silly packumentCache full:https://registry.npmjs.org/puppeteer-core cache-miss
+128 http fetch GET 200 https://registry.npmjs.org/puppeteer-core 46ms (cache miss)
+129 silly packumentCache full:https://registry.npmjs.org/puppeteer-core set size:undefined disposed:false
+130 silly fetch manifest @vitest/coverage-istanbul@5.0.5
+131 silly packumentCache full:https://registry.npmjs.org/@vitest%2fcoverage-istanbul cache-miss
+132 http fetch GET 200 https://registry.npmjs.org/@vitest%2fcoverage-istanbul 40ms (cache miss)
+133 silly packumentCache full:https://registry.npmjs.org/@vitest%2fcoverage-istanbul set size:undefined disposed:false
+134 silly fetch manifest @vitest/coverage-v8@5.0.5
+135 silly packumentCache full:https://registry.npmjs.org/@vitest%2fcoverage-v8 cache-miss
+136 http fetch GET 200 https://registry.npmjs.org/@vitest%2fcoverage-v8 43ms (cache miss)
+137 silly packumentCache full:https://registry.npmjs.org/@vitest%2fcoverage-v8 set size:undefined disposed:false
+138 silly fetch manifest @vitest/browser@5.0.5
+139 silly packumentCache full:https://registry.npmjs.org/@vitest%2fbrowser cache-miss
+140 http fetch GET 200 https://registry.npmjs.org/@vitest%2fbrowser 58ms (cache miss)
+141 silly packumentCache full:https://registry.npmjs.org/@vitest%2fbrowser set size:undefined disposed:false
+142 silly fetch manifest @vitest/ui@5.0.5
+143 silly packumentCache full:https://registry.npmjs.org/@vitest%2fui cache-miss
+144 http fetch GET 200 https://registry.npmjs.org/@vitest%2fui 54ms (cache miss)
+145 silly packumentCache full:https://registry.npmjs.org/@vitest%2fui set size:undefined disposed:false
+146 silly fetch manifest happy-dom@*
+147 silly packumentCache full:https://registry.npmjs.org/happy-dom cache-miss
+148 http fetch GET 200 https://registry.npmjs.org/happy-dom 78ms (cache miss)
+149 silly packumentCache full:https://registry.npmjs.org/happy-dom set size:undefined disposed:false
+150 silly fetch manifest jsdom@*
+151 silly packumentCache full:https://registry.npmjs.org/jsdom cache-miss
+152 http fetch GET 200 https://registry.npmjs.org/jsdom 40ms (cache miss)
+153 silly packumentCache full:https://registry.npmjs.org/jsdom set size:undefined disposed:false
+154 silly fetch manifest canvas@^3.2.3
+155 silly packumentCache full:https://registry.npmjs.org/canvas cache-miss
+156 http fetch GET 200 https://registry.npmjs.org/canvas 26ms (cache miss)
+157 silly packumentCache full:https://registry.npmjs.org/canvas set size:undefined disposed:false
+158 silly fetch manifest esbuild@^0.27.0 || ^0.28.0
+159 silly packumentCache full:https://registry.npmjs.org/esbuild cache-miss
+160 http fetch GET 200 https://registry.npmjs.org/esbuild 61ms (cache miss)
+161 silly packumentCache full:https://registry.npmjs.org/esbuild set size:undefined disposed:false
+162 silly fetch manifest jiti@>=1.21.0
+163 silly packumentCache full:https://registry.npmjs.org/jiti cache-miss
+164 http fetch GET 200 https://registry.npmjs.org/jiti 47ms (cache miss)
+165 silly packumentCache full:https://registry.npmjs.org/jiti set size:undefined disposed:false
+166 silly fetch manifest less@^4.0.0
+167 silly packumentCache full:https://registry.npmjs.org/less cache-miss
+168 http fetch GET 200 https://registry.npmjs.org/less 30ms (cache miss)
+169 silly packumentCache full:https://registry.npmjs.org/less set size:undefined disposed:false
+170 silly fetch manifest sass@^1.70.0
+171 silly packumentCache full:https://registry.npmjs.org/sass cache-miss
+172 http fetch GET 200 https://registry.npmjs.org/sass 49ms (cache miss)
+173 silly packumentCache full:https://registry.npmjs.org/sass set size:undefined disposed:false
+174 silly fetch manifest sass-embedded@^1.70.0
+175 silly packumentCache full:https://registry.npmjs.org/sass-embedded cache-miss
+176 http fetch GET 200 https://registry.npmjs.org/sass-embedded 28ms (cache miss)
+177 silly packumentCache full:https://registry.npmjs.org/sass-embedded set size:undefined disposed:false
+178 silly fetch manifest stylus@>=0.54.8
+179 silly packumentCache full:https://registry.npmjs.org/stylus cache-miss
+180 http fetch GET 200 https://registry.npmjs.org/stylus 27ms (cache miss)
+181 silly packumentCache full:https://registry.npmjs.org/stylus set size:undefined disposed:false
+182 silly fetch manifest sugarss@^5.0.0
+183 silly packumentCache full:https://registry.npmjs.org/sugarss cache-miss
+184 http fetch GET 200 https://registry.npmjs.org/sugarss 14ms (cache miss)
+185 silly packumentCache full:https://registry.npmjs.org/sugarss set size:undefined disposed:false
+186 silly fetch manifest postcss@^8.3.3
+187 silly packumentCache full:https://registry.npmjs.org/postcss cache-miss
+188 http fetch GET 200 https://registry.npmjs.org/postcss 45ms (cache miss)
+189 silly packumentCache full:https://registry.npmjs.org/postcss set size:undefined disposed:false
+190 silly fetch manifest terser@^5.16.0
+191 silly packumentCache full:https://registry.npmjs.org/terser cache-miss
+192 http fetch GET 200 https://registry.npmjs.org/terser 36ms (cache miss)
+193 silly packumentCache full:https://registry.npmjs.org/terser set size:undefined disposed:false
+194 silly fetch manifest tsx@^4.8.1
+195 silly packumentCache full:https://registry.npmjs.org/tsx cache-miss
+196 http fetch GET 200 https://registry.npmjs.org/tsx 33ms (cache miss)
+197 silly packumentCache full:https://registry.npmjs.org/tsx set size:undefined disposed:false
+198 silly fetch manifest yaml@^2.4.2
+199 silly packumentCache full:https://registry.npmjs.org/yaml cache-miss
+200 http fetch GET 200 https://registry.npmjs.org/yaml 24ms (cache miss)
+201 silly packumentCache full:https://registry.npmjs.org/yaml set size:undefined disposed:false
+202 silly fetch manifest typescript@^6.0.0
+203 silly packumentCache full:https://registry.npmjs.org/typescript cache-miss
+204 http cache https://registry.npmjs.org/typescript 33ms (cache hit)
+205 silly packumentCache full:https://registry.npmjs.org/typescript set size:15836217 disposed:false
+206 silly fetch manifest @tanstack/react-start@^1.0.0
+207 silly packumentCache full:https://registry.npmjs.org/@tanstack%2freact-start cache-miss
+208 http fetch GET 200 https://registry.npmjs.org/@tanstack%2freact-start 176ms (cache miss)
+209 silly packumentCache full:https://registry.npmjs.org/@tanstack%2freact-start set size:undefined disposed:false
+210 silly fetch manifest @rsbuild/core@^2.0.0
+211 silly packumentCache full:https://registry.npmjs.org/@rsbuild%2fcore cache-miss
+212 http fetch GET 200 https://registry.npmjs.org/@rsbuild%2fcore 126ms (cache miss)
+213 silly packumentCache full:https://registry.npmjs.org/@rsbuild%2fcore set size:undefined disposed:false
+214 silly fetch manifest core-js@>= 3.0.0
+215 silly packumentCache full:https://registry.npmjs.org/core-js cache-miss
+216 http fetch GET 200 https://registry.npmjs.org/core-js 43ms (cache miss)
+217 silly packumentCache full:https://registry.npmjs.org/core-js set size:undefined disposed:false
+218 silly fetch manifest react@>=18.0.0 || >=19.0.0
+219 silly packumentCache full:https://registry.npmjs.org/react cache-miss
+220 http fetch GET 200 https://registry.npmjs.org/react 153ms (cache miss)
+221 silly packumentCache full:https://registry.npmjs.org/react set size:undefined disposed:false
+222 silly fetch manifest react-dom@>=18.0.0 || >=19.0.0
+223 silly packumentCache full:https://registry.npmjs.org/react-dom cache-miss
+224 http fetch GET 200 https://registry.npmjs.org/react-dom 205ms (cache miss)
+225 silly packumentCache full:https://registry.npmjs.org/react-dom set size:undefined disposed:false
+226 silly fetch manifest @tanstack/solid-start@^1.0.0
+227 silly packumentCache full:https://registry.npmjs.org/@tanstack%2fsolid-start cache-miss
+228 http fetch GET 200 https://registry.npmjs.org/@tanstack%2fsolid-start 87ms (cache miss)
+229 silly packumentCache full:https://registry.npmjs.org/@tanstack%2fsolid-start set size:undefined disposed:false
+230 silly fetch manifest solid-js@>=1.0.0
+231 silly packumentCache full:https://registry.npmjs.org/solid-js cache-miss
+232 http fetch GET 200 https://registry.npmjs.org/solid-js 82ms (cache miss)
+233 silly packumentCache full:https://registry.npmjs.org/solid-js set size:undefined disposed:false
+234 silly fetch manifest drizzle-kit@>=0.31.4 || >=1.0.0-beta.1
+235 silly packumentCache full:https://registry.npmjs.org/drizzle-kit cache-miss
+236 http fetch GET 200 https://registry.npmjs.org/drizzle-kit 54ms (cache miss)
+237 silly packumentCache full:https://registry.npmjs.org/drizzle-kit set size:undefined disposed:false
+238 silly fetch manifest drizzle-orm@^0.45.2 || >=1.0.0-rc.1 <2.0.0
+239 silly packumentCache full:https://registry.npmjs.org/drizzle-orm cache-miss
+240 http fetch GET 200 https://registry.npmjs.org/drizzle-orm 5226ms (cache miss)
+241 silly packumentCache full:https://registry.npmjs.org/drizzle-orm set size:undefined disposed:false
+242 silly fetch manifest @aws-sdk/client-rds-data@>=3
+243 silly packumentCache full:https://registry.npmjs.org/@aws-sdk%2fclient-rds-data cache-miss
+244 http fetch GET 200 https://registry.npmjs.org/@aws-sdk%2fclient-rds-data 467ms (cache miss)
+245 silly packumentCache full:https://registry.npmjs.org/@aws-sdk%2fclient-rds-data set size:undefined disposed:false
+246 silly fetch manifest @cloudflare/workers-types@>=4
+247 silly packumentCache full:https://registry.npmjs.org/@cloudflare%2fworkers-types cache-miss
+248 http fetch GET 200 https://registry.npmjs.org/@cloudflare%2fworkers-types 79ms (cache miss)
+249 silly packumentCache full:https://registry.npmjs.org/@cloudflare%2fworkers-types set size:undefined disposed:false
+250 silly fetch manifest @electric-sql/pglite@>=0.2.0
+251 silly packumentCache full:https://registry.npmjs.org/@electric-sql%2fpglite cache-miss
+252 http fetch GET 200 https://registry.npmjs.org/@electric-sql%2fpglite 29ms (cache miss)
+253 silly packumentCache full:https://registry.npmjs.org/@electric-sql%2fpglite set size:undefined disposed:false
+254 silly fetch manifest @libsql/client@>=0.10.0
+255 silly packumentCache full:https://registry.npmjs.org/@libsql%2fclient cache-miss
+256 http fetch GET 200 https://registry.npmjs.org/@libsql%2fclient 46ms (cache miss)
+257 silly packumentCache full:https://registry.npmjs.org/@libsql%2fclient set size:undefined disposed:false
+258 silly fetch manifest @libsql/client-wasm@>=0.10.0
+259 silly packumentCache full:https://registry.npmjs.org/@libsql%2fclient-wasm cache-miss
+260 http fetch GET 200 https://registry.npmjs.org/@libsql%2fclient-wasm 29ms (cache miss)
+261 silly packumentCache full:https://registry.npmjs.org/@libsql%2fclient-wasm set size:undefined disposed:false
+262 silly fetch manifest @neondatabase/serverless@>=0.10.0
+263 silly packumentCache full:https://registry.npmjs.org/@neondatabase%2fserverless cache-miss
+264 http fetch GET 200 https://registry.npmjs.org/@neondatabase%2fserverless 48ms (cache miss)
+265 silly packumentCache full:https://registry.npmjs.org/@neondatabase%2fserverless set size:undefined disposed:false
+266 silly fetch manifest @netlify/db@>=0.4.0
+267 silly packumentCache full:https://registry.npmjs.org/@netlify%2fdb cache-miss
+268 http fetch GET 200 https://registry.npmjs.org/@netlify%2fdb 29ms (cache miss)
+269 silly packumentCache full:https://registry.npmjs.org/@netlify%2fdb set size:undefined disposed:false
+270 silly fetch manifest pg@>=8
+271 silly packumentCache full:https://registry.npmjs.org/pg cache-miss
+272 http fetch GET 200 https://registry.npmjs.org/pg 30ms (cache miss)
+273 silly packumentCache full:https://registry.npmjs.org/pg set size:undefined disposed:false
+274 silly fetch manifest pg-native@>=3.0.1
+275 silly packumentCache full:https://registry.npmjs.org/pg-native cache-miss
+276 http fetch GET 200 https://registry.npmjs.org/pg-native 19ms (cache miss)
+277 silly packumentCache full:https://registry.npmjs.org/pg-native set size:undefined disposed:false
+278 silly fetch manifest @op-engineering/op-sqlite@>=2
+279 silly packumentCache full:https://registry.npmjs.org/@op-engineering%2fop-sqlite cache-miss
+280 http fetch GET 200 https://registry.npmjs.org/@op-engineering%2fop-sqlite 51ms (cache miss)
+281 silly packumentCache full:https://registry.npmjs.org/@op-engineering%2fop-sqlite set size:undefined disposed:false
+282 silly fetch manifest @sqlite.org/sqlite-wasm@*
+283 silly packumentCache full:https://registry.npmjs.org/@sqlite.org%2fsqlite-wasm cache-miss
+284 http fetch GET 200 https://registry.npmjs.org/@sqlite.org%2fsqlite-wasm 32ms (cache miss)
+285 silly packumentCache full:https://registry.npmjs.org/@sqlite.org%2fsqlite-wasm set size:undefined disposed:false
+286 silly fetch manifest react-native@*
+287 silly packumentCache full:https://registry.npmjs.org/react-native cache-miss
+288 http fetch GET 200 https://registry.npmjs.org/react-native 306ms (cache miss)
+289 silly packumentCache full:https://registry.npmjs.org/react-native set size:undefined disposed:false
+290 silly fetch manifest @planetscale/database@>=1.13
+291 silly packumentCache full:https://registry.npmjs.org/@planetscale%2fdatabase cache-miss
+292 http fetch GET 200 https://registry.npmjs.org/@planetscale%2fdatabase 31ms (cache miss)
+293 silly packumentCache full:https://registry.npmjs.org/@planetscale%2fdatabase set size:undefined disposed:false
+294 silly fetch manifest @tidbcloud/serverless@*
+295 silly packumentCache full:https://registry.npmjs.org/@tidbcloud%2fserverless cache-miss
+296 http fetch GET 200 https://registry.npmjs.org/@tidbcloud%2fserverless 37ms (cache miss)
+297 silly packumentCache full:https://registry.npmjs.org/@tidbcloud%2fserverless set size:undefined disposed:false
+298 silly fetch manifest @types/better-sqlite3@*
+299 silly packumentCache full:https://registry.npmjs.org/@types%2fbetter-sqlite3 cache-miss
+300 http fetch GET 200 https://registry.npmjs.org/@types%2fbetter-sqlite3 30ms (cache miss)
+301 silly packumentCache full:https://registry.npmjs.org/@types%2fbetter-sqlite3 set size:undefined disposed:false
+302 silly fetch manifest @types/pg@*
+303 silly packumentCache full:https://registry.npmjs.org/@types%2fpg cache-miss
+304 http fetch GET 200 https://registry.npmjs.org/@types%2fpg 44ms (cache miss)
+305 silly packumentCache full:https://registry.npmjs.org/@types%2fpg set size:undefined disposed:false
+306 silly fetch manifest @types/sql.js@*
+307 silly packumentCache full:https://registry.npmjs.org/@types%2fsql.js cache-miss
+308 http fetch GET 200 https://registry.npmjs.org/@types%2fsql.js 22ms (cache miss)
+309 silly packumentCache full:https://registry.npmjs.org/@types%2fsql.js set size:undefined disposed:false
+310 silly fetch manifest @upstash/redis@>=1.34.7
+311 silly packumentCache full:https://registry.npmjs.org/@upstash%2fredis cache-miss
+312 http fetch GET 200 https://registry.npmjs.org/@upstash%2fredis 137ms (cache miss)
+313 silly packumentCache full:https://registry.npmjs.org/@upstash%2fredis set size:undefined disposed:false
+314 silly fetch manifest @vercel/postgres@>=0.8.0
+315 silly packumentCache full:https://registry.npmjs.org/@vercel%2fpostgres cache-miss
+316 http fetch GET 200 https://registry.npmjs.org/@vercel%2fpostgres 32ms (cache miss)
+317 silly packumentCache full:https://registry.npmjs.org/@vercel%2fpostgres set size:undefined disposed:false
+318 silly fetch manifest @xata.io/client@*
+319 silly packumentCache full:https://registry.npmjs.org/@xata.io%2fclient cache-miss
+320 http fetch GET 200 https://registry.npmjs.org/@xata.io%2fclient 286ms (cache miss)
+321 silly packumentCache full:https://registry.npmjs.org/@xata.io%2fclient set size:undefined disposed:false
+322 silly fetch manifest better-sqlite3@>=7
+323 silly packumentCache full:https://registry.npmjs.org/better-sqlite3 cache-miss
+324 http fetch GET 200 https://registry.npmjs.org/better-sqlite3 29ms (cache miss)
+325 silly packumentCache full:https://registry.npmjs.org/better-sqlite3 set size:undefined disposed:false
+326 silly fetch manifest bun-types@*
+327 silly packumentCache full:https://registry.npmjs.org/bun-types cache-miss
+328 http fetch GET 200 https://registry.npmjs.org/bun-types 104ms (cache miss)
+329 silly packumentCache full:https://registry.npmjs.org/bun-types set size:undefined disposed:false
+330 silly fetch manifest expo-sqlite@>=14.0.0
+331 silly packumentCache full:https://registry.npmjs.org/expo-sqlite cache-miss
+332 http fetch GET 200 https://registry.npmjs.org/expo-sqlite 34ms (cache miss)
+333 silly packumentCache full:https://registry.npmjs.org/expo-sqlite set size:undefined disposed:false
+334 silly fetch manifest expo@*
+335 silly packumentCache full:https://registry.npmjs.org/expo cache-miss
+336 http fetch GET 200 https://registry.npmjs.org/expo 95ms (cache miss)
+337 silly packumentCache full:https://registry.npmjs.org/expo set size:undefined disposed:false
+338 silly fetch manifest @expo/metro-runtime@*
+339 silly packumentCache full:https://registry.npmjs.org/@expo%2fmetro-runtime cache-miss
+340 http fetch GET 200 https://registry.npmjs.org/@expo%2fmetro-runtime 41ms (cache miss)
+341 silly packumentCache full:https://registry.npmjs.org/@expo%2fmetro-runtime set size:undefined disposed:false
+342 silly fetch manifest react-native-web@*
+343 silly packumentCache full:https://registry.npmjs.org/react-native-web cache-miss
+344 http fetch GET 200 https://registry.npmjs.org/react-native-web 71ms (cache miss)
+345 silly packumentCache full:https://registry.npmjs.org/react-native-web set size:undefined disposed:false
+346 silly fetch manifest react-native-webview@*
+347 silly packumentCache full:https://registry.npmjs.org/react-native-webview cache-miss
+348 http fetch GET 200 https://registry.npmjs.org/react-native-webview 104ms (cache miss)
+349 silly packumentCache full:https://registry.npmjs.org/react-native-webview set size:undefined disposed:false
+350 silly fetch manifest gel@>=2
+351 silly packumentCache full:https://registry.npmjs.org/gel cache-miss
+352 http fetch GET 200 https://registry.npmjs.org/gel 27ms (cache miss)
+353 silly packumentCache full:https://registry.npmjs.org/gel set size:undefined disposed:false
+354 silly fetch manifest knex@*
+355 silly packumentCache full:https://registry.npmjs.org/knex cache-miss
+356 http fetch GET 200 https://registry.npmjs.org/knex 41ms (cache miss)
+357 silly packumentCache full:https://registry.npmjs.org/knex set size:undefined disposed:false
+358 silly fetch manifest pg-query-stream@^4.14.0
+359 silly packumentCache full:https://registry.npmjs.org/pg-query-stream cache-miss
+360 http fetch GET 200 https://registry.npmjs.org/pg-query-stream 18ms (cache miss)
+361 silly packumentCache full:https://registry.npmjs.org/pg-query-stream set size:undefined disposed:false
+362 silly fetch manifest kysely@*
+363 silly packumentCache full:https://registry.npmjs.org/kysely cache-miss
+364 http fetch GET 200 https://registry.npmjs.org/kysely 30ms (cache miss)
+365 silly packumentCache full:https://registry.npmjs.org/kysely set size:undefined disposed:false
+366 silly fetch manifest mysql2@>=2
+367 silly packumentCache full:https://registry.npmjs.org/mysql2 cache-miss
+368 http fetch GET 200 https://registry.npmjs.org/mysql2 74ms (cache miss)
+369 silly packumentCache full:https://registry.npmjs.org/mysql2 set size:undefined disposed:false
+370 silly fetch manifest postgres@>=3
+371 silly packumentCache full:https://registry.npmjs.org/postgres cache-miss
+372 http fetch GET 200 https://registry.npmjs.org/postgres 29ms (cache miss)
+373 silly packumentCache full:https://registry.npmjs.org/postgres set size:undefined disposed:false
+374 silly fetch manifest sql.js@>=1
+375 silly packumentCache full:https://registry.npmjs.org/sql.js cache-miss
+376 http fetch GET 200 https://registry.npmjs.org/sql.js 24ms (cache miss)
+377 silly packumentCache full:https://registry.npmjs.org/sql.js set size:undefined disposed:false
+378 silly fetch manifest sqlite3@>=5
+379 silly packumentCache full:https://registry.npmjs.org/sqlite3 cache-miss
+380 http fetch GET 200 https://registry.npmjs.org/sqlite3 22ms (cache miss)
+381 silly packumentCache full:https://registry.npmjs.org/sqlite3 set size:undefined disposed:false
+382 silly fetch manifest mongodb@^6.0.0 || ^7.0.0
+383 silly packumentCache full:https://registry.npmjs.org/mongodb cache-miss
+384 http fetch GET 200 https://registry.npmjs.org/mongodb 82ms (cache miss)
+385 silly packumentCache full:https://registry.npmjs.org/mongodb set size:undefined disposed:false
+386 silly fetch manifest @aws-sdk/credential-providers@^3.806.0
+387 silly packumentCache full:https://registry.npmjs.org/@aws-sdk%2fcredential-providers cache-miss
+388 http fetch GET 200 https://registry.npmjs.org/@aws-sdk%2fcredential-providers 76ms (cache miss)
+389 silly packumentCache full:https://registry.npmjs.org/@aws-sdk%2fcredential-providers set size:undefined disposed:false
+390 silly fetch manifest @mongodb-js/zstd@^7.0.0
+391 silly packumentCache full:https://registry.npmjs.org/@mongodb-js%2fzstd cache-miss
+392 http fetch GET 200 https://registry.npmjs.org/@mongodb-js%2fzstd 42ms (cache miss)
+393 silly packumentCache full:https://registry.npmjs.org/@mongodb-js%2fzstd set size:undefined disposed:false
+394 silly fetch manifest gcp-metadata@^7.0.1
+395 silly packumentCache full:https://registry.npmjs.org/gcp-metadata cache-miss
+396 http fetch GET 200 https://registry.npmjs.org/gcp-metadata 18ms (cache miss)
+397 silly packumentCache full:https://registry.npmjs.org/gcp-metadata set size:undefined disposed:false
+398 silly fetch manifest kerberos@^7.0.0
+399 silly packumentCache full:https://registry.npmjs.org/kerberos cache-miss
+400 http fetch GET 200 https://registry.npmjs.org/kerberos 19ms (cache miss)
+401 silly packumentCache full:https://registry.npmjs.org/kerberos set size:undefined disposed:false
+402 silly fetch manifest mongodb-client-encryption@^7.2.0
+403 silly packumentCache full:https://registry.npmjs.org/mongodb-client-encryption cache-miss
+404 http fetch GET 200 https://registry.npmjs.org/mongodb-client-encryption 22ms (cache miss)
+405 silly packumentCache full:https://registry.npmjs.org/mongodb-client-encryption set size:undefined disposed:false
+406 silly fetch manifest snappy@^7.3.2
+407 silly packumentCache full:https://registry.npmjs.org/snappy cache-miss
+408 http fetch GET 200 https://registry.npmjs.org/snappy 28ms (cache miss)
+409 silly packumentCache full:https://registry.npmjs.org/snappy set size:undefined disposed:false
+410 silly fetch manifest socks@^2.8.6
+411 silly packumentCache full:https://registry.npmjs.org/socks cache-miss
+412 http fetch GET 200 https://registry.npmjs.org/socks 22ms (cache miss)
+413 silly packumentCache full:https://registry.npmjs.org/socks set size:undefined disposed:false
+414 silly fetch manifest next@^14.0.0 || ^15.0.0 || ^16.0.0
+415 silly packumentCache full:https://registry.npmjs.org/next cache-miss
+416 http fetch GET 200 https://registry.npmjs.org/next 383ms (cache miss)
+417 silly packumentCache full:https://registry.npmjs.org/next set size:undefined disposed:false
+418 silly fetch manifest @playwright/test@^1.51.1
+419 silly packumentCache full:https://registry.npmjs.org/@playwright%2ftest cache-miss
+420 http fetch GET 200 https://registry.npmjs.org/@playwright%2ftest 208ms (cache miss)
+421 silly packumentCache full:https://registry.npmjs.org/@playwright%2ftest set size:undefined disposed:false
+422 silly fetch manifest babel-plugin-react-compiler@*
+423 silly packumentCache full:https://registry.npmjs.org/babel-plugin-react-compiler cache-miss
+424 http fetch GET 200 https://registry.npmjs.org/babel-plugin-react-compiler 52ms (cache miss)
+425 silly packumentCache full:https://registry.npmjs.org/babel-plugin-react-compiler set size:undefined disposed:false
+426 silly fetch manifest prisma@^5.0.0 || ^6.0.0 || ^7.0.0
+427 silly packumentCache full:https://registry.npmjs.org/prisma cache-miss
+428 http cache https://registry.npmjs.org/prisma 86ms (cache hit)
+429 silly packumentCache full:https://registry.npmjs.org/prisma set size:44033033 disposed:false
+430 silly fetch manifest better-sqlite3@>=9.0.0
+431 silly packumentCache full:https://registry.npmjs.org/better-sqlite3 cache-miss
+432 http cache https://registry.npmjs.org/better-sqlite3 3ms (cache hit)
+433 silly packumentCache full:https://registry.npmjs.org/better-sqlite3 set size:393419 disposed:false
+434 silly fetch manifest vue@^3.0.0
+435 silly packumentCache full:https://registry.npmjs.org/vue cache-miss
+436 http fetch GET 200 https://registry.npmjs.org/vue 62ms (cache miss)
+437 silly packumentCache full:https://registry.npmjs.org/vue set size:undefined disposed:false
+438 silly fetch manifest @better-auth/core@^1.7.12
+439 silly packumentCache full:https://registry.npmjs.org/@better-auth%2fcore cache-miss
+440 http fetch GET 200 https://registry.npmjs.org/@better-auth%2fcore 54ms (cache miss)
+441 silly packumentCache full:https://registry.npmjs.org/@better-auth%2fcore set size:undefined disposed:false
+442 silly fetch manifest @better-auth/utils@^0.4.2 || ^0.5.0
+443 silly packumentCache full:https://registry.npmjs.org/@better-auth%2futils cache-miss
+444 http fetch GET 200 https://registry.npmjs.org/@better-auth%2futils 29ms (cache miss)
+445 silly packumentCache full:https://registry.npmjs.org/@better-auth%2futils set size:undefined disposed:false
+446 silly fetch manifest @better-fetch/fetch@1.3.2
+447 silly packumentCache full:https://registry.npmjs.org/@better-fetch%2ffetch cache-miss
+448 http fetch GET 200 https://registry.npmjs.org/@better-fetch%2ffetch 31ms (cache miss)
+449 silly packumentCache full:https://registry.npmjs.org/@better-fetch%2ffetch set size:undefined disposed:false
+450 silly fetch manifest @opentelemetry/api@^1.9.0
+451 silly packumentCache full:https://registry.npmjs.org/@opentelemetry%2fapi cache-miss
+452 http cache https://registry.npmjs.org/@opentelemetry%2fapi 3ms (cache hit)
+453 silly packumentCache full:https://registry.npmjs.org/@opentelemetry%2fapi set size:283794 disposed:false
+454 silly fetch manifest better-call@1.4.4
+455 silly packumentCache full:https://registry.npmjs.org/better-call cache-miss
+456 http fetch GET 200 https://registry.npmjs.org/better-call 32ms (cache miss)
+457 silly packumentCache full:https://registry.npmjs.org/better-call set size:undefined disposed:false
+458 silly fetch manifest zod@^4.0.0
+459 silly packumentCache full:https://registry.npmjs.org/zod cache-miss
+460 http fetch GET 200 https://registry.npmjs.org/zod 81ms (cache miss)
+461 silly packumentCache full:https://registry.npmjs.org/zod set size:undefined disposed:false
+462 silly fetch manifest jose@^6.1.0
+463 silly packumentCache full:https://registry.npmjs.org/jose cache-miss
+464 http fetch GET 200 https://registry.npmjs.org/jose 43ms (cache miss)
+465 silly packumentCache full:https://registry.npmjs.org/jose set size:undefined disposed:false
+466 silly fetch manifest kysely@^0.28.5 || ^0.29.0
+467 silly packumentCache full:https://registry.npmjs.org/kysely cache-miss
+468 http cache https://registry.npmjs.org/kysely 3ms (cache hit)
+469 silly packumentCache full:https://registry.npmjs.org/kysely set size:745697 disposed:false
+470 silly fetch manifest nanostores@^1.0.1
+471 silly packumentCache full:https://registry.npmjs.org/nanostores cache-miss
+472 http fetch GET 200 https://registry.npmjs.org/nanostores 24ms (cache miss)
+473 silly packumentCache full:https://registry.npmjs.org/nanostores set size:undefined disposed:false
+474 silly placeDep ROOT @better-auth/api-key@1.7.12 OK for: claude-mem@15.0.1 want: ^1.6.16
+475 silly placeDep ROOT better-auth@1.7.12 OK for: @better-auth/api-key@1.7.12 want: ^1.7.12
+476 silly placeDep ROOT better-call@1.4.4 OK for: @better-auth/api-key@1.7.12 want: 1.4.4
+477 silly placeDep ROOT @better-auth/core@1.7.12 OK for: @better-auth/api-key@1.7.12 want: ^1.7.12
+478 silly placeDep ROOT jose@6.2.13 OK for: @better-auth/core@1.7.12 want: ^6.1.0
+479 silly placeDep ROOT kysely@0.29.7 OK for: @better-auth/core@1.7.12 want: ^0.28.5 || ^0.29.0
+480 silly placeDep ROOT nanostores@1.5.5 OK for: @better-auth/core@1.7.12 want: ^1.0.1
+481 silly placeDep ROOT @better-auth/utils@0.5.0 OK for: @better-auth/core@1.7.12 want: ^0.4.2 || ^0.5.0
+482 silly placeDep ROOT @better-fetch/fetch@1.3.2 OK for: @better-auth/core@1.7.12 want: 1.3.2
+483 silly fetch manifest zod@^4.5.4
+484 silly packumentCache full:https://registry.npmjs.org/zod cache-miss
+485 http cache https://registry.npmjs.org/zod 10ms (cache hit)
+486 silly packumentCache full:https://registry.npmjs.org/zod set size:4183125 disposed:false
+487 silly fetch manifest @standard-schema/spec@^1.1.0
+488 silly packumentCache full:https://registry.npmjs.org/@standard-schema%2fspec cache-miss
+489 http fetch GET 200 https://registry.npmjs.org/@standard-schema%2fspec 26ms (cache miss)
+490 silly packumentCache full:https://registry.npmjs.org/@standard-schema%2fspec set size:undefined disposed:false
+491 silly fetch manifest @noble/hashes@^2.0.1
+492 silly packumentCache full:https://registry.npmjs.org/@noble%2fhashes cache-miss
+493 http fetch GET 200 https://registry.npmjs.org/@noble%2fhashes 39ms (cache miss)
+494 silly packumentCache full:https://registry.npmjs.org/@noble%2fhashes set size:undefined disposed:false
+495 silly fetch manifest rou3@^0.9.1
+496 silly packumentCache full:https://registry.npmjs.org/rou3 cache-miss
+497 http fetch GET 200 https://registry.npmjs.org/rou3 20ms (cache miss)
+498 silly packumentCache full:https://registry.npmjs.org/rou3 set size:undefined disposed:false
+499 silly fetch manifest set-cookie-parser@^3.1.2
+500 silly packumentCache full:https://registry.npmjs.org/set-cookie-parser cache-miss
+501 http fetch GET 200 https://registry.npmjs.org/set-cookie-parser 20ms (cache miss)
+502 silly packumentCache full:https://registry.npmjs.org/set-cookie-parser set size:undefined disposed:false
+503 silly fetch manifest defu@^6.1.4
+504 silly packumentCache full:https://registry.npmjs.org/defu cache-miss
+505 http fetch GET 200 https://registry.npmjs.org/defu 21ms (cache miss)
+506 silly packumentCache full:https://registry.npmjs.org/defu set size:undefined disposed:false
+507 silly fetch manifest @noble/hashes@^2.2.0
+508 silly packumentCache full:https://registry.npmjs.org/@noble%2fhashes cache-miss
+509 http cache https://registry.npmjs.org/@noble%2fhashes 2ms (cache hit)
+510 silly packumentCache full:https://registry.npmjs.org/@noble%2fhashes set size:220000 disposed:false
+511 silly fetch manifest @noble/ciphers@^2.2.0
+512 silly packumentCache full:https://registry.npmjs.org/@noble%2fciphers cache-miss
+513 http fetch GET 200 https://registry.npmjs.org/@noble%2fciphers 40ms (cache miss)
+514 silly packumentCache full:https://registry.npmjs.org/@noble%2fciphers set size:undefined disposed:false
+515 silly fetch manifest @better-auth/telemetry@1.7.12
+516 silly packumentCache full:https://registry.npmjs.org/@better-auth%2ftelemetry cache-miss
+517 http fetch GET 200 https://registry.npmjs.org/@better-auth%2ftelemetry 34ms (cache miss)
+518 silly packumentCache full:https://registry.npmjs.org/@better-auth%2ftelemetry set size:undefined disposed:false
+519 silly fetch manifest @better-auth/mongo-adapter@1.7.12
+520 silly packumentCache full:https://registry.npmjs.org/@better-auth%2fmongo-adapter cache-miss
+521 http fetch GET 200 https://registry.npmjs.org/@better-auth%2fmongo-adapter 42ms (cache miss)
+522 silly packumentCache full:https://registry.npmjs.org/@better-auth%2fmongo-adapter set size:undefined disposed:false
+523 silly fetch manifest @better-auth/kysely-adapter@1.7.12
+524 silly packumentCache full:https://registry.npmjs.org/@better-auth%2fkysely-adapter cache-miss
+525 http fetch GET 200 https://registry.npmjs.org/@better-auth%2fkysely-adapter 29ms (cache miss)
+526 silly packumentCache full:https://registry.npmjs.org/@better-auth%2fkysely-adapter set size:undefined disposed:false
+527 silly fetch manifest @better-auth/memory-adapter@1.7.12
+528 silly packumentCache full:https://registry.npmjs.org/@better-auth%2fmemory-adapter cache-miss
+529 http fetch GET 200 https://registry.npmjs.org/@better-auth%2fmemory-adapter 42ms (cache miss)
+530 silly packumentCache full:https://registry.npmjs.org/@better-auth%2fmemory-adapter set size:undefined disposed:false
+531 silly fetch manifest @better-auth/prisma-adapter@1.7.12
+532 silly packumentCache full:https://registry.npmjs.org/@better-auth%2fprisma-adapter cache-miss
+533 http fetch GET 200 https://registry.npmjs.org/@better-auth%2fprisma-adapter 30ms (cache miss)
+534 silly packumentCache full:https://registry.npmjs.org/@better-auth%2fprisma-adapter set size:undefined disposed:false
+535 silly fetch manifest @better-auth/drizzle-adapter@1.7.12
+536 silly packumentCache full:https://registry.npmjs.org/@better-auth%2fdrizzle-adapter cache-miss
+537 http fetch GET 200 https://registry.npmjs.org/@better-auth%2fdrizzle-adapter 33ms (cache miss)
+538 silly packumentCache full:https://registry.npmjs.org/@better-auth%2fdrizzle-adapter set size:undefined disposed:false
+539 silly placeDep ROOT zod@4.6.7 OK for: @better-auth/api-key@1.7.12 want: ^4.5.4
+540 silly placeDep ROOT @standard-schema/spec@1.1.0 OK for: @better-auth/core@1.7.12 want: ^1.1.0
+541 silly placeDep ROOT @noble/hashes@2.4.0 OK for: @better-auth/utils@0.5.0 want: ^2.0.1
+542 silly fetch manifest @better-auth/core@1.7.12
+543 silly packumentCache full:https://registry.npmjs.org/@better-auth%2fcore cache-miss
+544 http cache https://registry.npmjs.org/@better-auth%2fcore 3ms (cache hit)
+545 silly packumentCache full:https://registry.npmjs.org/@better-auth%2fcore set size:860387 disposed:false
+546 silly fetch manifest @better-auth/utils@0.5.0
+547 silly packumentCache full:https://registry.npmjs.org/@better-auth%2futils cache-miss
+548 http cache https://registry.npmjs.org/@better-auth%2futils 2ms (cache hit)
+549 silly packumentCache full:https://registry.npmjs.org/@better-auth%2futils set size:73165 disposed:false
+550 silly fetch manifest jose@^6.2.3
+551 silly packumentCache full:https://registry.npmjs.org/jose cache-miss
+552 http cache https://registry.npmjs.org/jose 7ms (cache hit)
+553 silly packumentCache full:https://registry.npmjs.org/jose set size:1464237 disposed:false
+554 silly fetch manifest kysely@^0.28.17 || ^0.29.0
+555 silly packumentCache full:https://registry.npmjs.org/kysely cache-hit
+556 silly fetch manifest nanostores@^1.3.0
+557 silly packumentCache full:https://registry.npmjs.org/nanostores cache-miss
+558 http cache https://registry.npmjs.org/nanostores 2ms (cache hit)
+559 silly packumentCache full:https://registry.npmjs.org/nanostores set size:144885 disposed:false
+560 silly fetch manifest pg@^8.0.0
+561 silly packumentCache full:https://registry.npmjs.org/pg cache-miss
+562 http cache https://registry.npmjs.org/pg 2ms (cache hit)
+563 silly packumentCache full:https://registry.npmjs.org/pg set size:484837 disposed:false
+564 silly fetch manifest react@^18.0.0 || ^19.0.0
+565 silly packumentCache full:https://registry.npmjs.org/react cache-miss
+566 http cache https://registry.npmjs.org/react 13ms (cache hit)
+567 silly packumentCache full:https://registry.npmjs.org/react set size:7078512 disposed:false
+568 silly fetch manifest @types/react@^19.1.1
+569 silly packumentCache full:https://registry.npmjs.org/@types%2freact cache-miss
+570 http cache https://registry.npmjs.org/@types%2freact 6ms (cache hit)
+571 silly packumentCache full:https://registry.npmjs.org/@types%2freact set size:2642195 disposed:false
+572 silly fetch manifest react-dom@^18.0.0 || ^19.0.0
+573 silly packumentCache full:https://registry.npmjs.org/react-dom cache-miss
+574 http cache https://registry.npmjs.org/react-dom 19ms (cache hit)
+575 silly packumentCache full:https://registry.npmjs.org/react-dom set size:9553599 disposed:false
+576 silly fetch manifest mysql2@^3.0.0
+577 silly packumentCache full:https://registry.npmjs.org/mysql2 cache-miss
+578 http cache https://registry.npmjs.org/mysql2 5ms (cache hit)
+579 silly packumentCache full:https://registry.npmjs.org/mysql2 set size:1024626 disposed:false
+580 silly fetch manifest @types/node@>= 8
+581 silly packumentCache full:https://registry.npmjs.org/@types%2fnode cache-miss
+582 http cache https://registry.npmjs.org/@types%2fnode 19ms (cache hit)
+583 silly packumentCache full:https://registry.npmjs.org/@types%2fnode set size:11180437 disposed:false
+584 silly placeDep ROOT @better-auth/drizzle-adapter@1.7.12 OK for: better-auth@1.7.12 want: 1.7.12
+585 silly placeDep ROOT @better-auth/kysely-adapter@1.7.12 OK for: better-auth@1.7.12 want: 1.7.12
+586 silly placeDep ROOT @better-auth/memory-adapter@1.7.12 OK for: better-auth@1.7.12 want: 1.7.12
+587 silly placeDep ROOT @better-auth/mongo-adapter@1.7.12 OK for: better-auth@1.7.12 want: 1.7.12
+588 silly placeDep ROOT @better-auth/prisma-adapter@1.7.12 OK for: better-auth@1.7.12 want: 1.7.12
+589 silly placeDep ROOT @better-auth/telemetry@1.7.12 OK for: better-auth@1.7.12 want: 1.7.12
+590 silly placeDep ROOT @noble/ciphers@2.4.0 OK for: better-auth@1.7.12 want: ^2.2.0
+591 silly placeDep ROOT defu@6.1.7 OK for: better-auth@1.7.12 want: ^6.1.4
+592 silly placeDep ROOT rou3@0.9.2 OK for: better-call@1.4.4 want: ^0.9.1
+593 silly placeDep ROOT set-cookie-parser@3.2.1 OK for: better-call@1.4.4 want: ^3.1.2
+594 silly reify moves {}
+595 silly audit bulk request {
+595 silly audit   'claude-mem': [ '15.0.1' ],
+595 silly audit   '@better-auth/api-key': [ '1.7.12' ],
+595 silly audit   'better-auth': [ '1.7.12' ],
+595 silly audit   'better-call': [ '1.4.4' ],
+595 silly audit   '@better-auth/core': [ '1.7.12' ],
+595 silly audit   jose: [ '6.2.13' ],
+595 silly audit   kysely: [ '0.29.7' ],
+595 silly audit   nanostores: [ '1.5.5' ],
+595 silly audit   '@better-auth/utils': [ '0.5.0' ],
+595 silly audit   '@better-fetch/fetch': [ '1.3.2' ],
+595 silly audit   zod: [ '4.6.7' ],
+595 silly audit   '@standard-schema/spec': [ '1.1.0' ],
+595 silly audit   '@noble/hashes': [ '2.4.0' ],
+595 silly audit   '@better-auth/drizzle-adapter': [ '1.7.12' ],
+595 silly audit   '@better-auth/kysely-adapter': [ '1.7.12' ],
+595 silly audit   '@better-auth/memory-adapter': [ '1.7.12' ],
+595 silly audit   '@better-auth/mongo-adapter': [ '1.7.12' ],
+595 silly audit   '@better-auth/prisma-adapter': [ '1.7.12' ],
+595 silly audit   '@better-auth/telemetry': [ '1.7.12' ],
+595 silly audit   '@noble/ciphers': [ '2.4.0' ],
+595 silly audit   defu: [ '6.1.7' ],
+595 silly audit   rou3: [ '0.9.2' ],
+595 silly audit   'set-cookie-parser': [ '3.2.1' ]
+595 silly audit }
+596 http cache rou3@https://registry.npmjs.org/rou3/-/rou3-0.9.2.tgz 0ms (cache hit)
+597 http cache defu@https://registry.npmjs.org/defu/-/defu-6.1.7.tgz 0ms (cache hit)
+598 http cache @noble/ciphers@https://registry.npmjs.org/@noble/ciphers/-/ciphers-2.4.0.tgz 0ms (cache hit)
+599 http cache @better-auth/telemetry@https://registry.npmjs.org/@better-auth/telemetry/-/telemetry-1.7.12.tgz 0ms (cache hit)
+600 http cache @better-auth/prisma-adapter@https://registry.npmjs.org/@better-auth/prisma-adapter/-/prisma-adapter-1.7.12.tgz 0ms (cache hit)
+601 http cache @better-auth/mongo-adapter@https://registry.npmjs.org/@better-auth/mongo-adapter/-/mongo-adapter-1.7.12.tgz 0ms (cache hit)
+602 http cache @better-auth/memory-adapter@https://registry.npmjs.org/@better-auth/memory-adapter/-/memory-adapter-1.7.12.tgz 0ms (cache hit)
+603 http cache @better-auth/kysely-adapter@https://registry.npmjs.org/@better-auth/kysely-adapter/-/kysely-adapter-1.7.12.tgz 0ms (cache hit)
+604 http cache @better-auth/drizzle-adapter@https://registry.npmjs.org/@better-auth/drizzle-adapter/-/drizzle-adapter-1.7.12.tgz 0ms (cache hit)
+605 http cache @noble/hashes@https://registry.npmjs.org/@noble/hashes/-/hashes-2.4.0.tgz 0ms (cache hit)
+606 http cache @standard-schema/spec@https://registry.npmjs.org/@standard-schema/spec/-/spec-1.1.0.tgz 0ms (cache hit)
+607 http cache zod@https://registry.npmjs.org/zod/-/zod-4.6.7.tgz 0ms (cache hit)
+608 http cache @better-fetch/fetch@https://registry.npmjs.org/@better-fetch/fetch/-/fetch-1.3.2.tgz 0ms (cache hit)
+609 http cache @better-auth/utils@https://registry.npmjs.org/@better-auth/utils/-/utils-0.5.0.tgz 0ms (cache hit)
+610 http cache nanostores@https://registry.npmjs.org/nanostores/-/nanostores-1.5.5.tgz 0ms (cache hit)
+611 http cache kysely@https://registry.npmjs.org/kysely/-/kysely-0.29.7.tgz 0ms (cache hit)
+612 http cache jose@https://registry.npmjs.org/jose/-/jose-6.2.13.tgz 0ms (cache hit)
+613 http cache @better-auth/core@https://registry.npmjs.org/@better-auth/core/-/core-1.7.12.tgz 0ms (cache hit)
+614 http cache better-call@https://registry.npmjs.org/better-call/-/better-call-1.4.4.tgz 0ms (cache hit)
+615 http cache set-cookie-parser@https://registry.npmjs.org/set-cookie-parser/-/set-cookie-parser-3.2.1.tgz 0ms (cache hit)
+616 http cache better-auth@https://registry.npmjs.org/better-auth/-/better-auth-1.7.12.tgz 0ms (cache hit)
+617 http cache @better-auth/api-key@https://registry.npmjs.org/@better-auth/api-key/-/api-key-1.7.12.tgz 0ms (cache hit)
+618 http cache claude-mem@https://registry.npmjs.org/claude-mem/-/claude-mem-15.0.1.tgz 0ms (cache hit)
+619 silly tarball no local data for rou3@https://registry.npmjs.org/rou3/-/rou3-0.9.2.tgz. Extracting by manifest.
+620 silly tarball no local data for defu@https://registry.npmjs.org/defu/-/defu-6.1.7.tgz. Extracting by manifest.
+621 silly tarball no local data for @noble/ciphers@https://registry.npmjs.org/@noble/ciphers/-/ciphers-2.4.0.tgz. Extracting by manifest.
+622 silly tarball no local data for @better-auth/telemetry@https://registry.npmjs.org/@better-auth/telemetry/-/telemetry-1.7.12.tgz. Extracting by manifest.
+623 silly tarball no local data for @better-auth/prisma-adapter@https://registry.npmjs.org/@better-auth/prisma-adapter/-/prisma-adapter-1.7.12.tgz. Extracting by manifest.
+624 silly tarball no local data for @better-auth/mongo-adapter@https://registry.npmjs.org/@better-auth/mongo-adapter/-/mongo-adapter-1.7.12.tgz. Extracting by manifest.
+625 silly tarball no local data for @better-auth/memory-adapter@https://registry.npmjs.org/@better-auth/memory-adapter/-/memory-adapter-1.7.12.tgz. Extracting by manifest.
+626 silly tarball no local data for @better-auth/kysely-adapter@https://registry.npmjs.org/@better-auth/kysely-adapter/-/kysely-adapter-1.7.12.tgz. Extracting by manifest.
+627 silly tarball no local data for @better-auth/drizzle-adapter@https://registry.npmjs.org/@better-auth/drizzle-adapter/-/drizzle-adapter-1.7.12.tgz. Extracting by manifest.
+628 silly tarball no local data for @noble/hashes@https://registry.npmjs.org/@noble/hashes/-/hashes-2.4.0.tgz. Extracting by manifest.
+629 silly tarball no local data for @standard-schema/spec@https://registry.npmjs.org/@standard-schema/spec/-/spec-1.1.0.tgz. Extracting by manifest.
+630 silly tarball no local data for zod@https://registry.npmjs.org/zod/-/zod-4.6.7.tgz. Extracting by manifest.
+631 silly tarball no local data for @better-fetch/fetch@https://registry.npmjs.org/@better-fetch/fetch/-/fetch-1.3.2.tgz. Extracting by manifest.
+632 silly tarball no local data for @better-auth/utils@https://registry.npmjs.org/@better-auth/utils/-/utils-0.5.0.tgz. Extracting by manifest.
+633 silly tarball no local data for nanostores@https://registry.npmjs.org/nanostores/-/nanostores-1.5.5.tgz. Extracting by manifest.
+634 silly tarball no local data for kysely@https://registry.npmjs.org/kysely/-/kysely-0.29.7.tgz. Extracting by manifest.
+635 silly tarball no local data for jose@https://registry.npmjs.org/jose/-/jose-6.2.13.tgz. Extracting by manifest.
+636 silly tarball no local data for @better-auth/core@https://registry.npmjs.org/@better-auth/core/-/core-1.7.12.tgz. Extracting by manifest.
+637 silly tarball no local data for better-call@https://registry.npmjs.org/better-call/-/better-call-1.4.4.tgz. Extracting by manifest.
+638 silly tarball no local data for set-cookie-parser@https://registry.npmjs.org/set-cookie-parser/-/set-cookie-parser-3.2.1.tgz. Extracting by manifest.
+639 silly tarball no local data for better-auth@https://registry.npmjs.org/better-auth/-/better-auth-1.7.12.tgz. Extracting by manifest.
+640 silly tarball no local data for @better-auth/api-key@https://registry.npmjs.org/@better-auth/api-key/-/api-key-1.7.12.tgz. Extracting by manifest.
+641 silly tarball no local data for claude-mem@https://registry.npmjs.org/claude-mem/-/claude-mem-15.0.1.tgz. Extracting by manifest.
+642 http fetch POST 200 https://registry.npmjs.org/-/npm/v1/security/advisories/bulk 120ms
+643 silly audit report {}
+644 http fetch GET 200 https://registry.npmjs.org/rou3/-/rou3-0.9.2.tgz 167ms (cache miss)
+645 http fetch GET 200 https://registry.npmjs.org/set-cookie-parser/-/set-cookie-parser-3.2.1.tgz 175ms (cache miss)
+646 http fetch GET 200 https://registry.npmjs.org/@standard-schema/spec/-/spec-1.1.0.tgz 187ms (cache miss)
+647 http fetch GET 200 https://registry.npmjs.org/defu/-/defu-6.1.7.tgz 192ms (cache miss)
+648 http fetch GET 200 https://registry.npmjs.org/@better-auth/prisma-adapter/-/prisma-adapter-1.7.12.tgz 193ms (cache miss)
+649 http fetch GET 200 https://registry.npmjs.org/@better-auth/mongo-adapter/-/mongo-adapter-1.7.12.tgz 195ms (cache miss)
+650 http fetch GET 200 https://registry.npmjs.org/@better-auth/memory-adapter/-/memory-adapter-1.7.12.tgz 196ms (cache miss)
+651 http fetch GET 200 https://registry.npmjs.org/@better-auth/telemetry/-/telemetry-1.7.12.tgz 218ms (cache miss)
+652 http fetch GET 200 https://registry.npmjs.org/@better-auth/drizzle-adapter/-/drizzle-adapter-1.7.12.tgz 239ms (cache miss)
+653 http fetch GET 200 https://registry.npmjs.org/@better-auth/kysely-adapter/-/kysely-adapter-1.7.12.tgz 247ms (cache miss)
+654 http fetch GET 200 https://registry.npmjs.org/nanostores/-/nanostores-1.5.5.tgz 251ms (cache miss)
+655 http fetch GET 200 https://registry.npmjs.org/@better-auth/api-key/-/api-key-1.7.12.tgz 252ms (cache miss)
+656 http fetch GET 200 https://registry.npmjs.org/@better-fetch/fetch/-/fetch-1.3.2.tgz 258ms (cache miss)
+657 http fetch GET 200 https://registry.npmjs.org/@noble/ciphers/-/ciphers-2.4.0.tgz 297ms (cache miss)
+658 http fetch GET 200 https://registry.npmjs.org/@better-auth/utils/-/utils-0.5.0.tgz 317ms (cache miss)
+659 http fetch GET 200 https://registry.npmjs.org/@noble/hashes/-/hashes-2.4.0.tgz 324ms (cache miss)
+660 http fetch GET 200 https://registry.npmjs.org/better-call/-/better-call-1.4.4.tgz 370ms (cache miss)
+661 http fetch GET 200 https://registry.npmjs.org/jose/-/jose-6.2.13.tgz 423ms (cache miss)
+662 http fetch GET 200 https://registry.npmjs.org/@better-auth/core/-/core-1.7.12.tgz 734ms (cache miss)
+663 http fetch GET 200 https://registry.npmjs.org/better-auth/-/better-auth-1.7.12.tgz 918ms (cache miss)
+664 http fetch GET 200 https://registry.npmjs.org/kysely/-/kysely-0.29.7.tgz 943ms (cache miss)
+665 http fetch GET 200 https://registry.npmjs.org/claude-mem/-/claude-mem-15.0.1.tgz 1022ms (cache miss)
+666 http fetch GET 200 https://registry.npmjs.org/zod/-/zod-4.6.7.tgz 1091ms (cache miss)
+667 verbose cwd /home/dsh
+668 verbose os Linux 7.0.0-1013-aws
+669 verbose node v22.23.4
+670 verbose npm  v10.9.9
+671 notice
+671 notice New major version of npm available! 10.9.9 -> 12.2.1
+671 notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.1
+671 notice To update run: npm install -g npm@12.2.1
+671 notice  { force: true, [Symbol(proc-log.meta)]: true }
+672 verbose exit 1
+673 verbose code 1
