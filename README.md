@@ -31,6 +31,7 @@
 | 🔌 Órdenes Tuya ejecutadas inmediatamente, sin doble confirmación | Funcional |
 | 📊 Consulta de estado para dispositivos directos y controles infrarrojos | Funcional |
 | 🛡️ Protección contra órdenes ambiguas: exige identificar el dispositivo exacto | Funcional |
+| 🏡 **Integración con Home Assistant**: conexión con validación, listado de dispositivos, consulta de estado y control remoto | Funcional |
 | 📧 Gmail (lectura de la bandeja) | Funcional |
 | ✉️ **Enviar correos** con confirmación obligatoria antes de enviar | Funcional |
 | 🗑️ **Eliminar correos** (mueve a papelera, reversible desde Gmail) | Funcional |
@@ -424,6 +425,13 @@ Los endpoints del área de usuarios (`/api/user/*`) se autentican con `Authoriza
 | `PUT /api/ai-config` | Actualiza proveedor activo y cadena de fallback |
 | `POST /api/tts` | Texto a voz. Body: `{"text": "..."}`. Devuelve audio (`audio/mpeg`) |
 | `POST /telegram/webhook` | Webhook de Telegram (usa su propio secreto, no la clave de acceso) |
+| `GET /api/user/homeassistant/status` | Estado de conexión a Home Assistant (requiere token de usuario) |
+| `POST /api/user/homeassistant/validate` | Valida credenciales de HA sin guardar. Body: `{"url": "...", "token": "..."}` |
+| `POST /api/user/homeassistant/connect` | Conecta a Home Assistant. Body: `{"url": "...", "token": "..."}`. Responde `{"connected": true, "devices_count": N}` |
+| `POST /api/user/homeassistant/disconnect` | Desconecta de Home Assistant |
+| `GET /api/user/homeassistant/devices` | Lista todos los dispositivos en Home Assistant |
+| `GET /api/user/homeassistant/devices/{entity_id}/state` | Obtiene el estado de un dispositivo específico |
+| `POST /api/user/homeassistant/devices/{entity_id}/control` | Controla un dispositivo. Body: `{"action": "turn_on\|turn_off", "params": {...}}` |
 | `GET /health`, `GET /status` | Verificación del servicio (públicos) |
 ---
 ## 🧩 Estructura del proyecto
@@ -451,7 +459,8 @@ igris/
 │   ├── main.py                # FastAPI: chat, configuración, TTS, acceso con clave, webhook de Telegram y planificador
 │   ├── user_routes.py         # Área de usuarios (/api/user/*), voz en WebSocket y panel de administración (/api/admin/*)
 │   ├── device_routes.py       # WebSocket del agente Windows (/api/device/ws) y gestión de equipos
-│   └── tvbox_routes.py        # WebSocket del agente Android TV Box (/api/tvbox/ws) y emparejamiento
+│   ├── tvbox_routes.py        # WebSocket del agente Android TV Box (/api/tvbox/ws) y emparejamiento
+│   └── homeassistant_routes.py # Integración con Home Assistant (/api/user/homeassistant/*)
 ├── android_tv_agent/          # Agente Android independiente para TV Box (APK)
 │   ├── app/build.gradle.kts   # com.igris.tvagent, minSdk 29, targetSdk 35
 │   ├── app/src/main/AndroidManifest.xml  # Lanzador Leanback, servicio en primer plano y accesibilidad opcional
