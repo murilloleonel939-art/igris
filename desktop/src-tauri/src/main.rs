@@ -2,9 +2,10 @@
 
 use tauri::{Manager, Url, WebviewUrl, WebviewWindowBuilder};
 
-// Único dominio que la ventana puede cargar. Cualquier otro enlace se bloquea,
-// así que la ventana no puede salir del chat ni llegar al panel de administración.
-const CHAT_URL: &str = "https://webigris.zottagroup.com";
+// Punto de entrada de la ventana: el acceso personal del usuario, que pide
+// usuario y contraseña. La raíz "/" es la pantalla de administrador y no
+// debe ser lo primero que vea un usuario.
+const CHAT_URL: &str = "https://webigris.zottagroup.com/u/login";
 const CHAT_HOST: &str = "webigris.zottagroup.com";
 
 fn main() {

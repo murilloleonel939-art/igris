@@ -30,6 +30,13 @@
       >
         {{ loading ? 'Verificando…' : 'Entrar' }}
       </button>
+
+      <p class="mt-6 text-center text-sm text-slate-400">
+        ¿Eres usuario?
+        <router-link to="/u/login" class="font-medium text-blue-400 hover:text-blue-300">
+          Inicia sesión aquí
+        </router-link>
+      </p>
     </form>
   </main>
 </template>

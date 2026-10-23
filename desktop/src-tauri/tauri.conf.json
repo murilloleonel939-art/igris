@@ -5,7 +5,7 @@
   "identifier": "com.zottagroup.igris.chat",
   "build": {
     "frontendDist": "../dist",
-    "devUrl": "https://webigris.zottagroup.com"
+    "devUrl": "https://webigris.zottagroup.com/u/login"
   },
   "app": {
     "withGlobalTauri": false,
