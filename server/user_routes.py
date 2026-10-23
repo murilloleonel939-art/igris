@@ -471,6 +471,16 @@ def _public_user(u: User, db: Session = None) -> dict[str, Any]:
         )
         connection["voice"] = bool(voice and voice.voice_print and voice.is_authorized)
 
+    ha_devices = []
+    if db is not None and bool(getattr(u, "can_use_homeassistant", False)):
+        ha_devices = [
+            {
+                "entity_id": a.entity_id,
+                "friendly_name": a.friendly_name,
+            }
+            for a in u.ha_assignments
+        ]
+    
     return {
         "id": u.id,
         "username": u.username,
@@ -481,6 +491,7 @@ def _public_user(u: User, db: Session = None) -> dict[str, Any]:
         "features": features,
         "connections": connection,
         "created_at": u.created_at.isoformat() if u.created_at else None,
+        "ha_devices": ha_devices,
     }
 
 
