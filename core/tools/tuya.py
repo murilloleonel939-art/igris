@@ -739,7 +739,21 @@ def oauth_authorize_url(state: str = "") -> str:
     if state:
         params["state"] = state
     query = urlencode(params)
-    return f"https://h5.tuya.com/d/login?{query}"
+    
+    # Endpoint del H5 según la región
+    region = os.getenv("TUYA_REGION", "us").lower()
+    if region in ("us", "aws-us-west-1"):
+        h5_host = "iot-cool.tuyaapi.com"
+    elif region in ("eu", "aws-eu-central-1"):
+        h5_host = "iot-cool-eu.tuyaapi.com"
+    else:
+        # Fallback a China para otras regiones
+        h5_host = "h5.tuya.com"
+    
+    if h5_host == "h5.tuya.com":
+        return f"https://{h5_host}/d/login?{query}"
+    else:
+        return f"https://{h5_host}/login?{query}"
 
 
 async def oauth_exchange_code(code: str) -> dict[str, Any]:
