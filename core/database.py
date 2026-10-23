@@ -153,6 +153,11 @@ class User(Base):
     can_use_tuya = Column(Boolean, default=False, nullable=False)
     can_use_device = Column(Boolean, default=False, nullable=False)
     can_use_whatsapp = Column(Boolean, default=False, nullable=False)
+    can_use_homeassistant = Column(Boolean, default=False, nullable=False)
+
+    # Home Assistant credentials
+    homeassistant_url = Column(String(255), nullable=True)
+    homeassistant_token = Column(String(255), nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -674,6 +679,7 @@ def _run_migrations(engine) -> None:
             ("can_use_reminders", "FALSE"),
             ("can_use_tuya", "FALSE"),
             ("can_use_device", "FALSE"),
+            ("can_use_homeassistant", "FALSE"),
         )
         for column, default in permission_defaults:
             if _column_exists(conn, dialect, "users", column):
@@ -683,6 +689,16 @@ def _run_migrations(engine) -> None:
                 f"ALTER TABLE users ADD COLUMN {column} BOOLEAN NOT NULL DEFAULT {default}"
             ))
             logger.info("Migración aplicada: users.%s (%s)", column, dialect)
+
+        # ── users.homeassistant_url y homeassistant_token ───────────────────
+        # Credenciales para conectar con Home Assistant
+        if not _column_exists(conn, dialect, "users", "homeassistant_url"):
+            conn.execute(text("ALTER TABLE users ADD COLUMN homeassistant_url VARCHAR(255)"))
+            logger.info("Migración aplicada: users.homeassistant_url (%s)", dialect)
+        
+        if not _column_exists(conn, dialect, "users", "homeassistant_token"):
+            conn.execute(text("ALTER TABLE users ADD COLUMN homeassistant_token VARCHAR(255)"))
+            logger.info("Migración aplicada: users.homeassistant_token (%s)", dialect)
 
         # ── Separación de datos por usuario (notes, reminders) ──────────────
         # Se añade la columna y se asignan las filas existentes al dueño de la

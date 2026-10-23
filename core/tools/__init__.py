@@ -13,7 +13,7 @@ import logging
 
 from core.capabilities import denial_message
 from core.local_agent import reset_agent_user, set_agent_user
-from core.tools import calendar_write, device, documents_tool, gcalendar, gmail, notes, reminders, spotify, time_tools, tuya, weather, web_search, whatsapp_tool, youtube
+from core.tools import calendar_write, device, documents_tool, gcalendar, gmail, homeassistant, notes, reminders, spotify, time_tools, tuya, weather, web_search, whatsapp_tool, youtube
 
 logger = logging.getLogger(__name__)
 
@@ -795,6 +795,66 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "list_homeassistant_devices",
+            "description": (
+                "Lista todos los dispositivos disponibles en Home Assistant del usuario. "
+                "Úsala cuando el usuario pregunte por sus dispositivos inteligentes o quiera ver qué puede controlar."
+            ),
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_homeassistant_device_state",
+            "description": (
+                "Obtiene el estado actual de un dispositivo específico en Home Assistant. "
+                "Úsala cuando el usuario pregunte si una luz está encendida, qué temperatura marca un sensor, etc."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "entity_id": {
+                        "type": "string",
+                        "description": "ID de la entidad (ej: light.sala, switch.ventilador, climate.termostato)"
+                    }
+                },
+                "required": ["entity_id"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "control_homeassistant_device",
+            "description": (
+                "Controla un dispositivo en Home Assistant: encender, apagar, cambiar valores. "
+                "Llámala cuando el usuario pida controlar una luz, ventilador, cerradura u otro dispositivo."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "entity_id": {
+                        "type": "string",
+                        "description": "ID del dispositivo (ej: light.sala, switch.ventilador)"
+                    },
+                    "action": {
+                        "type": "string",
+                        "enum": ["turn_on", "turn_off", "toggle"],
+                        "description": "Acción a realizar"
+                    },
+                    "data": {
+                        "type": "object",
+                        "description": "Datos adicionales como brightness para luces, temperature para termostatos, etc. (opcional)"
+                    }
+                },
+                "required": ["entity_id", "action"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "send_whatsapp_message",
             "description": (
                 "Envía un mensaje de texto por WhatsApp al número ya configurado en Conexiones. "
@@ -872,6 +932,9 @@ _HANDLERS = {
     "list_tuya_devices": tuya.list_tuya_devices_for_session,
     "get_tuya_device_status": tuya.list_tuya_device_status,
     "control_tuya_device": tuya.control_tuya_device,
+    "list_homeassistant_devices": homeassistant.list_homeassistant_devices_for_session,
+    "get_homeassistant_device_state": homeassistant.get_homeassistant_device_state_for_session,
+    "control_homeassistant_device": homeassistant.control_homeassistant_device_for_session,
     "send_whatsapp_message": whatsapp_tool.send_whatsapp_message,
 }
 
@@ -889,6 +952,7 @@ _SESSION_TOOLS = {
     "list_youtube_playlists", "create_youtube_playlist", "add_video_to_youtube_playlist", "remove_video_from_youtube_playlist",
     "search_spotify_api", "list_spotify_playlists", "create_spotify_playlist", "add_tracks_to_spotify_playlist", "remove_tracks_from_spotify_playlist", "start_spotify_playback",
     "list_tuya_devices", "get_tuya_device_status", "control_tuya_device",
+    "list_homeassistant_devices", "get_homeassistant_device_state", "control_homeassistant_device",
     "create_document",
     "send_whatsapp_message",
 }
