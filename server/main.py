@@ -31,8 +31,6 @@ from core.session_store import SessionStore
 from core.scheduler import run_reminder_loop
 from server.device_routes import router as device_router
 from server.tvbox_routes import router as tvbox_router
-from server.homeassistant_routes import router as homeassistant_router
-from server.homeassistant_admin_routes import router as homeassistant_admin_router
 
 # Telegram imports
 from telegram import Update, Bot
@@ -131,8 +129,6 @@ app = FastAPI(
 )
 app.include_router(device_router)
 app.include_router(tvbox_router)
-app.include_router(homeassistant_router)
-app.include_router(homeassistant_admin_router)
 
 # CORS - solo el frontend (y el servidor de desarrollo local).
 # Sin allow_credentials: ni la clave ni el token viajan en cookies.
