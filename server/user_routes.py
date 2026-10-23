@@ -51,14 +51,13 @@ from core.capabilities import (
     admin_capabilities,
     capabilities_from_user,
 )
-from core.database import GoogleAccount, HomeAssistantDevice, KnowledgeNode, MemoryLink, Note, Profile, Reminder, SessionLocal, SpotifyAccount, TelegramLink, TvBoxPairingCode, TvBoxToken, User, UserMemory, get_db
+from core.database import GoogleAccount, KnowledgeNode, MemoryLink, Note, Profile, Reminder, SessionLocal, SpotifyAccount, TelegramLink, TuyaAccount, utcnow, TvBoxPairingCode, TvBoxToken, User, UserMemory, get_db
 from server.tvbox_routes import _connections, _digest
 from core.settings_manager import get_settings
 from core.memory import link_memories, linked_memories_block, load_memories, neural_memory_context, remember_from_text
 from core.neural import model_status, train_user_model
 from core.knowledge_graph import confirm_graph_relation, export_graph, graph_audit, graph_context, graph_neighbors, graph_summary, import_graph, learn_from_assistant, preview_graph_import, search_graph_nodes, set_graph_relation_status, stale_graph_relations, validate_graph_payload
 from core.tools import gcalendar, gmail
-from core.tools import homeassistant as ha_tools
 from core.tools.time_tools import DEFAULT_TZ, _format
 from core import stt, voice
 
@@ -2284,6 +2283,151 @@ def telegram_unlink(user: User = Depends(require_user), db: Session = Depends(ge
         db.commit()
         logger.info("Telegram desvinculado por el usuario %s", user.id)
     return {"success": True, "message": "Telegram desvinculado"}
+
+
+# ============= TUYA: CUENTA POR USUARIO =============
+
+@router.get("/api/user/tuya/status")
+def tuya_account_status(user: User = Depends(require_user), db: Session = Depends(get_db)):
+    """¿Tiene este usuario su cuenta de Tuya vinculada?"""
+    from core.tools import tuya as tuya_tools
+
+    row = db.query(TuyaAccount).filter(TuyaAccount.user_id == user.id).first()
+    return {
+        "configured": tuya_tools.oauth_is_configured(),
+        "linked": row is not None,
+        "label": row.label if row else None,
+        "linked_at": row.linked_at.isoformat() if row and row.linked_at else None,
+    }
+
+
+@router.post("/api/user/tuya/link")
+def tuya_link_start(user: User = Depends(require_user)):
+    """Devuelve la URL del H5 de Tuya para que el usuario autorice su cuenta.
+
+    El usuario se identifica en el `state`, firmado, para que el callback sepa
+    a quién asociar el uid cuando Tuya devuelva el control.
+    """
+    from core.tools import tuya as tuya_tools
+
+    if not tuya_tools.oauth_is_configured():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="La vinculación con Tuya no está configurada en el servidor.",
+        )
+    state = create_access_token(
+        user.id,
+        expires_delta=timedelta(minutes=15),
+        role="tuya_link",
+    )
+    try:
+        url = tuya_tools.oauth_authorize_url(state)
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc))
+    return {"authorize_url": url, "expires_in_minutes": 15}
+
+
+@router.get("/api/user/tuya/callback")
+async def tuya_link_callback(
+    code: Optional[str] = None,
+    state: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    """Tuya devuelve aquí al usuario tras autorizar.
+
+    Se responde con HTML y no con JSON porque a esta URL llega el navegador,
+    no la aplicación: el usuario tiene que ver algo y volver a IGRIS.
+    """
+    from fastapi.responses import HTMLResponse
+    from core.tools import tuya as tuya_tools
+
+    def page(title: str, message: str, ok: bool) -> HTMLResponse:
+        color = "#5bd6a1" if ok else "#f29a8e"
+        return HTMLResponse(
+            f"""<!doctype html><html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{title}</title></head>
+<body style="margin:0;display:grid;place-items:center;min-height:100vh;background:#100807;color:#eee;font-family:system-ui,sans-serif">
+<div style="max-width:26rem;padding:2rem;text-align:center">
+<h1 style="font-size:1.15rem;color:{color};margin:0 0 .75rem">{title}</h1>
+<p style="font-size:.85rem;line-height:1.6;color:#b7aaa4;margin:0 0 1.5rem">{message}</p>
+<a href="https://webigris.zottagroup.com/conexiones" style="display:inline-block;border-radius:.5rem;background:#e97769;padding:.65rem 1rem;color:#fff;text-decoration:none;font-size:.8rem;font-weight:600">Volver a IGRIS</a>
+</div></body></html>"""
+        )
+
+    if not code or not state:
+        return page("No se pudo vincular", "Tuya no devolvió los datos esperados. Inténtalo de nuevo desde IGRIS.", False)
+
+    try:
+        payload = jwt.decode(state, SECRET_KEY, algorithms=[ALGORITHM])
+    except JWTError:
+        return page("Enlace caducado", "El enlace de vinculación ya no es válido. Genera uno nuevo desde IGRIS.", False)
+
+    user_id = payload.get("user_id")
+    if payload.get("role") != "tuya_link" or not isinstance(user_id, int):
+        return page("Enlace no válido", "Este enlace no corresponde a una vinculación de Tuya.", False)
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        return page("Cuenta no encontrada", "La cuenta de IGRIS ya no existe.", False)
+
+    result = await tuya_tools.oauth_exchange_code(code)
+    if result.get("error"):
+        logger.warning("Vinculación Tuya fallida para el usuario %s: %s", user_id, result["error"])
+        return page("No se pudo vincular", result["error"], False)
+
+    uid = result["uid"]
+    row = db.query(TuyaAccount).filter(TuyaAccount.user_id == user_id).first()
+    if row is None:
+        row = TuyaAccount(user_id=user_id, tuya_uid=uid)
+        db.add(row)
+    else:
+        row.tuya_uid = uid
+
+    # Si otra cuenta tenía ese mismo uid, se libera: un uid no puede estar en
+    # dos usuarios a la vez o ambos verían los mismos aparatos.
+    other = db.query(TuyaAccount).filter(TuyaAccount.tuya_uid == uid, TuyaAccount.user_id != user_id).first()
+    if other is not None:
+        db.delete(other)
+
+    row.linked_at = utcnow()
+    db.commit()
+    logger.info("Tuya vinculado: usuario %s con uid %s", user_id, uid)
+
+    return page(
+        "Cuenta vinculada",
+        "Ya puedes ver tus dispositivos desde IGRIS. Si acabas de añadir alguno en Smart Life, aparecerá en unos segundos.",
+        True,
+    )
+
+
+@router.delete("/api/user/tuya/link")
+def tuya_link_remove(user: User = Depends(require_user), db: Session = Depends(get_db)):
+    """Desvincula la cuenta de Tuya del usuario."""
+    row = db.query(TuyaAccount).filter(TuyaAccount.user_id == user.id).first()
+    if row is not None:
+        db.delete(row)
+        db.commit()
+        logger.info("Tuya desvinculado por el usuario %s", user.id)
+    return {"success": True, "message": "Cuenta de Tuya desvinculada"}
+
+
+@router.get("/api/user/tuya/devices")
+async def tuya_list_devices(user: User = Depends(require_user), db: Session = Depends(get_db)):
+    """Lista los dispositivos del usuario en su cuenta de Tuya."""
+    from core.tools import tuya as tuya_tools
+
+    row = db.query(TuyaAccount).filter(TuyaAccount.user_id == user.id).first()
+    if not row:
+        return {"dispositivos": []}
+
+    try:
+        result = await tuya_tools.list_tuya_devices(row.tuya_uid)
+        if result.get("error"):
+            raise ValueError(result["error"])
+        return {"dispositivos": result.get("dispositivos", [])}
+    except Exception as exc:
+        logger.error("Error listando dispositivos de Tuya para usuario %s: %s", user.id, exc)
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc))
 
 
 # ============= UTILIDAD =============

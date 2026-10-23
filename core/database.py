@@ -153,11 +153,6 @@ class User(Base):
     can_use_tuya = Column(Boolean, default=False, nullable=False)
     can_use_device = Column(Boolean, default=False, nullable=False)
     can_use_whatsapp = Column(Boolean, default=False, nullable=False)
-    can_use_homeassistant = Column(Boolean, default=False, nullable=False)
-
-    # Home Assistant credentials
-    homeassistant_url = Column(String(255), nullable=True)
-    homeassistant_token = Column(String(255), nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -169,6 +164,7 @@ class User(Base):
     google_account = relationship("GoogleAccount", back_populates="user", uselist=False, cascade="all, delete-orphan")
     spotify_account = relationship("SpotifyAccount", back_populates="user", uselist=False, cascade="all, delete-orphan")
     telegram_link = relationship("TelegramLink", back_populates="user", uselist=False, cascade="all, delete-orphan")
+    tuya_account = relationship("TuyaAccount", back_populates="user", uselist=False, cascade="all, delete-orphan")
     memories = relationship("UserMemory", back_populates="user", cascade="all, delete-orphan")
     knowledge_nodes = relationship("KnowledgeNode", back_populates="user", cascade="all, delete-orphan")
     knowledge_relations = relationship("KnowledgeRelation", back_populates="user", cascade="all, delete-orphan")
@@ -327,35 +323,6 @@ class Note(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
     text = Column(Text, nullable=False)
     created_at = Column(DateTime, default=utcnow, nullable=False)
-
-
-class HomeAssistantDevice(Base):
-    """Dispositivo de Home Assistant asignado a un usuario.
-
-    Hay UN solo Home Assistant (compartido) para toda la instalación. Esta
-    tabla es el control de acceso: un usuario solo puede ver y controlar las
-    entidades que el administrador le haya asignado aquí. El nombre con el que
-    Igris identifica el dispositivo es `custom_name`; si está vacío se usa el
-    `original_name` que devuelve Home Assistant.
-
-    `entity_id` no es único por sí solo: dos usuarios pueden tener asignada la
-    misma entidad física (por ejemplo, la luz del salón compartida) y cada uno
-    ponerle un nombre distinto. De ahí la restricción (user_id, entity_id).
-    """
-    __tablename__ = "homeassistant_devices"
-
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
-    entity_id = Column(String(255), nullable=False)
-    original_name = Column(String(255), nullable=True)
-    custom_name = Column(String(255), nullable=True)
-    entity_type = Column(String(64), nullable=True)
-    last_sync = Column(DateTime, default=utcnow, nullable=False)
-    created_at = Column(DateTime, default=utcnow, nullable=False)
-
-    __table_args__ = (
-        UniqueConstraint("user_id", "entity_id", name="uq_ha_device_user_entity"),
-    )
 
 
 class MemoryLink(Base):
@@ -576,6 +543,31 @@ class TelegramLink(Base):
     user = relationship("User", back_populates="telegram_link")
 
 
+class TuyaAccount(Base):
+    """Cuenta Tuya (Smart Life) vinculada por un usuario.
+
+    Cada usuario autoriza **su propia** cuenta y aquí se guarda el uid que
+    devuelve Tuya. Los dispositivos se listan con ese uid, así que cada uno ve
+    únicamente los aparatos de su casa y no los del resto.
+
+    Se separa de `TUYA_UID` (la cuenta del servidor) a propósito: esa sigue
+    sirviendo para lo que ya funcionaba —infrarrojos, equipos compartidos— y
+    esta es la vía por usuario. Si un usuario no tiene fila aquí, se sigue
+    usando la cuenta global.
+    """
+    __tablename__ = "tuya_accounts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, unique=True, index=True)
+    tuya_uid = Column(String(128), nullable=False, index=True)
+    # Nombre de la cuenta tal como la ve Tuya, solo informativo para el panel.
+    label = Column(String(120), nullable=True)
+    region = Column(String(32), default="us", nullable=False)
+    linked_at = Column(DateTime, default=utcnow, nullable=False)
+
+    user = relationship("User", back_populates="tuya_account")
+
+
 # Crear tablas
 def _table_exists(conn, dialect: str, table: str) -> bool:
     """¿Existe ya la tabla?
@@ -708,7 +700,6 @@ def _run_migrations(engine) -> None:
             ("can_use_reminders", "FALSE"),
             ("can_use_tuya", "FALSE"),
             ("can_use_device", "FALSE"),
-            ("can_use_homeassistant", "FALSE"),
         )
         for column, default in permission_defaults:
             if _column_exists(conn, dialect, "users", column):
@@ -719,40 +710,24 @@ def _run_migrations(engine) -> None:
             ))
             logger.info("Migración aplicada: users.%s (%s)", column, dialect)
 
-        # ── users.homeassistant_url y homeassistant_token ───────────────────
-        # Credenciales para conectar con Home Assistant
-        if not _column_exists(conn, dialect, "users", "homeassistant_url"):
-            conn.execute(text("ALTER TABLE users ADD COLUMN homeassistant_url VARCHAR(255)"))
-            logger.info("Migración aplicada: users.homeassistant_url (%s)", dialect)
-        
-        if not _column_exists(conn, dialect, "users", "homeassistant_token"):
-            conn.execute(text("ALTER TABLE users ADD COLUMN homeassistant_token VARCHAR(255)"))
-            logger.info("Migración aplicada: users.homeassistant_token (%s)", dialect)
-
-        # ── homeassistant_devices: asignación de entidades HA a usuarios ────
-        # La tabla la crea create_all() cuando no existe, pero se deja aquí la
-        # comprobación explícita para que quede registrada junto al resto de
-        # migraciones y sobreviva a un create_all que se saltó por un fallo de
-        # conexión previo.
-        if not _table_exists(conn, dialect, "homeassistant_devices"):
+        # ── tuya_accounts: cuenta Tuya propia de cada usuario ───────────────
+        # La tabla la crea create_all(), pero se deja la comprobación explícita
+        # para que sobreviva a un create_all que se saltó por un fallo previo.
+        if not _table_exists(conn, dialect, "tuya_accounts"):
             conn.execute(text(
-                "CREATE TABLE homeassistant_devices ("
+                "CREATE TABLE tuya_accounts ("
                 "id INTEGER PRIMARY KEY, "
-                "user_id INTEGER NOT NULL REFERENCES users(id), "
-                "entity_id VARCHAR(255) NOT NULL, "
-                "original_name VARCHAR(255), "
-                "custom_name VARCHAR(255), "
-                "entity_type VARCHAR(64), "
-                "last_sync DATETIME NOT NULL, "
-                "created_at DATETIME NOT NULL, "
-                "CONSTRAINT uq_ha_device_user_entity UNIQUE (user_id, entity_id)"
+                "user_id INTEGER NOT NULL UNIQUE REFERENCES users(id), "
+                "tuya_uid VARCHAR(128) NOT NULL, "
+                "label VARCHAR(120), "
+                "region VARCHAR(32) NOT NULL DEFAULT 'us', "
+                "linked_at DATETIME NOT NULL"
                 ")"
             ))
             conn.execute(text(
-                "CREATE INDEX ix_homeassistant_devices_user_id "
-                "ON homeassistant_devices (user_id)"
+                "CREATE INDEX ix_tuya_accounts_tuya_uid ON tuya_accounts (tuya_uid)"
             ))
-            logger.info("Migración aplicada: tabla homeassistant_devices (%s)", dialect)
+            logger.info("Migración aplicada: tabla tuya_accounts (%s)", dialect)
 
         # ── Separación de datos por usuario (notes, reminders) ──────────────
         # Se añade la columna y se asignan las filas existentes al dueño de la

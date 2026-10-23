@@ -10,7 +10,8 @@ import os
 import re
 import time
 import unicodedata
-from typing import Any
+from urllib.parse import urlencode
+from typing import Any, Optional
 
 import httpx
 
@@ -79,12 +80,16 @@ async def _call(path: str, method: str = "GET", payload: dict | None = None) -> 
     return await _request(method, path, token=token, payload=payload)
 
 
-async def list_tuya_devices() -> dict[str, Any]:
-    """Lista los dispositivos vinculados al proyecto Smart Life."""
+async def list_tuya_devices(uid: str) -> dict[str, Any]:
+    """Dispositivos de la cuenta Smart Life indicada.
+
+    El uid ya no sale de una variable de entorno: se pasa, porque ahora cada
+    usuario tiene la suya. Sin uid no hay nada que listar.
+    """
+    uid = (uid or "").strip()
+    if not uid:
+        return {"error": "Este usuario todavía no ha vinculado su cuenta de Tuya."}
     try:
-        uid = os.getenv("TUYA_UID", "").strip()
-        if not uid:
-            return {"error": "Falta TUYA_UID para identificar la cuenta Smart Life vinculada."}
         result = await _call(f"/v1.0/users/{uid}/devices")
         # Tuya devuelve normalmente una lista directamente; algunas versiones
         # responden {"devices": [...]}, por lo que soportamos ambos formatos.
@@ -643,5 +648,160 @@ async def list_tuya_device_status(device_id: str, _session=None) -> dict[str, An
     return await get_tuya_device_status(device_id)
 
 
-async def list_tuya_devices_for_session(_session=None) -> dict[str, Any]:
-    return await list_tuya_devices()
+def _session_user_id(session) -> Optional[int]:
+    """Id del usuario a partir de la sesión del cerebro o del modelo User.
+
+    Las tools reciben un BrainSession (.user_id) cuando las llama Igris, pero
+    las rutas HTTP pasan el modelo User, que expone .id. Con leer solo
+    .user_id, desde HTTP nunca se encontraba al usuario.
+    """
+    if session is None:
+        return None
+    uid = getattr(session, "user_id", None)
+    if isinstance(uid, int):
+        return uid
+    uid = getattr(session, "id", None)
+    return uid if isinstance(uid, int) else None
+
+
+def tuya_uid_for_user(user_id: Optional[int]) -> Optional[str]:
+    """uid de Tuya vinculado por ese usuario, si lo tiene."""
+    if not user_id:
+        return None
+    # Import local: core.database importa muchas cosas y tuya.py se carga
+    # también desde contextos donde la base aún no está lista.
+    from core.database import SessionLocal, TuyaAccount
+
+    db = SessionLocal()
+    try:
+        row = db.query(TuyaAccount).filter(TuyaAccount.user_id == user_id).first()
+        return row.tuya_uid if row else None
+    finally:
+        db.close()
+
+
+async def list_tuya_devices_for_session(session=None) -> dict[str, Any]:
+    """Dispositivos de la cuenta Tuya del usuario de la sesión.
+
+    Sin vinculación no se devuelve nada: la cuenta global ya no se usa como
+    respaldo, porque el objetivo es que cada usuario vea solo su casa.
+    """
+    user_id = _session_user_id(session)
+    uid = tuya_uid_for_user(user_id)
+    if not uid:
+        return {
+            "error": "Todavía no has vinculado tu cuenta de Tuya. Hazlo desde Conexiones.",
+            "sin_vincular": True,
+        }
+    return await list_tuya_devices(uid)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# OAuth 2.0 por usuario
+#
+# Flujo: el usuario abre el H5 de Tuya con su client_id, autoriza, y Tuya lo
+# devuelve a nuestro callback con un `code`. Ese code se canjea con
+# grant_type=2 y la respuesta trae el `uid` de esa cuenta, que es lo que
+# identifica su casa. A partir de ahí sus dispositivos se listan con su uid y
+# no con el compartido del servidor.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def oauth_client_id() -> str:
+    """Client ID de la app de autorización (App Authorization), no el del proyecto."""
+    return os.getenv("TUYA_OAUTH_CLIENT_ID", "").strip()
+
+
+def oauth_client_secret() -> str:
+    return os.getenv("TUYA_OAUTH_CLIENT_SECRET", "").strip()
+
+
+def oauth_is_configured() -> bool:
+    return bool(oauth_client_id() and oauth_client_secret())
+
+
+def oauth_authorize_url(state: str = "") -> str:
+    """URL del H5 de Tuya al que mandamos al usuario para que autorice.
+
+    `state` viaja de ida y vuelta sin que Tuya lo interprete: ahí va el usuario
+    firmado, para saber a quién asociar el uid cuando vuelva el callback. Sin
+    ese dato el callback no podría saber quién autorizó.
+    """
+    client_id = oauth_client_id()
+    if not client_id:
+        raise RuntimeError(
+            "Falta TUYA_OAUTH_CLIENT_ID en la configuración del servidor."
+        )
+    callback = os.getenv(
+        "TUYA_OAUTH_CALLBACK",
+        "https://igris.zottagroup.com/api/user/tuya/callback",
+    ).strip()
+    params = {"client_id": client_id, "redirect_uri": callback}
+    if state:
+        params["state"] = state
+    query = urlencode(params)
+    return f"https://h5.tuya.com/d/login?{query}"
+
+
+async def oauth_exchange_code(code: str) -> dict[str, Any]:
+    """Canjea el `code` del callback por un token y devuelve el uid.
+
+    Aquí se usa la credencial OAuth de la app (TUYA_OAUTH_*), no la del
+    proyecto. Son llaves distintas: la del proyecto firma las llamadas de
+    control, esta autoriza cuentas de usuario.
+    """
+    client_id = oauth_client_id()
+    client_secret = oauth_client_secret()
+    if not client_id or not client_secret:
+        return {"error": "La vinculación con Tuya no está configurada en el servidor."}
+
+    _, _, endpoint = _config()
+    path = f"/v1.0/token?grant_type=2&code={code}"
+    timestamp = str(int(time.time() * 1000))
+
+    # Firma igual que el resto de llamadas, pero con la credencial OAuth.
+    body_hash = hashlib.sha256(b"").hexdigest()
+    string_to_sign = f"GET\n{body_hash}\n\n{path}"
+    sign = hmac.new(
+        client_secret.encode("utf-8"),
+        (client_id + timestamp + string_to_sign).encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest().upper()
+
+    headers = {
+        "client_id": client_id,
+        "t": timestamp,
+        "sign_method": "HMAC-SHA256",
+        "sign": sign,
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            response = await client.get(endpoint + path, headers=headers)
+        data = response.json()
+    except Exception as exc:
+        logger.exception("Error canjeando el código de Tuya")
+        return {"error": f"No se pudo contactar con Tuya: {exc}"}
+
+    if not data.get("success"):
+        return {"error": data.get("msg") or f"Tuya devolvió HTTP {response.status_code}"}
+
+    result = data.get("result") or {}
+    uid = result.get("uid")
+    if not uid:
+        return {"error": "Tuya autorizó la cuenta pero no devolvió su identificador."}
+    return {"uid": uid}
+
+
+async def uid_has_devices(uid: str) -> bool:
+    """¿La cuenta autorizada tiene al menos un dispositivo?
+
+    Sirve para validar en el callback que el uid es real y no una respuesta
+    vacía: si no tiene aparatos, se guarda igual, pero conviene saberlo.
+    """
+    try:
+        result = await _call(f"/v1.0/users/{uid}/devices")
+    except Exception as exc:
+        logger.warning("No se pudieron comprobar los dispositivos de %s: %s", uid, exc)
+        return False
+    devices = result if isinstance(result, list) else (result.get("devices") or [])
+    return bool(devices)

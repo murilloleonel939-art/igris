@@ -248,40 +248,50 @@
             </div>
           </section>
 
-          <section v-if="conn.ha && conn.ha.enabled">
+          <section v-if="conn.features.includes('tuya')">
             <h3>Mi casa</h3>
             <p class="conn-note">
-              Los dispositivos que el administrador te asignó. Puedes cambiarles el nombre:
-              Igris usará ese nombre cuando le hables.
+              Conecta tu cuenta de Smart Life y Igris podrá ver y controlar tus aparatos.
+              Cada cuenta ve solo los suyos.
             </p>
-            <p v-if="!conn.ha.configured" class="conn-note">
-              El administrador todavía no ha configurado Home Assistant en el servidor.
-            </p>
+
+            <p v-if="tuyaError" class="conn-error">{{ tuyaError }}</p>
+
+            <div v-if="tuyaLoading" class="conn-note">Comprobando tu cuenta…</div>
+
+            <template v-else-if="!tuya.linked">
+              <p v-if="!tuya.configured" class="conn-note">
+                El administrador todavía no ha habilitado la vinculación con Tuya.
+              </p>
+              <div v-else class="conn-actions">
+                <button class="btn primary" :disabled="tuyaLinking" @click="linkTuyaAccount">
+                  {{ tuyaLinking ? 'Abriendo…' : 'Conectar mi cuenta Tuya' }}
+                </button>
+              </div>
+            </template>
+
             <template v-else>
-              <p v-if="conn.haError" class="conn-error">{{ conn.haError }}</p>
-              <p v-if="conn.haLoading" class="conn-note">Cargando dispositivos…</p>
-              <p v-else-if="!conn.haDevices.length" class="conn-note">
-                Todavía no tienes dispositivos asignados. Pídeselos al administrador.
+              <p class="conn-ok">Cuenta conectada{{ tuya.label ? `: ${tuya.label}` : '' }}.</p>
+
+              <p v-if="tuyaDevicesLoading" class="conn-note">Cargando tus dispositivos…</p>
+              <p v-else-if="tuyaDevicesError" class="conn-error">{{ tuyaDevicesError }}</p>
+              <p v-else-if="!tuyaDevices.length" class="conn-note">
+                Tu cuenta está conectada pero no tiene dispositivos. Añádelos en la app Smart Life.
               </p>
               <ul v-else class="ha-list">
-                <li v-for="device in conn.haDevices" :key="device.entity_id" class="ha-item">
+                <li v-for="device in tuyaDevices" :key="device.id" class="ha-item">
                   <div class="ha-item-info">
-                    <b>{{ device.name || device.entity_id }}</b>
-                    <small>{{ device.state || 'sin estado' }}</small>
-                  </div>
-                  <div class="ha-item-actions">
-                    <button
-                      v-if="canToggle(device)"
-                      class="btn ghost"
-                      :disabled="conn.haBusy === device.entity_id"
-                      @click="toggleHaDevice(device)"
-                    >
-                      {{ isOn(device) ? 'Apagar' : 'Encender' }}
-                    </button>
-                    <button class="btn ghost" @click="renameHaDevice(device)">Renombrar</button>
+                    <b>{{ device.nombre || device.id }}</b>
+                    <small>{{ device.online ? 'en línea' : 'sin conexión' }}{{ device.categoria ? ` · ${device.categoria}` : '' }}</small>
                   </div>
                 </li>
               </ul>
+
+              <div class="conn-actions">
+                <button class="btn ghost" :disabled="tuyaUnlinking" @click="unlinkTuyaAccount">
+                  {{ tuyaUnlinking ? 'Desvinculando…' : 'Desconectar mi cuenta' }}
+                </button>
+              </div>
             </template>
           </section>
 
@@ -1334,6 +1344,18 @@ async function deleteMemory(item) {
   }
 }
 
+// ── Tuya: cuenta propia del usuario ──
+// El uid lo guarda el backend en el callback de OAuth. Aquí solo se muestra
+// si está vinculada y, si lo está, sus dispositivos.
+const tuya = ref({ configured: false, linked: false, label: null })
+const tuyaLoading = ref(false)
+const tuyaLinking = ref(false)
+const tuyaUnlinking = ref(false)
+const tuyaError = ref('')
+const tuyaDevices = ref([])
+const tuyaDevicesLoading = ref(false)
+const tuyaDevicesError = ref('')
+
 const conn = ref({
   open: false,
   loading: false,
@@ -1349,12 +1371,6 @@ const conn = ref({
   tvboxCode: '',
   tvboxExpiresAt: '',
   tvboxCreating: false,
-  ha: null,
-  haDevices: [],
-  haLoading: false,
-  haError: '',
-  haBusy: '',
-  haNames: {},
 })
 
 const tvboxExpiryLabel = computed(() => {
@@ -1362,69 +1378,87 @@ const tvboxExpiryLabel = computed(() => {
   return new Date(conn.value.tvboxExpiresAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 })
 
-// ── Home Assistant ──
-// Los dispositivos ya vienen filtrados por el servidor: aquí solo se muestran
-// los que el administrador asignó a este usuario. Nunca se pide URL ni token.
-
-function haEntityDomain(device) {
-  if (device?.domain) return device.domain
-  const id = device?.entity_id || ''
-  return id.includes('.') ? id.split('.')[0] : ''
-}
-
-function canToggle(device) {
-  return ['light', 'switch', 'fan', 'input_boolean', 'media_player'].includes(haEntityDomain(device))
-}
-
-function isOn(device) {
-  const state = (device?.state || '').toLowerCase()
-  return ['on', 'open', 'playing', 'heat', 'cool'].includes(state)
-}
-
-async function loadHaDevices() {
-  if (!conn.value.ha?.configured) return
-  conn.value.haLoading = true
-  conn.value.haError = ''
+// ── Tuya ──
+// El usuario sale a autorizar a Tuya y vuelve al callback del backend. Aquí
+// solo se abre la pestaña y se refresca el estado al volver.
+async function loadTuya() {
+  tuyaLoading.value = true
+  tuyaError.value = ''
   try {
-    const res = await userApi.get('/api/user/homeassistant/devices')
-    conn.value.haDevices = res.data?.devices || []
+    const res = await userApi.get('/api/user/tuya/status')
+    tuya.value = res.data || { configured: false, linked: false }
+    if (tuya.value.linked) await loadTuyaDevices()
   } catch (e) {
-    conn.value.haError = errorMessage(e, 'No se pudieron cargar tus dispositivos')
+    tuyaError.value = errorMessage(e, 'No se pudo comprobar tu cuenta de Tuya')
   } finally {
-    conn.value.haLoading = false
+    tuyaLoading.value = false
   }
 }
 
-async function toggleHaDevice(device) {
-  const action = isOn(device) ? 'turn_off' : 'turn_on'
-  conn.value.haBusy = device.entity_id
-  conn.value.haError = ''
+async function loadTuyaDevices() {
+  tuyaDevicesLoading.value = true
+  tuyaDevicesError.value = ''
   try {
-    await userApi.post(
-      `/api/user/homeassistant/devices/${encodeURIComponent(device.entity_id)}/control`,
-      { action },
-    )
-    await loadHaDevices()
+    const res = await userApi.get('/api/user/tuya/devices')
+    tuyaDevices.value = res.data?.dispositivos || []
   } catch (e) {
-    conn.value.haError = errorMessage(e, 'No se pudo controlar el dispositivo')
+    tuyaDevicesError.value = errorMessage(e, 'No se pudieron cargar tus dispositivos')
   } finally {
-    conn.value.haBusy = ''
+    tuyaDevicesLoading.value = false
   }
 }
 
-async function renameHaDevice(device) {
-  const current = device.name || device.entity_id
-  const name = window.prompt('¿Cómo quieres llamar a este dispositivo?', current)?.trim()
-  if (!name || name === current) return
-  conn.value.haError = ''
+async function linkTuyaAccount() {
+  tuyaLinking.value = true
+  tuyaError.value = ''
   try {
-    await userApi.post(
-      `/api/user/homeassistant/devices/${encodeURIComponent(device.entity_id)}/rename`,
-      { name },
-    )
-    await loadHaDevices()
+    const res = await userApi.post('/api/user/tuya/link')
+    const url = res.data?.authorize_url
+    if (!url) throw new Error('El servidor no devolvió la dirección de Tuya')
+    window.open(url, '_blank', 'noopener')
+    // Al volver del H5 el usuario ya tiene el uid guardado: se reintenta al
+    // cerrar la ventana, sin obligarlo a recargar a mano.
+    pollTuyaLink()
   } catch (e) {
-    conn.value.haError = errorMessage(e, 'No se pudo cambiar el nombre')
+    tuyaError.value = errorMessage(e, 'No se pudo iniciar la vinculación')
+    tuyaLinking.value = false
+  }
+}
+
+let tuyaPollTimer = null
+function pollTuyaLink(attempt = 0) {
+  if (attempt > 40) {
+    tuyaLinking.value = false
+    return
+  }
+  tuyaPollTimer = setTimeout(async () => {
+    try {
+      const res = await userApi.get('/api/user/tuya/status')
+      if (res.data?.linked) {
+        tuya.value = res.data
+        await loadTuyaDevices()
+        tuyaLinking.value = false
+        return
+      }
+    } catch (e) {
+      // se ignora: se reintenta en el siguiente ciclo
+    }
+    pollTuyaLink(attempt + 1)
+  }, 3000)
+}
+
+async function unlinkTuyaAccount() {
+  if (!window.confirm('¿Desconectar tu cuenta de Tuya? Igris dejará de ver tus dispositivos.')) return
+  tuyaUnlinking.value = true
+  tuyaError.value = ''
+  try {
+    await userApi.delete('/api/user/tuya/link')
+    tuya.value = { configured: true, linked: false, label: null }
+    tuyaDevices.value = []
+  } catch (e) {
+    tuyaError.value = errorMessage(e, 'No se pudo desconectar la cuenta')
+  } finally {
+    tuyaUnlinking.value = false
   }
 }
 
@@ -1556,7 +1590,6 @@ async function refreshConnections() {
     conn.value.spotify = res.data?.spotify || null
     conn.value.telegram = res.data?.telegram || { linked: false, username: null }
     conn.value.tvBoxes = res.data?.tv_boxes || []
-    conn.value.ha = res.data?.homeassistant || null
     // El código caduca: si el usuario ya se vinculó, se deja de mostrar.
     if (conn.value.telegram.linked) conn.value.telegramCode = ''
   } catch (e) {
@@ -1572,9 +1605,7 @@ function openConnections() {
   // Solo se pide al servidor la primera vez; después se refresca desde los
   // botones de dentro, para no repetir la llamada en cada apertura.
   if (!conn.value.features.length && !conn.value.google) refreshConnections()
-  // La lista de dispositivos se refresca siempre: el administrador puede
-  // asignar o quitar algo mientras el usuario tiene el panel abierto.
-  loadHaDevices()
+  loadTuya()
 }
 
 // Entrar por el menú a /conexiones no vuelve a montar el componente: Vue
@@ -1700,6 +1731,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  if (tuyaPollTimer) clearTimeout(tuyaPollTimer)
   window.removeEventListener('igris:open-connections', openConnections)
   window.removeEventListener('igris:open-memory', openMemories)
   window.removeEventListener('igris:open-perception', openPerception)
@@ -1717,13 +1749,6 @@ onBeforeUnmount(() => {
 
 <style scoped>
 /* ───────────── Home Assistant (dispositivos asignados) ───────────── */
-.ha-list{list-style:none;margin:.5rem 0 0;padding:0;display:flex;flex-direction:column;gap:.4rem}
-.ha-item{display:flex;align-items:center;justify-content:space-between;gap:.75rem;padding:.55rem .65rem;border:1px solid rgba(255,255,255,.08);border-radius:.5rem;background:rgba(255,255,255,.03)}
-.ha-item-info{display:flex;flex-direction:column;gap:.15rem;min-width:0}
-.ha-item-info b{color:#fff;font-size:.76rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.ha-item-info small{color:#9e918c;font-size:.64rem}
-.ha-item-actions{display:flex;gap:.35rem;flex-shrink:0}
-
 /* ── Paneles (conexiones y memoria) — diseño del workspace ── */
 .proactive-alerts {
   position: fixed;
