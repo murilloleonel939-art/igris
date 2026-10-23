@@ -500,3 +500,82 @@ async def resolve_entity_for_session(name_or_id: str, _session=None) -> dict[str
         "success": False,
         "error": f"No encuentro '{raw}' entre tus dispositivos. Tienes: {options}.",
     }
+
+
+async def validate_server_connection(url: str, token: str) -> dict:
+    """Valida que una URL y token de HA sean correctos.
+    
+    Retorna:
+        {"success": True} si la conexión es válida
+        {"success": False, "error": "...mensaje..."} si no funciona
+    """
+    if not url or not token:
+        return {"success": False, "error": "URL y token son requeridos"}
+    
+    url = url.rstrip("/")
+    headers = {"Authorization": f"Bearer {token}"}
+    
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"{url}/api/",
+                headers=headers,
+                timeout=aiohttp.ClientTimeout(total=5),
+            ) as r:
+                if r.status == 200:
+                    return {"success": True}
+                elif r.status == 401:
+                    return {"success": False, "error": "Token inválido"}
+                else:
+                    return {"success": False, "error": f"Error HTTP {r.status}"}
+    except asyncio.TimeoutError:
+        return {"success": False, "error": "Conexión agotada (timeout 5s)"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+async def list_server_entities(url: str, token: str) -> dict:
+    """Lista todos los dispositivos de una instancia HA.
+    
+    Retorna:
+        {"success": True, "entities": [{"entity_id": "...", "friendly_name": "..."}, ...]}
+        {"success": False, "error": "..."}
+    """
+    url = url.rstrip("/")
+    headers = {"Authorization": f"Bearer {token}"}
+    
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"{url}/api/states",
+                headers=headers,
+                timeout=aiohttp.ClientTimeout(total=5),
+            ) as r:
+                if r.status != 200:
+                    return {"success": False, "error": f"Error HTTP {r.status}"}
+                
+                states = await r.json()
+                
+                # Filtrar solo entidades controlables (luz, switch, clima, etc.)
+                controllable_domains = {
+                    "light", "switch", "climate", "fan", "cover", "lock",
+                    "vacuum", "water_heater"
+                }
+                
+                entities = []
+                for state in states:
+                    entity_id = state.get("entity_id", "")
+                    domain = entity_id.split(".")[0] if "." in entity_id else ""
+                    
+                    if domain in controllable_domains:
+                        friendly_name = state.get("attributes", {}).get("friendly_name", entity_id)
+                        entities.append({
+                            "entity_id": entity_id,
+                            "friendly_name": friendly_name,
+                        })
+                
+                return {"success": True, "entities": entities}
+    except asyncio.TimeoutError:
+        return {"success": False, "error": "Conexión agotada (timeout 5s)"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
