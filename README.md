@@ -576,7 +576,7 @@ Los **usuarios** no usan esta variable: tienen su propia cuenta (usuario y contr
 
 Igris descubre los dispositivos autorizados de Smart Life y los controles virtuales guardados en los hubs infrarrojos. Los dispositivos directos usan la API estándar de Tuya; los mandos IR usan la API específica del hub. Las órdenes explícitas se ejecutan inmediatamente.
 
-#### Cómo funciona la vinculación por usuario
+#### Cómo funciona la conexión por usuario
 
 Hay **dos pasos separados** y conviene no confundirlos:
 
@@ -584,53 +584,47 @@ Hay **dos pasos separados** y conviene no confundirlos:
 
    > El formulario «Crear usuario» de arriba en esa misma página también muestra esa casilla, pero solo aplica al usuario que se está creando. Marcar ahí no cambia los permisos de las cuentas que ya existen.
 
-2. **El usuario vincula su cuenta.** Entra a `/u/conexiones` con **su** usuario y contraseña (no con la clave de administrador) y abre la sección **«Mi casa»**. Pulsa «Conectar mi cuenta Tuya», autoriza en la página de Tuya y vuelve. Igris guarda el `uid` en la tabla `tuya_accounts` y desde entonces lista los dispositivos con ese identificador.
+2. **El usuario introduce sus propios datos de Tuya.** Entra a `/u/conexiones` con **su** usuario y contraseña (no con la clave de administrador) y abre la sección **«Mi casa»**. Pega su **Access ID**, su **Access Secret** y el **UID** de su cuenta de Smart Life, y pulsa «Guardar y comprobar». Igris prueba las credenciales contra Tuya antes de guardarlas; si son correctas las cifra y las guarda en la tabla `tuya_accounts`, y desde ese momento todas las llamadas de ese usuario se firman con ellas.
 
-Cada usuario tiene su propio `uid`, así que ve únicamente los aparatos de su casa. No hay UID compartido ni que copiar a mano: el flujo es OAuth 2.0 completo.
+Cada usuario tiene sus propias credenciales y su propio `uid`, así que ve únicamente los aparatos de su casa. Las credenciales no se guardan en claro: se cifran con Fernet usando una clave derivada de `SECRET_KEY`.
 
-Si un usuario no ha vinculado su cuenta, las herramientas de Tuya le responden que aún no la tiene conectada. No hay respaldo con una cuenta global.
+Si un usuario todavía no ha guardado las suyas, se usan las credenciales del servidor (`TUYA_ACCESS_ID` / `TUYA_ACCESS_SECRET`), que es como funcionaba antes. Ese respaldo permite que la cuenta existente siga operando mientras los demás configuran la suya.
 
-#### Configuración en Tuya
+> Si `SECRET_KEY` cambia, los secretos guardados dejan de poder descifrarse. El sistema lo trata como «no configurado» y pide al usuario que vuelva a pegar su Access Secret.
 
-En el proyecto de Tuya hacen falta **dos credenciales distintas**, y no se sustituyen entre sí:
+#### De dónde salen los datos que pega el usuario
 
-| Pestaña en Tuya | Tipo | Para qué sirve |
-| --- | --- | --- |
-| *Cloud Authorization* | Cloud Authorization | Firmar las llamadas de control de dispositivos |
-| *App Authorization* | Others | Autorizar la cuenta de cada usuario (OAuth 2.0) |
+En [iot.tuya.com](https://iot.tuya.com), dentro de su propio proyecto de Cloud:
 
-Además, en *Devices → Link App Account → Configure OAuth 2.0 Authorization* hay que:
+| Dato | Dónde encontrarlo |
+| --- | --- |
+| **Access ID** | *Cloud* → *Development* → pestaña **Authorization** de su proyecto |
+| **Access Secret** | La misma pestaña, junto al Access ID |
+| **UID** | *Cloud* → *Devices* → *Device List*; el UID aparece en el detalle de la cuenta vinculada |
 
-- Seleccionar la llave de tipo *Others* en **Authorization Key**.
-- Subir un **App Icon** en PNG de 1024×1024 (obligatorio; sin él no deja guardar).
-- Escribir el **Applicant Name (English)**.
-- Dejar la **Callback URL** en `https://igris.zottagroup.com/api/user/tuya/callback`.
+La cuenta de Tuya debe estar vinculada a Smart Life enlazando la app desde *Devices → Link App Account*, o no aparecerá ningún dispositivo.
 
 #### Variables del backend
 
 | Variable | Descripción | Ejemplo |
 | --- | --- | --- |
-| `TUYA_ACCESS_ID` | Access ID del proyecto (Cloud Authorization). Firma el control. | `s4dsd3...` |
-| `TUYA_ACCESS_SECRET` | Access Secret del proyecto | — |
-| `TUYA_OAUTH_CLIENT_ID` | Client ID de la app OAuth (App Authorization) | `87ykwm8...` |
-| `TUYA_OAUTH_CLIENT_SECRET` | Client Secret de la app OAuth | — |
-| `TUYA_OAUTH_CALLBACK` | URL de retorno; si falta se usa la de IGRIS | `https://igris.zottagroup.com/api/user/tuya/callback` |
-| `TUYA_REGION` | Región de la cuenta Tuya | `us` |
+| `TUYA_ACCESS_ID` | Access ID de respaldo. Solo se usa si el usuario no guardó el suyo. | `s4dsd3...` |
+| `TUYA_ACCESS_SECRET` | Access Secret de respaldo | — |
+| `TUYA_REGION` | Región del respaldo | `us` |
 | `TUYA_ENDPOINT` | Endpoint opcional; se deriva de la región | `https://openapi.tuyaus.com` |
 | `TUYA_DEVICE_IDS` | Lista opcional de IDs permitidos separados por comas | `id_1,id_2` |
 | `TUYA_DEVICE_ALIASES` | Alias opcionales con formato `nombre:id` | `televisor:id_tv` |
 
-También debes habilitar **IR Control Hub Open Service** en Tuya para usar mandos infrarrojos.
+Las dos primeras son opcionales: con todos los usuarios configurados desde IGRIS se pueden borrar de Coolify y la integración sigue funcionando. También debes habilitar **IR Control Hub Open Service** en Tuya para usar mandos infrarrojos.
 
-#### Endpoints de vinculación
+#### Endpoints de la cuenta
 
 | Método | Ruta | Descripción |
 | --- | --- | --- |
-| `GET` | `/api/user/tuya/status` | Indica si el usuario tiene la cuenta vinculada |
-| `POST` | `/api/user/tuya/link` | Devuelve la URL de autorización de Tuya |
-| `GET` | `/api/user/tuya/callback` | Retorno de Tuya; canjea el `code` y guarda el `uid` |
+| `GET` | `/api/user/tuya/status` | Indica si el usuario guardó sus credenciales (`saved`) o usa las del servidor (`server_fallback`) |
+| `PUT` | `/api/user/tuya/account` | Comprueba y guarda Access ID, Access Secret, UID y región del usuario |
+| `DELETE` | `/api/user/tuya/account` | Borra las credenciales guardadas y vuelve al respaldo del servidor |
 | `GET` | `/api/user/tuya/devices` | Dispositivos de la cuenta de ese usuario |
-| `DELETE` | `/api/user/tuya/link` | Desvincula la cuenta |
 
 #### Dónde se ve en el panel
 

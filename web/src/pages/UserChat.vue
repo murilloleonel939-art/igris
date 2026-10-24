@@ -252,46 +252,95 @@
             <h3>Mi casa</h3>
             <p class="conn-note">
               Conecta tu cuenta de Smart Life y Igris podrá ver y controlar tus aparatos.
-              Cada cuenta ve solo los suyos.
+              Cada usuario ve solo los suyos.
             </p>
 
             <p v-if="tuyaError" class="conn-error">{{ tuyaError }}</p>
+            <p v-if="tuyaSaved" class="conn-ok">{{ tuyaSaved }}</p>
 
             <div v-if="tuyaLoading" class="conn-note">Comprobando tu cuenta…</div>
 
-            <template v-else-if="!tuya.linked">
-              <p v-if="!tuya.configured" class="conn-note">
-                El administrador todavía no ha habilitado la vinculación con Tuya.
-              </p>
-              <div v-else class="conn-actions">
-                <button class="btn primary" :disabled="tuyaLinking" @click="linkTuyaAccount">
-                  {{ tuyaLinking ? 'Abriendo…' : 'Conectar mi cuenta Tuya' }}
-                </button>
-              </div>
-            </template>
-
             <template v-else>
-              <p class="conn-ok">Cuenta conectada{{ tuya.label ? `: ${tuya.label}` : '' }}.</p>
-
-              <p v-if="tuyaDevicesLoading" class="conn-note">Cargando tus dispositivos…</p>
-              <p v-else-if="tuyaDevicesError" class="conn-error">{{ tuyaDevicesError }}</p>
-              <p v-else-if="!tuyaDevices.length" class="conn-note">
-                Tu cuenta está conectada pero no tiene dispositivos. Añádelos en la app Smart Life.
+              <p v-if="tuya.saved" class="conn-ok">
+                Cuenta conectada{{ tuya.access_id ? `: ${tuya.access_id}` : '' }}.
               </p>
-              <ul v-else class="ha-list">
-                <li v-for="device in tuyaDevices" :key="device.id" class="ha-item">
-                  <div class="ha-item-info">
-                    <b>{{ device.nombre || device.id }}</b>
-                    <small>{{ device.online ? 'en línea' : 'sin conexión' }}{{ device.categoria ? ` · ${device.categoria}` : '' }}</small>
-                  </div>
-                </li>
-              </ul>
+              <p v-else-if="tuya.server_fallback" class="conn-note">
+                Estás usando la cuenta de Tuya del servidor. Si quieres la tuya, introduce tus datos.
+              </p>
+              <p v-else class="conn-note">
+                Todavía no has conectado tu cuenta de Tuya.
+              </p>
 
-              <div class="conn-actions">
-                <button class="btn ghost" :disabled="tuyaUnlinking" @click="unlinkTuyaAccount">
-                  {{ tuyaUnlinking ? 'Desvinculando…' : 'Desconectar mi cuenta' }}
+              <p v-if="!tuyaFormOpen" class="conn-actions">
+                <button class="btn primary" @click="openTuyaForm">
+                  {{ tuya.saved ? 'Cambiar mis datos' : 'Conectar mi cuenta Tuya' }}
                 </button>
+              </p>
+
+              <div v-else class="conn-form">
+                <p class="conn-note">
+                  Estos datos se obtienen en
+                  <a href="https://iot.tuya.com" target="_blank" rel="noopener">iot.tuya.com</a>,
+                  en tu proyecto de Cloud: <b>Access ID</b> y <b>Access Secret</b> en la pestaña
+                  de autorización, y el <b>UID</b> en la de dispositivos. Se guardan cifrados y
+                  solo se usan para controlar tus aparatos.
+                </p>
+                <label>
+                  <span>Access ID</span>
+                  <input v-model.trim="tuyaForm.access_id" type="text" autocomplete="off" placeholder="Ej. s4dsd3xyxyqh6gywpky" />
+                </label>
+                <label>
+                  <span>Access Secret</span>
+                  <input
+                    v-model.trim="tuyaForm.access_secret"
+                    type="password"
+                    autocomplete="new-password"
+                    :placeholder="tuya.saved ? 'Ya guardado, déjalo vacío para no cambiarlo' : 'El secreto de tu proyecto'"
+                  />
+                </label>
+                <label>
+                  <span>UID de la cuenta</span>
+                  <input v-model.trim="tuyaForm.uid" type="text" autocomplete="off" placeholder="Ej. az1648052711923pggnnE" />
+                </label>
+                <label>
+                  <span>Región</span>
+                  <select v-model="tuyaForm.region">
+                    <option value="us">América</option>
+                    <option value="eu">Europa</option>
+                    <option value="cn">China</option>
+                    <option value="in">India</option>
+                  </select>
+                </label>
+
+                <div class="conn-actions">
+                  <button class="btn primary" :disabled="tuyaSaving" @click="saveTuyaAccount">
+                    {{ tuyaSaving ? 'Comprobando…' : 'Guardar y comprobar' }}
+                  </button>
+                  <button class="btn ghost" :disabled="tuyaSaving" @click="closeTuyaForm">Cancelar</button>
+                </div>
               </div>
+
+              <template v-if="tuya.saved">
+                <p v-if="tuyaDevicesLoading" class="conn-note">Cargando tus dispositivos…</p>
+                <p v-else-if="tuyaDevicesError" class="conn-error">{{ tuyaDevicesError }}</p>
+                <p v-else-if="!tuyaDevices.length" class="conn-note">
+                  Tu cuenta está conectada pero no tiene dispositivos. Añádelos en la app Smart Life.
+                </p>
+                <ul v-else class="ha-list">
+                  <li v-for="device in tuyaDevices" :key="device.id" class="ha-item">
+                    <div class="ha-item-info">
+                      <b>{{ device.nombre || device.id }}</b>
+                      <small>{{ device.online ? 'en línea' : 'sin conexión' }}{{ device.categoria ? ` · ${device.categoria}` : '' }}</small>
+                    </div>
+                  </li>
+                </ul>
+
+                <div class="conn-actions">
+                  <button class="btn ghost" :disabled="tuyaUnlinking" @click="unlinkTuyaAccount">
+                    {{ tuyaUnlinking ? 'Quitando…' : 'Quitar mis datos de Tuya' }}
+                  </button>
+                </div>
+              </template>
             </template>
           </section>
 
@@ -1344,17 +1393,22 @@ async function deleteMemory(item) {
   }
 }
 
-// ── Tuya: cuenta propia del usuario ──
-// El uid lo guarda el backend en el callback de OAuth. Aquí solo se muestra
-// si está vinculada y, si lo está, sus dispositivos.
-const tuya = ref({ configured: false, linked: false, label: null })
+// ── Tuya: credenciales propias del usuario ──
+// Cada usuario pega su Access ID, su secreto y el UID de su cuenta de Smart
+// Life. El backend los prueba antes de guardarlos y los cifra en la base de
+// datos. Si no hay nada guardado se usan los del servidor.
+const tuya = ref({ saved: false, linked: false, access_id: null, uid: null, region: 'us', server_fallback: false })
 const tuyaLoading = ref(false)
-const tuyaLinking = ref(false)
+const tuyaSaving = ref(false)
 const tuyaUnlinking = ref(false)
 const tuyaError = ref('')
+const tuyaSaved = ref('')
 const tuyaDevices = ref([])
 const tuyaDevicesLoading = ref(false)
 const tuyaDevicesError = ref('')
+const tuyaFormOpen = ref(false)
+const emptyTuyaForm = () => ({ access_id: '', access_secret: '', uid: '', region: 'us' })
+const tuyaForm = ref(emptyTuyaForm())
 
 const conn = ref({
   open: false,
@@ -1379,15 +1433,13 @@ const tvboxExpiryLabel = computed(() => {
 })
 
 // ── Tuya ──
-// El usuario sale a autorizar a Tuya y vuelve al callback del backend. Aquí
-// solo se abre la pestaña y se refresca el estado al volver.
 async function loadTuya() {
   tuyaLoading.value = true
   tuyaError.value = ''
   try {
     const res = await userApi.get('/api/user/tuya/status')
-    tuya.value = res.data || { configured: false, linked: false }
-    if (tuya.value.linked) await loadTuyaDevices()
+    tuya.value = res.data || { saved: false, linked: false, server_fallback: false }
+    if (tuya.value.saved) await loadTuyaDevices()
   } catch (e) {
     tuyaError.value = errorMessage(e, 'No se pudo comprobar tu cuenta de Tuya')
   } finally {
@@ -1408,55 +1460,65 @@ async function loadTuyaDevices() {
   }
 }
 
-async function linkTuyaAccount() {
-  tuyaLinking.value = true
+function openTuyaForm() {
   tuyaError.value = ''
-  try {
-    const res = await userApi.post('/api/user/tuya/link')
-    const url = res.data?.authorize_url
-    if (!url) throw new Error('El servidor no devolvió la dirección de Tuya')
-    window.open(url, '_blank', 'noopener')
-    // Al volver del H5 el usuario ya tiene el uid guardado: se reintenta al
-    // cerrar la ventana, sin obligarlo a recargar a mano.
-    pollTuyaLink()
-  } catch (e) {
-    tuyaError.value = errorMessage(e, 'No se pudo iniciar la vinculación')
-    tuyaLinking.value = false
+  tuyaSaved.value = ''
+  // El secreto nunca se devuelve al navegador: si ya había uno guardado se
+  // deja vacío y el backend reutiliza el que tenía.
+  tuyaForm.value = {
+    access_id: tuya.value.access_id || '',
+    access_secret: '',
+    uid: tuya.value.uid || '',
+    region: tuya.value.region || 'us',
   }
+  tuyaFormOpen.value = true
 }
 
-let tuyaPollTimer = null
-function pollTuyaLink(attempt = 0) {
-  if (attempt > 40) {
-    tuyaLinking.value = false
+function closeTuyaForm() {
+  tuyaFormOpen.value = false
+  tuyaForm.value = emptyTuyaForm()
+}
+
+async function saveTuyaAccount() {
+  tuyaError.value = ''
+  tuyaSaved.value = ''
+  const form = tuyaForm.value
+  if (!form.access_id || !form.uid) {
+    tuyaError.value = 'El Access ID y el UID son obligatorios.'
     return
   }
-  tuyaPollTimer = setTimeout(async () => {
-    try {
-      const res = await userApi.get('/api/user/tuya/status')
-      if (res.data?.linked) {
-        tuya.value = res.data
-        await loadTuyaDevices()
-        tuyaLinking.value = false
-        return
-      }
-    } catch (e) {
-      // se ignora: se reintenta en el siguiente ciclo
-    }
-    pollTuyaLink(attempt + 1)
-  }, 3000)
+  tuyaSaving.value = true
+  try {
+    const res = await userApi.put('/api/user/tuya/account', {
+      access_id: form.access_id,
+      access_secret: form.access_secret,
+      uid: form.uid,
+      region: form.region,
+    })
+    const found = res.data?.devices_found
+    tuyaSaved.value = typeof found === 'number'
+      ? `Cuenta guardada. Se encontraron ${found} dispositivo${found === 1 ? '' : 's'}.`
+      : 'Cuenta guardada.'
+    closeTuyaForm()
+    await loadTuya()
+  } catch (e) {
+    tuyaError.value = errorMessage(e, 'No se pudieron guardar tus datos de Tuya')
+  } finally {
+    tuyaSaving.value = false
+  }
 }
 
 async function unlinkTuyaAccount() {
-  if (!window.confirm('¿Desconectar tu cuenta de Tuya? Igris dejará de ver tus dispositivos.')) return
+  if (!window.confirm('¿Quitar tus datos de Tuya? Igris dejará de ver tus dispositivos.')) return
   tuyaUnlinking.value = true
   tuyaError.value = ''
+  tuyaSaved.value = ''
   try {
-    await userApi.delete('/api/user/tuya/link')
-    tuya.value = { configured: true, linked: false, label: null }
+    await userApi.delete('/api/user/tuya/account')
     tuyaDevices.value = []
+    await loadTuya()
   } catch (e) {
-    tuyaError.value = errorMessage(e, 'No se pudo desconectar la cuenta')
+    tuyaError.value = errorMessage(e, 'No se pudieron quitar tus datos')
   } finally {
     tuyaUnlinking.value = false
   }
@@ -1731,7 +1793,6 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
-  if (tuyaPollTimer) clearTimeout(tuyaPollTimer)
   window.removeEventListener('igris:open-connections', openConnections)
   window.removeEventListener('igris:open-memory', openMemories)
   window.removeEventListener('igris:open-perception', openPerception)
@@ -1992,6 +2053,44 @@ onBeforeUnmount(() => {
   flex-wrap: wrap;
   gap: 0.5rem;
   margin-top: 0.7rem;
+}
+.conn-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  margin-top: 0.7rem;
+  padding: 0.9rem;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 0.7rem;
+  background: rgba(255, 255, 255, 0.03);
+}
+.conn-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.conn-form label > span {
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #a99b95;
+}
+.conn-form input,
+.conn-form select {
+  padding: 0.55rem 0.7rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 0.5rem;
+  background: rgba(0, 0, 0, 0.28);
+  font-size: 0.84rem;
+  color: #ede4e0;
+}
+.conn-form input:focus,
+.conn-form select:focus {
+  outline: none;
+  border-color: rgba(224, 69, 62, 0.55);
+}
+.conn-form a {
+  color: #f0938a;
 }
 /* Los botones del panel usan el acento del workspace, no el azul genérico. */
 .conn .btn {

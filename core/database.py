@@ -544,22 +544,27 @@ class TelegramLink(Base):
 
 
 class TuyaAccount(Base):
-    """Cuenta Tuya (Smart Life) vinculada por un usuario.
+    """Credenciales de Tuya que un usuario introduce desde IGRIS.
 
-    Cada usuario autoriza **su propia** cuenta y aquí se guarda el uid que
-    devuelve Tuya. Los dispositivos se listan con ese uid, así que cada uno ve
-    únicamente los aparatos de su casa y no los del resto.
+    Cada usuario pega aquí su Access ID, su Access Secret y su UID, sacados de
+    su propio proyecto de Tuya Cloud. Con eso sus dispositivos se listan y se
+    controlan con **sus** credenciales, no con las del servidor, así que cada
+    uno ve únicamente los aparatos de su casa.
 
-    Se separa de `TUYA_UID` (la cuenta del servidor) a propósito: esa sigue
-    sirviendo para lo que ya funcionaba —infrarrojos, equipos compartidos— y
-    esta es la vía por usuario. Si un usuario no tiene fila aquí, se sigue
-    usando la cuenta global.
+    El secreto se guarda cifrado (`access_secret_enc`), nunca en claro: la base
+    de datos se copia en los respaldos y un secreto legible ahí es una fuga
+    esperando a ocurrir. Ver core/tuya_credentials.py.
+
+    Si un usuario no tiene fila aquí se sigue usando la cuenta global de las
+    variables de entorno, que es lo que funcionaba antes.
     """
     __tablename__ = "tuya_accounts"
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, unique=True, index=True)
     tuya_uid = Column(String(128), nullable=False, index=True)
+    access_id = Column(String(128), nullable=True)
+    access_secret_enc = Column(Text, nullable=True)
     # Nombre de la cuenta tal como la ve Tuya, solo informativo para el panel.
     label = Column(String(120), nullable=True)
     region = Column(String(32), default="us", nullable=False)
@@ -728,6 +733,17 @@ def _run_migrations(engine) -> None:
                 "CREATE INDEX ix_tuya_accounts_tuya_uid ON tuya_accounts (tuya_uid)"
             ))
             logger.info("Migración aplicada: tabla tuya_accounts (%s)", dialect)
+
+        # ── tuya_accounts: credenciales propias de cada usuario ─────────────
+        # Se añaden a la tabla existente sin tocar lo que ya hubiera dentro.
+        if _table_exists(conn, dialect, "tuya_accounts"):
+            for column, ddl in (
+                ("access_id", "ALTER TABLE tuya_accounts ADD COLUMN access_id VARCHAR(128)"),
+                ("access_secret_enc", "ALTER TABLE tuya_accounts ADD COLUMN access_secret_enc TEXT"),
+            ):
+                if not _column_exists(conn, dialect, "tuya_accounts", column):
+                    conn.execute(text(ddl))
+                    logger.info("Migración aplicada: tuya_accounts.%s (%s)", column, dialect)
 
         # ── Separación de datos por usuario (notes, reminders) ──────────────
         # Se añade la columna y se asignan las filas existentes al dueño de la

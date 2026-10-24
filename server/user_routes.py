@@ -473,10 +473,12 @@ def _public_user(u: User, db: Session = None) -> dict[str, Any]:
 
     # Cuenta de Tuya vinculada por este usuario. Nunca se expone el uid: solo
     # si está vinculada, que es lo que necesita el panel.
+    # Solo cuenta como vinculada si guardó sus propias credenciales: una fila
+    # sin Access ID no le da acceso a nada y el panel no debe decir que sí.
     tuya_linked = False
     if db is not None:
         tuya_row = db.query(TuyaAccount).filter(TuyaAccount.user_id == u.id).first()
-        tuya_linked = tuya_row is not None
+        tuya_linked = bool(tuya_row and tuya_row.access_id and tuya_row.access_secret_enc)
 
     return {
         "id": u.id,
@@ -1810,11 +1812,12 @@ def user_connections(
         TvBoxToken.revoked.is_(False),
     ).order_by(TvBoxToken.created_at.desc()).all()
     tuya_row = db.query(TuyaAccount).filter(TuyaAccount.user_id == user.id).first()
+    tuya_saved = bool(tuya_row and tuya_row.access_id and tuya_row.access_secret_enc)
     return {
         "features": sorted(caps.features, key=FEATURE_ORDER.index),
         "tuya": {
-            "linked": tuya_row is not None,
-            "label": tuya_row.label if tuya_row else None,
+            "linked": tuya_saved,
+            "label": tuya_row.label if tuya_saved else None,
         },
         "google": _google_status(user, db),
         "youtube": {
@@ -2276,141 +2279,147 @@ def telegram_unlink(user: User = Depends(require_user), db: Session = Depends(ge
 
 # ============= TUYA: CUENTA POR USUARIO =============
 
+class TuyaAccountIn(BaseModel):
+    """Datos que el usuario pega desde el portal de Tuya Cloud."""
+
+    access_id: str
+    access_secret: str = ""
+    uid: str
+    region: str = "us"
+
+    @field_validator("access_id", "uid")
+    @classmethod
+    def _v_required(cls, value: str) -> str:
+        value = (value or "").strip()
+        if not value:
+            raise ValueError("Este campo no puede estar vacío")
+        return value
+
+    @field_validator("region")
+    @classmethod
+    def _v_region(cls, value: str) -> str:
+        value = (value or "us").strip().lower()
+        if value not in {"us", "eu", "cn", "in"}:
+            raise ValueError("La región debe ser us, eu, cn o in")
+        return value
+
+
 @router.get("/api/user/tuya/status")
 def tuya_account_status(user: User = Depends(require_user), db: Session = Depends(get_db)):
-    """¿Tiene este usuario su cuenta de Tuya vinculada?"""
-    from core.tools import tuya as tuya_tools
+    """Estado de la conexión de Tuya de este usuario.
 
+    `saved` indica si ya guardó sus propias credenciales. Si es False se siguen
+    usando las del servidor, que es como funcionaba antes de este cambio.
+    """
     row = db.query(TuyaAccount).filter(TuyaAccount.user_id == user.id).first()
+    saved = bool(row and row.access_id and row.access_secret_enc)
     return {
-        "configured": tuya_tools.oauth_is_configured(),
+        "saved": saved,
         "linked": row is not None,
+        "access_id": row.access_id if saved else None,
+        "uid": row.tuya_uid if row else None,
+        "region": (row.region or "us") if row else "us",
         "label": row.label if row else None,
         "linked_at": row.linked_at.isoformat() if row and row.linked_at else None,
+        "server_fallback": not saved and bool(os.getenv("TUYA_ACCESS_ID", "").strip()),
     }
 
 
-@router.post("/api/user/tuya/link")
-def tuya_link_start(user: User = Depends(require_user)):
-    """Devuelve la URL del H5 de Tuya para que el usuario autorice su cuenta.
-
-    El usuario se identifica en el `state`, firmado, para que el callback sepa
-    a quién asociar el uid cuando Tuya devuelva el control.
-    """
-    from core.tools import tuya as tuya_tools
-
-    if not tuya_tools.oauth_is_configured():
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="La vinculación con Tuya no está configurada en el servidor.",
-        )
-    state = create_access_token(
-        user.id,
-        expires_delta=timedelta(minutes=15),
-        role="tuya_link",
-    )
-    try:
-        url = tuya_tools.oauth_authorize_url(state)
-    except Exception as exc:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc))
-    return {"authorize_url": url, "expires_in_minutes": 15}
-
-
-@router.get("/api/user/tuya/callback")
-async def tuya_link_callback(
-    code: Optional[str] = None,
-    state: Optional[str] = None,
+@router.put("/api/user/tuya/account")
+async def tuya_account_save(
+    payload: TuyaAccountIn,
+    user: User = Depends(require_user),
     db: Session = Depends(get_db),
 ):
-    """Tuya devuelve aquí al usuario tras autorizar.
+    """Guarda las credenciales de Tuya del usuario tras comprobar que sirven.
 
-    Se responde con HTML y no con JSON porque a esta URL llega el navegador,
-    no la aplicación: el usuario tiene que ver algo y volver a IGRIS.
+    Se prueban antes de guardar: si el Access ID, el secreto o el UID están mal,
+    el usuario se entera aquí y no unos minutos después con una lista vacía.
+    Si el secreto llega vacío pero ya había uno guardado, se reutiliza el que
+    estaba: así se puede cambiar el UID sin volver a pegar el secreto.
     """
-    from fastapi.responses import HTMLResponse
     from core.tools import tuya as tuya_tools
+    from core.tuya_credentials import encrypt_secret, decrypt_secret
 
-    def page(title: str, message: str, ok: bool) -> HTMLResponse:
-        color = "#5bd6a1" if ok else "#f29a8e"
-        return HTMLResponse(
-            f"""<!doctype html><html lang="es"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{title}</title></head>
-<body style="margin:0;display:grid;place-items:center;min-height:100vh;background:#100807;color:#eee;font-family:system-ui,sans-serif">
-<div style="max-width:26rem;padding:2rem;text-align:center">
-<h1 style="font-size:1.15rem;color:{color};margin:0 0 .75rem">{title}</h1>
-<p style="font-size:.85rem;line-height:1.6;color:#b7aaa4;margin:0 0 1.5rem">{message}</p>
-<a href="https://webigris.zottagroup.com/conexiones" style="display:inline-block;border-radius:.5rem;background:#e97769;padding:.65rem 1rem;color:#fff;text-decoration:none;font-size:.8rem;font-weight:600">Volver a IGRIS</a>
-</div></body></html>"""
+    row = db.query(TuyaAccount).filter(TuyaAccount.user_id == user.id).first()
+
+    secret = (payload.access_secret or "").strip()
+    if not secret and row is not None and row.access_secret_enc:
+        secret = decrypt_secret(row.access_secret_enc)
+    if not secret:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Falta el Access Secret de tu cuenta de Tuya.",
         )
 
-    if not code or not state:
-        return page("No se pudo vincular", "Tuya no devolvió los datos esperados. Inténtalo de nuevo desde IGRIS.", False)
+    check = await tuya_tools.check_credentials(
+        tuya_tools.TuyaCreds(
+            access_id=payload.access_id,
+            access_secret=secret,
+            region=payload.region,
+        ),
+        payload.uid,
+    )
+    if check.get("error"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=check["error"])
 
-    try:
-        payload = jwt.decode(state, SECRET_KEY, algorithms=[ALGORITHM])
-    except JWTError:
-        return page("Enlace caducado", "El enlace de vinculación ya no es válido. Genera uno nuevo desde IGRIS.", False)
-
-    user_id = payload.get("user_id")
-    if payload.get("role") != "tuya_link" or not isinstance(user_id, int):
-        return page("Enlace no válido", "Este enlace no corresponde a una vinculación de Tuya.", False)
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        return page("Cuenta no encontrada", "La cuenta de IGRIS ya no existe.", False)
-
-    result = await tuya_tools.oauth_exchange_code(code)
-    if result.get("error"):
-        logger.warning("Vinculación Tuya fallida para el usuario %s: %s", user_id, result["error"])
-        return page("No se pudo vincular", result["error"], False)
-
-    uid = result["uid"]
-    row = db.query(TuyaAccount).filter(TuyaAccount.user_id == user_id).first()
-    if row is None:
-        row = TuyaAccount(user_id=user_id, tuya_uid=uid)
-        db.add(row)
-    else:
-        row.tuya_uid = uid
-
-    # Si otra cuenta tenía ese mismo uid, se libera: un uid no puede estar en
-    # dos usuarios a la vez o ambos verían los mismos aparatos.
-    other = db.query(TuyaAccount).filter(TuyaAccount.tuya_uid == uid, TuyaAccount.user_id != user_id).first()
+    # Un mismo uid no puede estar en dos usuarios o ambos verían los mismos
+    # aparatos y las órdenes de uno se aplicarían en la casa del otro.
+    other = (
+        db.query(TuyaAccount)
+        .filter(TuyaAccount.tuya_uid == payload.uid, TuyaAccount.user_id != user.id)
+        .first()
+    )
     if other is not None:
-        db.delete(other)
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Esa cuenta de Tuya ya está vinculada a otro usuario de IGRIS.",
+        )
 
+    if row is None:
+        row = TuyaAccount(user_id=user.id, tuya_uid=payload.uid)
+        db.add(row)
+    row.tuya_uid = payload.uid
+    row.access_id = payload.access_id
+    row.access_secret_enc = encrypt_secret(secret)
+    row.region = payload.region
+    row.label = payload.access_id
     row.linked_at = utcnow()
     db.commit()
-    logger.info("Tuya vinculado: usuario %s con uid %s", user_id, uid)
+    logger.info("Tuya guardado para el usuario %s", user.id)
 
-    return page(
-        "Cuenta vinculada",
-        "Ya puedes ver tus dispositivos desde IGRIS. Si acabas de añadir alguno en Smart Life, aparecerá en unos segundos.",
-        True,
-    )
+    return {
+        "success": True,
+        "devices_found": check.get("dispositivos", 0),
+        "message": "Cuenta de Tuya guardada",
+    }
 
 
-@router.delete("/api/user/tuya/link")
-def tuya_link_remove(user: User = Depends(require_user), db: Session = Depends(get_db)):
-    """Desvincula la cuenta de Tuya del usuario."""
+@router.delete("/api/user/tuya/account")
+def tuya_account_remove(user: User = Depends(require_user), db: Session = Depends(get_db)):
+    """Borra las credenciales guardadas del usuario.
+
+    Tras borrarlas vuelven a aplicarse las del servidor, si existen.
+    """
     row = db.query(TuyaAccount).filter(TuyaAccount.user_id == user.id).first()
     if row is not None:
         db.delete(row)
         db.commit()
-        logger.info("Tuya desvinculado por el usuario %s", user.id)
-    return {"success": True, "message": "Cuenta de Tuya desvinculada"}
+        logger.info("Tuya borrado por el usuario %s", user.id)
+    return {"success": True, "message": "Cuenta de Tuya eliminada"}
 
 
 @router.get("/api/user/tuya/devices")
 async def tuya_list_devices(user: User = Depends(require_user), db: Session = Depends(get_db)):
-    """Lista los dispositivos del usuario en su cuenta de Tuya."""
+    """Dispositivos de la cuenta de Tuya del usuario."""
     from core.tools import tuya as tuya_tools
 
     row = db.query(TuyaAccount).filter(TuyaAccount.user_id == user.id).first()
-    if not row:
+    if not row or not row.tuya_uid:
         return {"dispositivos": []}
 
     try:
-        result = await tuya_tools.list_tuya_devices(row.tuya_uid)
+        result = await tuya_tools.list_tuya_devices_for_session(user)
         if result.get("error"):
             raise ValueError(result["error"])
         return {"dispositivos": result.get("dispositivos", [])}

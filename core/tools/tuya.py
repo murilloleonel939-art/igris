@@ -11,7 +11,8 @@ import re
 import time
 import unicodedata
 from urllib.parse import urlencode
-from typing import Any, Optional
+from contextvars import ContextVar
+from typing import Any, NamedTuple, Optional
 
 import httpx
 
@@ -25,7 +26,62 @@ _REGION_ENDPOINTS = {
 }
 
 
+class TuyaCreds(NamedTuple):
+    """Credenciales de Tuya de un usuario concreto."""
+    access_id: str
+    access_secret: str
+    region: str = "us"
+
+
+# Credenciales de la petición en curso.
+#
+# Se usa ContextVar y no un parámetro que se va pasando porque hay una docena de
+# funciones internas (IR, estado, comandos) que acaban llamando a _call, y
+# añadirles el argumento a todas obligaría a tocar código que hoy funciona. Con
+# el ContextVar el valor viaja con la tarea asíncrona y cada petición ve solo el
+# suyo: no hay estado compartido entre usuarios.
+#
+# Si está vacío se usan las variables de entorno, o sea la cuenta global de
+# siempre. Así nada de lo que ya funcionaba deja de funcionar.
+_active_creds: ContextVar[Optional[TuyaCreds]] = ContextVar("tuya_creds", default=None)
+
+# El uid viaja en su propio ContextVar por el mismo motivo que las credenciales:
+# hay funciones internas que listan dispositivos para resolver un nombre y no
+# reciben la sesión. Sin esto tendrían que pedirlo por parámetro hasta arriba.
+_active_uid: ContextVar[Optional[str]] = ContextVar("tuya_uid", default=None)
+
+
+def use_credentials(creds: Optional[TuyaCreds], uid: Optional[str] = None):
+    """Fija las credenciales y el uid de la petición actual.
+
+    Devuelve el token para restaurar con reset_credentials.
+    """
+    return (_active_creds.set(creds), _active_uid.set(uid))
+
+
+def reset_credentials(token) -> None:
+    """Restaura credenciales y uid anteriores (usar en finally)."""
+    creds_token, uid_token = token
+    _active_creds.reset(creds_token)
+    _active_uid.reset(uid_token)
+
+
+def current_uid() -> Optional[str]:
+    """UID de la cuenta de Tuya de la petición en curso."""
+    return _active_uid.get()
+
+
 def _config() -> tuple[str, str, str]:
+    """Access ID, secreto y endpoint a usar en esta petición.
+
+    Prioriza las credenciales del usuario; si no las hay, las de entorno.
+    """
+    creds = _active_creds.get()
+    if creds is not None and creds.access_id and creds.access_secret:
+        region = (creds.region or "us").strip().lower()
+        endpoint = _REGION_ENDPOINTS.get(region, _REGION_ENDPOINTS["us"])
+        return creds.access_id, creds.access_secret, endpoint.rstrip("/")
+
     access_id = os.getenv("TUYA_ACCESS_ID", "").strip()
     access_secret = os.getenv("TUYA_ACCESS_SECRET", "").strip()
     region = os.getenv("TUYA_REGION", "us").strip().lower()
@@ -176,7 +232,7 @@ async def _resolve_device_id(device_ref: str) -> str | None:
         return alias_id
 
     try:
-        listed = await list_tuya_devices()
+        listed = await list_tuya_devices(current_uid() or "")
         matches = []
         for device in listed.get("dispositivos", []):
             device_id = device.get("id")
@@ -411,7 +467,7 @@ async def _find_infrared_hub(preferred_id: str) -> tuple[str, list[dict[str, Any
         return hub_id, remotes
 
     try:
-        listed = await list_tuya_devices()
+        listed = await list_tuya_devices(current_uid() or "")
         others = [
             d for d in listed.get("dispositivos", [])
             if d.get("id") and d["id"] != preferred_id
@@ -638,14 +694,24 @@ async def send_tuya_command(device_id: str, code: str, value: Any) -> dict[str, 
 
 
 async def control_tuya_device(device_id: str, code: str, value: Any, _session=None) -> dict[str, Any]:
-    """Ejecuta inmediatamente una orden explícita de Smart Life o Smart IR."""
+    """Ejecuta una orden explícita de Smart Life o Smart IR con las credenciales del usuario."""
     # El usuario ya dio la orden en el mensaje actual. No se pide una segunda
     # confirmación: se ejecuta directamente y se devuelve el resultado real.
-    return await send_tuya_command(device_id, code, value)
+    user_id = _session_user_id(_session)
+    token = use_credentials(credentials_for_user(user_id), uid_for_user(user_id))
+    try:
+        return await send_tuya_command(device_id, code, value)
+    finally:
+        reset_credentials(token)
 
 
 async def list_tuya_device_status(device_id: str, _session=None) -> dict[str, Any]:
-    return await get_tuya_device_status(device_id)
+    user_id = _session_user_id(_session)
+    token = use_credentials(credentials_for_user(user_id), uid_for_user(user_id))
+    try:
+        return await get_tuya_device_status(device_id)
+    finally:
+        reset_credentials(token)
 
 
 def _session_user_id(session) -> Optional[int]:
@@ -664,153 +730,93 @@ def _session_user_id(session) -> Optional[int]:
     return uid if isinstance(uid, int) else None
 
 
-def tuya_uid_for_user(user_id: Optional[int]) -> Optional[str]:
-    """uid de Tuya vinculado por ese usuario, si lo tiene."""
+def _account_for_user(user_id: Optional[int]):
+    """Fila de tuya_accounts de ese usuario, si la tiene."""
     if not user_id:
         return None
-    # Import local: core.database importa muchas cosas y tuya.py se carga
-    # también desde contextos donde la base aún no está lista.
+    # Import local: core.database arrastra mucho y tuya.py también se carga en
+    # contextos donde la base todavía no está lista.
     from core.database import SessionLocal, TuyaAccount
 
     db = SessionLocal()
     try:
-        row = db.query(TuyaAccount).filter(TuyaAccount.user_id == user_id).first()
-        return row.tuya_uid if row else None
+        return db.query(TuyaAccount).filter(TuyaAccount.user_id == user_id).first()
     finally:
         db.close()
 
 
-async def list_tuya_devices_for_session(session=None) -> dict[str, Any]:
-    """Dispositivos de la cuenta Tuya del usuario de la sesión.
+def credentials_for_user(user_id: Optional[int]) -> Optional[TuyaCreds]:
+    """Credenciales de Tuya que ese usuario guardó desde IGRIS.
 
-    Sin vinculación no se devuelve nada: la cuenta global ya no se usa como
-    respaldo, porque el objetivo es que cada usuario vea solo su casa.
+    Devuelve None si no las tiene o si el secreto no se puede descifrar. En ese
+    caso se usan las de entorno, que es como funcionaba antes.
     """
-    user_id = _session_user_id(session)
-    uid = tuya_uid_for_user(user_id)
+    row = _account_for_user(user_id)
+    if row is None or not row.access_id or not row.access_secret_enc:
+        return None
+
+    from core.tuya_credentials import decrypt_secret
+
+    secret = decrypt_secret(row.access_secret_enc)
+    if not secret:
+        return None
+    return TuyaCreds(access_id=row.access_id, access_secret=secret, region=row.region or "us")
+
+
+def uid_for_user(user_id: Optional[int]) -> Optional[str]:
+    """UID de la cuenta de Tuya de ese usuario.
+
+    Si no tiene fila propia se usa TUYA_UID del entorno: es el respaldo que
+    mantiene funcionando la cuenta que ya estaba vinculada antes de que cada
+    usuario pudiera configurar la suya.
+    """
+    row = _account_for_user(user_id)
+    if row is not None and row.tuya_uid:
+        return row.tuya_uid
+    return os.getenv("TUYA_UID", "").strip() or None
+
+
+async def check_credentials(creds: TuyaCreds, uid: str) -> dict[str, Any]:
+    """Comprueba que unas credenciales sirven antes de guardarlas.
+
+    Se pide el token y la lista de dispositivos del uid indicado. Es lo mínimo
+    que demuestra que el Access ID y el secreto son válidos y que el uid
+    pertenece a esa cuenta; sin esta prueba un error de tecleo se guardaría y
+    el usuario solo vería "no hay dispositivos" sin saber por qué.
+    """
+    uid = (uid or "").strip()
     if not uid:
-        return {
-            "error": "Todavía no has vinculado tu cuenta de Tuya. Hazlo desde Conexiones.",
-            "sin_vincular": True,
-        }
-    return await list_tuya_devices(uid)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# OAuth 2.0 por usuario
-#
-# Flujo: el usuario abre el H5 de Tuya con su client_id, autoriza, y Tuya lo
-# devuelve a nuestro callback con un `code`. Ese code se canjea con
-# grant_type=2 y la respuesta trae el `uid` de esa cuenta, que es lo que
-# identifica su casa. A partir de ahí sus dispositivos se listan con su uid y
-# no con el compartido del servidor.
-# ─────────────────────────────────────────────────────────────────────────────
-
-def oauth_client_id() -> str:
-    """Client ID de la app de autorización (App Authorization), no el del proyecto."""
-    return os.getenv("TUYA_OAUTH_CLIENT_ID", "").strip()
-
-
-def oauth_client_secret() -> str:
-    return os.getenv("TUYA_OAUTH_CLIENT_SECRET", "").strip()
-
-
-def oauth_is_configured() -> bool:
-    return bool(oauth_client_id() and oauth_client_secret())
-
-
-def oauth_authorize_url(state: str = "") -> str:
-    """URL del H5 de Tuya al que mandamos al usuario para que autorice.
-
-    La base la entrega el propio Tuya al configurar el H5 en
-    *Devices → Link App Account → Configure OAuth 2.0 Authorization*, y se
-    guarda en TUYA_OAUTH_H5_URL. No se deduce de la región: inventarla llevaba
-    a un dominio que no resuelve.
-
-    `state` viaja de ida y vuelta sin que Tuya lo interprete: ahí va el usuario
-    firmado, para saber a quién asociar el uid cuando vuelva el callback. Sin
-    ese dato el callback no podría saber quién autorizó.
-    """
-    client_id = oauth_client_id()
-    if not client_id:
-        raise RuntimeError(
-            "Falta TUYA_OAUTH_CLIENT_ID en la configuración del servidor."
-        )
-
-    base = os.getenv(
-        "TUYA_OAUTH_H5_URL", "https://app-h5.iot787.com/d/login"
-    ).strip().rstrip("?")
-    callback = os.getenv(
-        "TUYA_OAUTH_CALLBACK",
-        "https://igris.zottagroup.com/api/user/tuya/callback",
-    ).strip()
-
-    params = {"client_id": client_id, "redirect_uri": callback}
-    if state:
-        params["state"] = state
-    return f"{base}?{urlencode(params)}"
-
-
-async def oauth_exchange_code(code: str) -> dict[str, Any]:
-    """Canjea el `code` del callback por un token y devuelve el uid.
-
-    Aquí se usa la credencial OAuth de la app (TUYA_OAUTH_*), no la del
-    proyecto. Son llaves distintas: la del proyecto firma las llamadas de
-    control, esta autoriza cuentas de usuario.
-    """
-    client_id = oauth_client_id()
-    client_secret = oauth_client_secret()
-    if not client_id or not client_secret:
-        return {"error": "La vinculación con Tuya no está configurada en el servidor."}
-
-    _, _, endpoint = _config()
-    path = f"/v1.0/token?grant_type=2&code={code}"
-    timestamp = str(int(time.time() * 1000))
-
-    # Firma igual que el resto de llamadas, pero con la credencial OAuth.
-    body_hash = hashlib.sha256(b"").hexdigest()
-    string_to_sign = f"GET\n{body_hash}\n\n{path}"
-    sign = hmac.new(
-        client_secret.encode("utf-8"),
-        (client_id + timestamp + string_to_sign).encode("utf-8"),
-        hashlib.sha256,
-    ).hexdigest().upper()
-
-    headers = {
-        "client_id": client_id,
-        "t": timestamp,
-        "sign_method": "HMAC-SHA256",
-        "sign": sign,
-    }
-
+        return {"error": "Falta el UID de la cuenta de Tuya."}
+    token = use_credentials(creds, uid)
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
-            response = await client.get(endpoint + path, headers=headers)
-        data = response.json()
-    except Exception as exc:
-        logger.exception("Error canjeando el código de Tuya")
-        return {"error": f"No se pudo contactar con Tuya: {exc}"}
-
-    if not data.get("success"):
-        return {"error": data.get("msg") or f"Tuya devolvió HTTP {response.status_code}"}
-
-    result = data.get("result") or {}
-    uid = result.get("uid")
-    if not uid:
-        return {"error": "Tuya autorizó la cuenta pero no devolvió su identificador."}
-    return {"uid": uid}
-
-
-async def uid_has_devices(uid: str) -> bool:
-    """¿La cuenta autorizada tiene al menos un dispositivo?
-
-    Sirve para validar en el callback que el uid es real y no una respuesta
-    vacía: si no tiene aparatos, se guarda igual, pero conviene saberlo.
-    """
-    try:
+        # _call ya pide el token: si las credenciales fueran inválidas falla aquí.
         result = await _call(f"/v1.0/users/{uid}/devices")
     except Exception as exc:
-        logger.warning("No se pudieron comprobar los dispositivos de %s: %s", uid, exc)
-        return False
-    devices = result if isinstance(result, list) else (result.get("devices") or [])
-    return bool(devices)
+        return {"error": str(exc)}
+    finally:
+        reset_credentials(token)
+
+    if isinstance(result, list):
+        devices = result
+    else:
+        devices = result.get("devices", []) if isinstance(result, dict) else []
+    return {"dispositivos": len(devices)}
+
+
+async def list_tuya_devices_for_session(session=None) -> dict[str, Any]:
+    """Dispositivos de la cuenta de Tuya del usuario de la sesión."""
+    user_id = _session_user_id(session)
+    uid = uid_for_user(user_id)
+    if not uid:
+        return {
+            "error": (
+                "Este usuario todavía no tiene cuenta de Tuya. Configúrala en "
+                "Conexiones con tu Access ID, tu Access Secret y tu UID."
+            ),
+            "sin_configurar": True,
+        }
+    token = use_credentials(credentials_for_user(user_id), uid)
+    try:
+        return await list_tuya_devices(uid)
+    finally:
+        reset_credentials(token)
