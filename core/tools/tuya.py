@@ -722,6 +722,11 @@ def oauth_is_configured() -> bool:
 def oauth_authorize_url(state: str = "") -> str:
     """URL del H5 de Tuya al que mandamos al usuario para que autorice.
 
+    La base la entrega el propio Tuya al configurar el H5 en
+    *Devices → Link App Account → Configure OAuth 2.0 Authorization*, y se
+    guarda en TUYA_OAUTH_H5_URL. No se deduce de la región: inventarla llevaba
+    a un dominio que no resuelve.
+
     `state` viaja de ida y vuelta sin que Tuya lo interprete: ahí va el usuario
     firmado, para saber a quién asociar el uid cuando vuelva el callback. Sin
     ese dato el callback no podría saber quién autorizó.
@@ -731,29 +736,19 @@ def oauth_authorize_url(state: str = "") -> str:
         raise RuntimeError(
             "Falta TUYA_OAUTH_CLIENT_ID en la configuración del servidor."
         )
+
+    base = os.getenv(
+        "TUYA_OAUTH_H5_URL", "https://app-h5.iot787.com/d/login"
+    ).strip().rstrip("?")
     callback = os.getenv(
         "TUYA_OAUTH_CALLBACK",
         "https://igris.zottagroup.com/api/user/tuya/callback",
     ).strip()
+
     params = {"client_id": client_id, "redirect_uri": callback}
     if state:
         params["state"] = state
-    query = urlencode(params)
-    
-    # Endpoint del H5 según la región
-    region = os.getenv("TUYA_REGION", "us").lower()
-    if region in ("us", "aws-us-west-1"):
-        h5_host = "iot-cool.tuyaapi.com"
-    elif region in ("eu", "aws-eu-central-1"):
-        h5_host = "iot-cool-eu.tuyaapi.com"
-    else:
-        # Fallback a China para otras regiones
-        h5_host = "h5.tuya.com"
-    
-    if h5_host == "h5.tuya.com":
-        return f"https://{h5_host}/d/login?{query}"
-    else:
-        return f"https://{h5_host}/login?{query}"
+    return f"{base}?{urlencode(params)}"
 
 
 async def oauth_exchange_code(code: str) -> dict[str, Any]:
