@@ -28,7 +28,7 @@ def create_test_user(username: str = "test", password: str = "test123"):
             password_hash=hash_password(password),
             is_active=True,
             is_admin=False,
-            can_use_homeassistant=True,
+            can_use_tuya=True,
         )
         db.add(user)
         db.commit()
