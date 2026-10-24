@@ -1809,8 +1809,13 @@ def user_connections(
         TvBoxToken.user_id == user.id,
         TvBoxToken.revoked.is_(False),
     ).order_by(TvBoxToken.created_at.desc()).all()
+    tuya_row = db.query(TuyaAccount).filter(TuyaAccount.user_id == user.id).first()
     return {
         "features": sorted(caps.features, key=FEATURE_ORDER.index),
+        "tuya": {
+            "linked": tuya_row is not None,
+            "label": tuya_row.label if tuya_row else None,
+        },
         "google": _google_status(user, db),
         "youtube": {
             "app_configured": google_client.oauth_configured(),

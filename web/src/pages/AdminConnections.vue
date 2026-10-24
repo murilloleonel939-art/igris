@@ -266,6 +266,11 @@ async function load() {
         username: user.username || 'Mi cuenta',
         email: user.email || '',
         is_active: true,
+        // La sesión personal también necesita las funciones y el estado de
+        // Tuya: sin esto la fila decía "función desactivada" aunque el
+        // administrador ya la hubiera concedido.
+        features: data.features || [],
+        tuya_linked: Boolean(data.tuya?.linked),
         connections: {
           google: data.google?.email || null,
           google_error: data.google?.error || null,
